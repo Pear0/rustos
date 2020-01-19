@@ -131,4 +131,5 @@ if __name__ == '__main__':
         copy_to(*f, sdcard)
 
     print("[!] unmounting %s" % sdcard)
-    os.system("sudo umount '%s'" % sdcard)
+    # os.system("sudo umount '%s'" % sdcard)
+    os.system("diskutil unmount '%s'" % sdcard)
