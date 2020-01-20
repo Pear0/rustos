@@ -1,11 +1,9 @@
 // FIXME: Make me compile! Diff budget: 1 line.
 
-// I AM NOT DONE
-
 struct StrWrapper<'a>(&'a str);
 
 impl<'a> StrWrapper<'a> {
-    fn inner(&self) -> &str {
+    fn inner(&self) -> &'a str {
         self.0
     }
 }

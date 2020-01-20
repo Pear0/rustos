@@ -1,14 +1,12 @@
 // FIXME: Make me pass! Diff budget: 2 lines.
 
-// I AM NOT DONE
-
 // What traits does this struct need to derive?
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 struct MyType(usize);
 
 fn borrow2() {
     let mut x = MyType(1);
-    let y = &x;
+    let y = &mut x;
 
     // Do not modify this line.
     y.0 = 2;
