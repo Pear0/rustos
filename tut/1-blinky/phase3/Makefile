@@ -1,6 +1,8 @@
 ROOT := $(shell git rev-parse --show-toplevel)
 
-export PATH := /usr/lib/llvm-8/bin:$(PATH)
+# export PATH := /usr/lib/llvm-8/bin:$(PATH)
+export PATH := /usr/local/Cellar/llvm@8/8.0.1_1/bin:$(PATH)
+SHELL := env "PATH=$(PATH)" /bin/bash
 
 CC := clang
 AS := clang
