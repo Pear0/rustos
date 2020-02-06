@@ -6,15 +6,15 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "no_std")] {
-        mod no_std;
-        pub use self::no_std::*;
-    } else {
-        mod std;
-        pub use self::std::*;
-    }
-}
+#[cfg(feature = "no_std")]
+mod no_std;
+#[cfg(feature = "no_std")]
+pub use self::no_std::*;
+
+#[cfg(not(feature = "no_std"))]
+mod std;
+#[cfg(not(feature = "no_std"))]
+pub use self::std::*;
 
 #[macro_use]
 pub mod macros;

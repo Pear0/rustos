@@ -1,17 +1,18 @@
 #![cfg_attr(feature = "no_std", no_std)]
-
 #![feature(decl_macro)]
 
 use shim::io;
 use shim::ioerr;
 
-#[cfg(test)] mod tests;
-mod read_ext;
 mod progress;
+mod read_ext;
+#[cfg(test)]
+mod tests;
 
 pub use progress::{Progress, ProgressFn};
 
 use read_ext::ReadExt;
+use std::convert::TryInto;
 
 const SOH: u8 = 0x01;
 const EOT: u8 = 0x04;
@@ -24,7 +25,7 @@ pub struct Xmodem<R> {
     packet: u8,
     started: bool,
     inner: R,
-    progress: ProgressFn
+    progress: ProgressFn,
 }
 
 impl Xmodem<()> {
@@ -35,7 +36,9 @@ impl Xmodem<()> {
     /// Returns the number of bytes written to `to`, excluding padding zeroes.
     #[inline]
     pub fn transmit<R, W>(data: R, to: W) -> io::Result<usize>
-        where W: io::Read + io::Write, R: io::Read
+        where
+            W: io::Read + io::Write,
+            R: io::Read,
     {
         Xmodem::transmit_with_progress(data, to, progress::noop)
     }
@@ -49,7 +52,9 @@ impl Xmodem<()> {
     ///
     /// Returns the number of bytes written to `to`, excluding padding zeroes.
     pub fn transmit_with_progress<R, W>(mut data: R, to: W, f: ProgressFn) -> io::Result<usize>
-        where W: io::Read + io::Write, R: io::Read
+        where
+            W: io::Read + io::Write,
+            R: io::Read,
     {
         let mut transmitter = Xmodem::new_with_progress(to, f);
         let mut packet = [0u8; 128];
@@ -82,7 +87,9 @@ impl Xmodem<()> {
     /// `into`. Returns the number of bytes read from `from`, a multiple of 128.
     #[inline]
     pub fn receive<R, W>(from: R, into: W) -> io::Result<usize>
-       where R: io::Read + io::Write, W: io::Write
+        where
+            R: io::Read + io::Write,
+            W: io::Write,
     {
         Xmodem::receive_with_progress(from, into, progress::noop)
     }
@@ -93,7 +100,9 @@ impl Xmodem<()> {
     /// The function `f` is used as a callback to indicate progress throughout
     /// the reception. See the [`Progress`] enum for more information.
     pub fn receive_with_progress<R, W>(from: R, mut into: W, f: ProgressFn) -> io::Result<usize>
-       where R: io::Read + io::Write, W: io::Write
+        where
+            R: io::Read + io::Write,
+            W: io::Write,
     {
         let mut receiver = Xmodem::new_with_progress(from, f);
         let mut packet = [0u8; 128];
@@ -128,7 +137,12 @@ impl<T: io::Read + io::Write> Xmodem<T> {
     /// `inner`. The returned instance can be used for both receiving
     /// (downloading) and sending (uploading).
     pub fn new(inner: T) -> Self {
-        Xmodem { packet: 1, started: false, inner, progress: progress::noop}
+        Xmodem {
+            packet: 1,
+            started: false,
+            inner,
+            progress: progress::noop,
+        }
     }
 
     /// Returns a new `Xmodem` instance with the internal reader/writer set to
@@ -137,7 +151,12 @@ impl<T: io::Read + io::Write> Xmodem<T> {
     /// callback to indicate progress throughout the transfer. See the
     /// [`Progress`] enum for more information.
     pub fn new_with_progress(inner: T, f: ProgressFn) -> Self {
-        Xmodem { packet: 1, started: false, inner, progress: f }
+        Xmodem {
+            packet: 1,
+            started: false,
+            inner,
+            progress: f,
+        }
     }
 
     /// Reads a single byte from the inner I/O stream. If `abort_on_can` is
@@ -182,7 +201,11 @@ impl<T: io::Read + io::Write> Xmodem<T> {
     /// byte was not `byte`, if the read byte was `CAN` and `byte` is not `CAN`,
     /// or if writing the `CAN` byte failed on byte mismatch.
     fn expect_byte_or_cancel(&mut self, byte: u8, expected: &'static str) -> io::Result<u8> {
-        unimplemented!()
+        let res = self.expect_byte(byte, expected);
+        if res.is_err() {
+            self.inner.write_all(&[CAN])?;
+        }
+        res
     }
 
     /// Reads a single byte from the inner I/O stream and compares it to `byte`.
@@ -197,7 +220,14 @@ impl<T: io::Read + io::Write> Xmodem<T> {
     /// of `ConnectionAborted` is returned. Otherwise, the error kind is
     /// `InvalidData`.
     fn expect_byte(&mut self, byte: u8, expected: &'static str) -> io::Result<u8> {
-        unimplemented!()
+        let read = self.read_byte(false)?;
+        if byte == read {
+            Ok(read)
+        } else if read == CAN {
+            ioerr!(ConnectionAborted, "ConnectionAborted")
+        } else {
+            ioerr!(InvalidData, expected)
+        }
     }
 
     /// Reads (downloads) a single packet from the inner stream using the XMODEM
@@ -224,7 +254,52 @@ impl<T: io::Read + io::Write> Xmodem<T> {
     ///
     /// An error of kind `UnexpectedEof` is returned if `buf.len() < 128`.
     pub fn read_packet(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        unimplemented!()
+        if buf.len() < 128 {
+            return ioerr!(UnexpectedEof, "buf len too small");
+        }
+
+        if !self.started {
+            self.write_byte(NAK)?;
+            self.started = true;
+        }
+
+        match self.read_byte(true)? {
+            SOH => {
+                (self.progress)(Progress::Started);
+
+                self.expect_byte_or_cancel(self.packet, "expected packet number")?;
+                self.expect_byte_or_cancel(255 - self.packet, "expected 1s complement")?;
+
+                let mut checksum = 0u32;
+                for i in 0..128 {
+                    buf[i] = self.read_byte(false)?;
+                    checksum += (buf[i] as u32) % 256;
+                }
+                let checksum = checksum as u8;
+
+                let expected_checksum = self.read_byte(false)?;
+                if expected_checksum != checksum {
+                    self.write_byte(NAK)?;
+                    return ioerr!(Interrupted, "checksum mismatch");
+                }
+
+                self.write_byte(ACK)?;
+                (self.progress)(Progress::Packet(self.packet));
+
+                self.packet += 1;
+                Ok(128)
+            }
+            EOT => {
+                self.write_byte(NAK)?;
+                self.expect_byte_or_cancel(EOT, "expected second EOT")?;
+                self.write_byte(ACK)?;
+                Ok(0)
+            }
+            _ => {
+                self.write_byte(CAN)?;
+                return ioerr!(InvalidData, "unexpected byte at start of transmission");
+            }
+        }
     }
 
     /// Sends (uploads) a single packet to the inner stream using the XMODEM
@@ -258,7 +333,51 @@ impl<T: io::Read + io::Write> Xmodem<T> {
     ///
     /// An error of kind `Interrupted` is returned if a packet checksum fails.
     pub fn write_packet(&mut self, buf: &[u8]) -> io::Result<usize> {
-        unimplemented!()
+        if buf.len() < 128 && buf.len() != 0 {
+            return ioerr!(UnexpectedEof, "buf len too small");
+        }
+
+        (self.progress)(Progress::Waiting);
+
+        if !self.started {
+            self.expect_byte(NAK, "expected a nak to start transmission")?;
+            self.started = true;
+        }
+
+        // end transmission
+        if buf.len() == 0 {
+            self.write_byte(EOT)?;
+            self.expect_byte(NAK, "expected NAK during EOT")?;
+            self.write_byte(EOT)?;
+            self.expect_byte(ACK, "expected ACK to end transmission")?;
+            self.started = false;
+            return Ok(0);
+        }
+
+        (self.progress)(Progress::Started);
+
+        self.write_byte(SOH)?;
+        self.write_byte(self.packet)?;
+        self.write_byte(255 - self.packet)?;
+
+        let mut checksum = 0u32;
+        for num in buf.iter().take(128) {
+            self.write_byte(*num)?;
+            checksum += (*num as u32) % 256;
+        }
+
+        self.write_byte(checksum as u8)?;
+
+        match self.read_byte(true)? {
+            ACK => {}
+            NAK => return ioerr!(Interrupted, "receiver responded NAK"),
+            _ => return ioerr!(InvalidData, "inexpected byte at end of packet")
+        }
+
+
+        (self.progress)(Progress::Packet(self.packet));
+        self.packet += 1;
+        Ok(128)
     }
 
     /// Flush this output stream, ensuring that all intermediately buffered

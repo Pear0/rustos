@@ -1,6 +1,6 @@
 use super::*;
-use std::sync::mpsc::{Receiver, Sender, channel};
 use std::io::Cursor;
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 struct Pipe(Sender<u8>, Receiver<u8>, Vec<u8>);
 
@@ -14,7 +14,7 @@ impl io::Read for Pipe {
         for i in 0..buf.len() {
             match self.1.recv() {
                 Ok(byte) => buf[i] = byte,
-                Err(_) => return Ok(i)
+                Err(_) => return Ok(i),
             }
         }
 
@@ -54,7 +54,10 @@ fn test_loop() {
         Xmodem::receive(tx, &mut output[..]).map(|_| output)
     });
 
-    assert_eq!(tx_thread.join().expect("tx join okay").expect("tx okay"), 384);
+    assert_eq!(
+        tx_thread.join().expect("tx join okay").expect("tx okay"),
+        384
+    );
     let output = rx_thread.join().expect("rx join okay").expect("rx okay");
     assert_eq!(&input[..], &output[..]);
 }
@@ -78,7 +81,9 @@ fn read_byte() {
 fn test_expect_byte() {
     let mut xmodem = Xmodem::new(Cursor::new(vec![1, 1]));
     assert_eq!(xmodem.expect_byte(1, "1").expect("expected"), 1);
-    let e = xmodem.expect_byte(2, "1, please").expect_err("expect the unexpected");
+    let e = xmodem
+        .expect_byte(2, "1, please")
+        .expect_err("expect the unexpected");
     assert_eq!(e.kind(), io::ErrorKind::InvalidData);
 }
 
@@ -138,7 +143,10 @@ fn test_can_in_packet_and_checksum() {
         Xmodem::receive(tx, &mut output[..]).map(|_| output)
     });
 
-    assert_eq!(tx_thread.join().expect("tx join okay").expect("tx okay"), 256);
+    assert_eq!(
+        tx_thread.join().expect("tx join okay").expect("tx okay"),
+        256
+    );
     let output = rx_thread.join().expect("rx join okay").expect("rx okay");
     assert_eq!(&input[..], &output[..]);
 }
@@ -149,8 +157,14 @@ fn test_transmit_reported_bytes() {
     let (tx, rx) = pipe();
     let tx_thread = std::thread::spawn(move || Xmodem::transmit(&input[..], rx));
     let rx_thread = std::thread::spawn(move || Xmodem::receive(tx, &mut output[..]));
-    assert_eq!(tx_thread.join().expect("tx join okay").expect("tx okay"), 50);
-    assert_eq!(rx_thread.join().expect("rx join okay").expect("rx okay"), 128);
+    assert_eq!(
+        tx_thread.join().expect("tx join okay").expect("tx okay"),
+        50
+    );
+    assert_eq!(
+        rx_thread.join().expect("rx join okay").expect("rx okay"),
+        128
+    );
 }
 
 #[test]
@@ -176,12 +190,18 @@ fn test_raw_transmission() {
     // check packet 1
     assert_eq!(&rx_buf[0..3], &[SOH, 1, 255 - 1]);
     assert_eq!(&rx_buf[3..(3 + 128)], &input[..128]);
-    assert_eq!(rx_buf[131], input[..128].iter().fold(0, |a: u8, b| a.wrapping_add(*b)));
+    assert_eq!(
+        rx_buf[131],
+        input[..128].iter().fold(0, |a: u8, b| a.wrapping_add(*b))
+    );
 
     // check packet 2
     assert_eq!(&rx_buf[132..135], &[SOH, 2, 255 - 2]);
     assert_eq!(&rx_buf[135..(135 + 128)], &input[128..]);
-    assert_eq!(rx_buf[263], input[128..].iter().fold(0, |a: u8, b| a.wrapping_add(*b)));
+    assert_eq!(
+        rx_buf[263],
+        input[128..].iter().fold(0, |a: u8, b| a.wrapping_add(*b))
+    );
 
     // check EOT
     assert_eq!(&rx_buf[264..], &[EOT, EOT]);
