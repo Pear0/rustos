@@ -10,6 +10,7 @@ use volatile::{Volatile, ReadVolatile, Reserved};
 use crate::timer;
 use crate::common::IO_BASE;
 use crate::gpio::{Gpio, Function};
+use crate::uart::LsrStatus::{DataReady, TxAvailable};
 
 /// The base address for the `MU` registers.
 const MU_REG_BASE: usize = IO_BASE + 0x215040;
@@ -27,8 +28,30 @@ enum LsrStatus {
 #[repr(C)]
 #[allow(non_snake_case)]
 struct Registers {
-    // FIXME: Declare the "MU" registers from page 8.
+    IO_REG: Volatile<u8>,
+    __r0: [Reserved<u8>; 3],
+    IER_REG: Volatile<u8>,
+    __r1: [Reserved<u8>; 3],
+    IIR_REG: Volatile<u8>,
+    __r2: [Reserved<u8>; 3],
+    LCR_REG: Volatile<u8>,
+    __r3: [Reserved<u8>; 3],
+    MCR_REG: Volatile<u8>,
+    __r4: [Reserved<u8>; 3],
+    LSR_REG: Volatile<u8>,
+    __r5: [Reserved<u8>; 3],
+    MSR_REG: Volatile<u8>,
+    __r6: [Reserved<u8>; 3],
+    SCRATCH: Volatile<u8>,
+    __r7: [Reserved<u8>; 3],
+    CNTL_REG: Volatile<u8>,
+    __r8: [Reserved<u8>; 3],
+    STAT_REG: Volatile<u32>,
+    BAUD_REG: Volatile<u16>,
+    __r9: [Reserved<u8>; 2],
 }
+
+const_assert_size!(Registers, 44);
 
 /// The Raspberry Pi's "mini UART".
 pub struct MiniUart {
@@ -51,26 +74,47 @@ impl MiniUart {
             &mut *(MU_REG_BASE as *mut Registers)
         };
 
-        // FIXME: Implement remaining mini UART initialization.
-        unimplemented!()
+        // ref: https://github.com/bztsrc/raspi3-tutorial/blob/master/03_uart1/uart.c
+
+        registers.CNTL_REG.write(0);
+        registers.LCR_REG.write(0b11); // 8 bit mode
+//        registers.MCR_REG.write(0);
+//        registers.IER_REG.write(0);
+//        registers.IIR_REG.write(0xc6); // disable interrupts
+        registers.BAUD_REG.write(270); // 151200 baud
+
+        Gpio::new(14).into_alt(Function::Alt5);
+        Gpio::new(15).into_alt(Function::Alt5);
+
+        registers.CNTL_REG.write(0b11); //enable receiver / transmitter
+
+        MiniUart {
+            registers,
+            timeout: None,
+        }
     }
 
     /// Set the read timeout to `t` duration.
     pub fn set_read_timeout(&mut self, t: Duration) {
-        unimplemented!()
+        self.timeout = Some(t)
+    }
+
+    fn can_send(&self) -> bool {
+        (self.registers.LSR_REG.read() & (TxAvailable as u8)) != 0
     }
 
     /// Write the byte `byte`. This method blocks until there is space available
     /// in the output FIFO.
     pub fn write_byte(&mut self, byte: u8) {
-        unimplemented!()
+        // while !self.can_send() {}
+        self.registers.IO_REG.write(byte);
     }
 
     /// Returns `true` if there is at least one byte ready to be read. If this
     /// method returns `true`, a subsequent call to `read_byte` is guaranteed to
     /// return immediately. This method does not block.
     pub fn has_byte(&self) -> bool {
-        unimplemented!()
+        (self.registers.LSR_REG.read() & (DataReady as u8)) != 0
     }
 
     /// Blocks until there is a byte ready to read. If a read timeout is set,
@@ -82,12 +126,29 @@ impl MiniUart {
     /// returns `Ok(())`, a subsequent call to `read_byte` is guaranteed to
     /// return immediately.
     pub fn wait_for_byte(&self) -> Result<(), ()> {
-        unimplemented!()
+        match self.timeout {
+            Some(timeout) => {
+                let end = timer::current_time() + timeout;
+
+                while !self.has_byte() && end < timer::current_time() {}
+
+                if end < timer::current_time() {
+                    Ok(())
+                } else {
+                    Err(())
+                }
+            }
+            None => {
+                while !self.has_byte() {}
+                Ok(())
+            }
+        }
     }
 
     /// Reads a byte. Blocks indefinitely until a byte is ready to be read.
     pub fn read_byte(&mut self) -> u8 {
-        unimplemented!()
+        while !self.has_byte() {}
+        self.registers.IO_REG.read()
     }
 }
 

@@ -6,6 +6,7 @@ use volatile::{Volatile, WriteVolatile, ReadVolatile, Reserved};
 
 /// An alternative GPIO function.
 #[repr(u8)]
+#[derive(Copy, Clone)]
 pub enum Function {
     Input = 0b000,
     Output = 0b001,
@@ -103,7 +104,13 @@ impl Gpio<Uninitialized> {
     /// Enables the alternative function `function` for `self`. Consumes self
     /// and returns a `Gpio` structure in the `Alt` state.
     pub fn into_alt(self, function: Function) -> Gpio<Alt> {
-        unimplemented!()
+        let fsel = &mut self.registers.FSEL[(self.pin / 10) as usize];
+        let shift_amount = 3 * u32::from(self.pin % 10);
+
+        fsel.and_mask(!(7u32 << shift_amount));
+        fsel.or_mask((u32::from(function as u8)) << shift_amount);
+
+        self.transition()
     }
 
     /// Sets this pin to be an _output_ pin. Consumes self and returns a `Gpio`
@@ -122,12 +129,12 @@ impl Gpio<Uninitialized> {
 impl Gpio<Output> {
     /// Sets (turns on) the pin.
     pub fn set(&mut self) {
-        unimplemented!()
+        self.registers.SET[(self.pin / 32) as usize].write(1 << (u32::from(self.pin) % 32));
     }
 
     /// Clears (turns off) the pin.
     pub fn clear(&mut self) {
-        unimplemented!()
+        self.registers.CLR[(self.pin / 32) as usize].write(1 << (u32::from(self.pin) % 32));
     }
 }
 
@@ -135,6 +142,6 @@ impl Gpio<Input> {
     /// Reads the pin's value. Returns `true` if the level is high and `false`
     /// if the level is low.
     pub fn level(&mut self) -> bool {
-        unimplemented!()
+        self.registers.LEV[(self.pin / 32) as usize].read() & (1 << (u32::from(self.pin) % 32)) != 0
     }
 }
