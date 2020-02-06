@@ -18,6 +18,7 @@ use console::kprintln;
 use pi::{gpio, timer};
 use core::time::Duration;
 use pi::uart::MiniUart;
+use core::fmt::Write;
 
 // FIXME: You need to add dependencies here to
 // test your drivers (Phase 2). Add them as needed.
@@ -38,6 +39,8 @@ fn kmain() -> ! {
         pin.clear();
         timer::spin_sleep(Duration::from_millis(100));
     }
+
+    kprintln!("{:?} {:?}", toggle, timer::current_time());
 
     loop {
 //        pin.set();

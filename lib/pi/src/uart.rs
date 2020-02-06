@@ -11,6 +11,7 @@ use crate::timer;
 use crate::common::IO_BASE;
 use crate::gpio::{Gpio, Function};
 use crate::uart::LsrStatus::{DataReady, TxAvailable};
+use core::fmt::Error;
 
 /// The base address for the `MU` registers.
 const MU_REG_BASE: usize = IO_BASE + 0x215040;
@@ -106,7 +107,7 @@ impl MiniUart {
     /// Write the byte `byte`. This method blocks until there is space available
     /// in the output FIFO.
     pub fn write_byte(&mut self, byte: u8) {
-        // while !self.can_send() {}
+        while !self.can_send() {}
         self.registers.IO_REG.write(byte);
     }
 
@@ -155,13 +156,54 @@ impl MiniUart {
 // FIXME: Implement `fmt::Write` for `MiniUart`. A b'\r' byte should be written
 // before writing any b'\n' byte.
 
-mod uart_io {
+impl fmt::Write for MiniUart {
+    fn write_str(&mut self, s: &str) -> Result<(), Error> {
+        for byte in s.as_bytes().iter() {
+            if *byte == b'\n' {
+                self.write_byte(b'\r');
+            }
+            self.write_byte(*byte);
+        }
+        Ok(())
+    }
+}
+
+pub mod uart_io {
     use super::io;
     use super::MiniUart;
     use volatile::prelude::*;
+    use shim::ioerr;
 
-    // FIXME: Implement `io::Read` and `io::Write` for `MiniUart`.
-    //
+    impl io::Write for MiniUart {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            for byte in buf.iter() {
+                self.write_byte(*byte);
+            }
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl io::Read for MiniUart {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            match self.wait_for_byte() {
+                Ok(_) => {
+                    for i in 0..buf.len() {
+                        if !self.has_byte() {
+                            return Ok(i)
+                        }
+                        buf[i] = self.read_byte();
+                    }
+                    Ok(buf.len())
+                }
+                Err(_) => ioerr!(TimedOut, "read timed out"),
+            }
+        }
+    }
+
     // The `io::Read::read()` implementation must respect the read timeout by
     // waiting at most that time for the _first byte_. It should not wait for
     // any additional bytes but _should_ read as many bytes as possible. If the
