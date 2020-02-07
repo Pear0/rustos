@@ -1,6 +1,7 @@
 use crate::atags::raw;
 
 pub use crate::atags::raw::{Core, Mem};
+use core::intrinsics::size_of;
 
 /// An ATAG.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -15,33 +16,52 @@ pub enum Atag {
 impl Atag {
     /// Returns `Some` if this is a `Core` ATAG. Otherwise returns `None`.
     pub fn core(self) -> Option<Core> {
-        unimplemented!()
+        match self {
+            Atag::Core(s) => Some(s),
+            _ => None,
+        }
     }
 
     /// Returns `Some` if this is a `Mem` ATAG. Otherwise returns `None`.
     pub fn mem(self) -> Option<Mem> {
-        unimplemented!()
+        match self {
+            Atag::Mem(s) => Some(s),
+            _ => None,
+        }
     }
 
     /// Returns `Some` with the command line string if this is a `Cmd` ATAG.
     /// Otherwise returns `None`.
     pub fn cmd(self) -> Option<&'static str> {
-        unimplemented!()
+        match self {
+            Atag::Cmd(s) => Some(s),
+            _ => None,
+        }
     }
 }
 
-// FIXME: Implement `From<&raw::Atag> for `Atag`.
+fn parse_cmd(cmd: &raw::Cmd) -> &'static str {
+    let mut size = 0usize;
+    let ptr = &cmd.cmd as *const u8;
+
+    while unsafe { *(ptr.add(size)) } != b'\0' {
+        size += 1;
+    }
+
+    let buf = unsafe { core::slice::from_raw_parts(&cmd.cmd, size) };
+    unsafe { core::str::from_utf8_unchecked(buf) }
+}
+
 impl From<&'static raw::Atag> for Atag {
     fn from(atag: &'static raw::Atag) -> Atag {
-        // FIXME: Complete the implementation below.
 
         unsafe {
             match (atag.tag, &atag.kind) {
-                (raw::Atag::CORE, &raw::Kind { core }) => unimplemented!(),
-                (raw::Atag::MEM, &raw::Kind { mem }) => unimplemented!(),
-                (raw::Atag::CMDLINE, &raw::Kind { ref cmd }) => unimplemented!(),
-                (raw::Atag::NONE, _) => unimplemented!(),
-                (id, _) => unimplemented!(),
+                (raw::Atag::CORE, &raw::Kind { core }) => Atag::Core(core),
+                (raw::Atag::MEM, &raw::Kind { mem }) =>  Atag::Mem(mem),
+                (raw::Atag::CMDLINE, &raw::Kind { ref cmd }) =>  Atag::Cmd(parse_cmd(cmd)),
+                (raw::Atag::NONE, _) => Atag::None,
+                (id, _) => Atag::Unknown(id),
             }
         }
     }

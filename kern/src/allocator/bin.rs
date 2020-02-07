@@ -15,6 +15,7 @@ use crate::allocator::LocalAlloc;
 ///   map_to_bin(size) -> k
 ///   
 
+#[derive(Debug)]
 pub struct Allocator {
     // FIXME: Add the necessary fields.
 }

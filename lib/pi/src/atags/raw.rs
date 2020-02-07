@@ -1,3 +1,5 @@
+use core::mem::transmute;
+
 /// A raw `ATAG` as laid out in memory.
 #[repr(C)]
 pub struct Atag {
@@ -18,9 +20,18 @@ impl Atag {
     pub const VIDEOLFB: u32 = 0x54410008;
     pub const CMDLINE: u32 = 0x54410009;
 
-    /// FIXME: Returns the ATAG following `self`, if there is one.
     pub fn next(&self) -> Option<&Atag> {
-        unimplemented!()
+        if self.tag == Atag::NONE {
+            None
+        } else {
+            let mut atag = (self as *const Atag) as *const u32;
+
+            atag = unsafe { atag.add(self.dwords as usize) };
+
+            let next = unsafe { &*(atag as *const Atag) };
+
+            Some(next)
+        }
     }
 }
 

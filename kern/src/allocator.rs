@@ -4,7 +4,7 @@ mod util;
 mod bin;
 mod bump;
 
-type AllocatorImpl = bin::Allocator;
+type AllocatorImpl = bump::Allocator;
 
 #[cfg(test)]
 mod tests;
@@ -78,7 +78,19 @@ pub fn memory_map() -> Option<(usize, usize)> {
     let page_size = 1 << 12;
     let binary_end = unsafe { (&__text_end as *const u8) as usize };
 
-    unimplemented!("memory map")
+    let mut mem_end = 0u32;
+
+    for atag in Atags::get() {
+        if let Some(mem) = atag.mem() {
+            mem_end = mem.start + mem.size;
+        }
+    }
+
+    if (mem_end as usize) < binary_end {
+        panic!("mem_end {} < binary_end {}", mem_end, binary_end);
+    }
+
+    Some((binary_end, mem_end as usize))
 }
 
 impl fmt::Debug for Allocator {
