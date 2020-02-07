@@ -131,9 +131,9 @@ impl MiniUart {
             Some(timeout) => {
                 let end = timer::current_time() + timeout;
 
-                while !self.has_byte() && end < timer::current_time() {}
+                while !self.has_byte() && timer::current_time() < end {}
 
-                if end < timer::current_time() {
+                if timer::current_time() < end {
                     Ok(())
                 } else {
                     Err(())

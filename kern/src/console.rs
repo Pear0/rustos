@@ -2,8 +2,6 @@ use core::fmt;
 use pi::uart::MiniUart;
 use shim::io;
 
-use pi::uart::uart_io;
-
 use crate::mutex::Mutex;
 
 /// A global singleton allowing read/write access to the console.

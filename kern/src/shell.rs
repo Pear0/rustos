@@ -37,12 +37,84 @@ impl<'a> Command<'a> {
 
     /// Returns this command's path. This is equivalent to the first argument.
     fn path(&self) -> &str {
-        unimplemented!()
+        self.args[0]
     }
+}
+
+fn bell() {
+    CONSOLE.lock().write_byte(7);
+}
+
+fn backspace() {
+    let mut console = CONSOLE.lock();
+    console.write_byte(8);
+    console.write_byte(b' ');
+    console.write_byte(8);
+}
+
+fn read_byte() -> u8 {
+    CONSOLE.lock().read_byte()
 }
 
 /// Starts a shell using `prefix` as the prefix for each line. This function
 /// returns if the `exit` command is called.
 pub fn shell(prefix: &str) -> ! {
-    unimplemented!()
+    kprintln!();
+    loop {
+        kprint!("{}", prefix);
+        let mut raw_buf = [0u8; 512];
+        let mut line_buf = StackVec::new(&mut raw_buf);
+
+        'line_loop: loop {
+            match read_byte() {
+                b'\r' | b'\n' => {
+                    kprintln!();
+                    break 'line_loop;
+                }
+                8u8 | 127u8 => {
+                    if line_buf.len() > 0 {
+                        backspace();
+                        line_buf.pop();
+                    } else {
+                        bell();
+                    }
+                }
+                // if we are in the first or fourth ASCII block and
+                // haven't already handled it, treat this as invalid.
+                byte if byte < 0x20 || byte >= 0x80 => bell(),
+                byte => match line_buf.push(byte) {
+                    Ok(()) => CONSOLE.lock().write_byte(byte),
+                    Err(_) => bell(),
+                }
+            }
+        }
+
+        let text_buf = core::str::from_utf8(line_buf.as_slice());
+        let mut arg_buf = [""; 64];
+        match Command::parse(text_buf.unwrap(), &mut arg_buf) {
+            Err(Error::Empty) => {}
+            Err(Error::TooManyArgs) => {
+                kprintln!("error: too many arguments");
+            }
+            Ok(mut command) => process_command(&mut command)
+        }
+    }
 }
+
+fn process_command(command: &mut Command) {
+    match command.path() {
+        "echo" => {
+            for (i, arg) in command.args.iter().skip(1).enumerate() {
+                if i > 0 {
+                    kprint!(" ");
+                }
+                kprint!("{}", arg);
+            }
+            kprintln!();
+        }
+        path => {
+            kprintln!("unknown command: {}", path);
+        }
+    }
+}
+

@@ -12,7 +12,6 @@ mod tests;
 pub use progress::{Progress, ProgressFn};
 
 use read_ext::ReadExt;
-use std::convert::TryInto;
 
 const SOH: u8 = 0x01;
 const EOT: u8 = 0x04;
@@ -226,6 +225,7 @@ impl<T: io::Read + io::Write> Xmodem<T> {
         } else if read == CAN {
             ioerr!(ConnectionAborted, "ConnectionAborted")
         } else {
+//            dbg!(read);
             ioerr!(InvalidData, expected)
         }
     }
