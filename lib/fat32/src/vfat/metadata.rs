@@ -29,11 +29,99 @@ pub struct Timestamp {
 /// Metadata for a directory entry.
 #[derive(Default, Debug, Clone)]
 pub struct Metadata {
-    // FIXME: Fill me in.
+    pub attributes: Attributes,
+    pub creation: Timestamp,
+    pub last_accessed: Timestamp,
+    pub last_modified: Timestamp,
 }
 
-// FIXME: Implement `traits::Timestamp` for `Timestamp`.
+impl Attributes {
+    pub fn read_only(&self) -> bool {
+        (self.0 & 0x1) != 0
+    }
+    pub fn hidden(&self) -> bool {
+        (self.0 & 0x2) != 0
+    }
+    pub fn system(&self) -> bool {
+        (self.0 & 0x4) != 0
+    }
+    pub fn volume_id(&self) -> bool {
+        (self.0 & 0x8) != 0
+    }
+    pub fn directory(&self) -> bool {
+        (self.0 & 0x10) != 0
+    }
+    pub fn archive(&self) -> bool {
+        (self.0 & 0x20) != 0
+    }
+}
 
-// FIXME: Implement `traits::Metadata` for `Metadata`.
+impl traits::Timestamp for Timestamp {
+    fn year(&self) -> usize {
+        1980 + (self.date.0 >> 9) as usize
+    }
 
-// FIXME: Implement `fmt::Display` (to your liking) for `Metadata`.
+    fn month(&self) -> u8 {
+        ((self.date.0 >> 5) & 0b1111) as u8
+    }
+
+    fn day(&self) -> u8 {
+        (self.date.0 & 0b1_1111) as u8
+    }
+
+    fn hour(&self) -> u8 {
+        (self.time.0 >> 11) as u8
+    }
+
+    fn minute(&self) -> u8 {
+        ((self.time.0 >> 5) & 0b11_1111) as u8
+    }
+
+    fn second(&self) -> u8 {
+        ((self.time.0 & 0b1_1111) * 2) as u8
+    }
+}
+
+impl traits::Metadata for Metadata {
+    type Timestamp = Timestamp;
+
+    fn read_only(&self) -> bool {
+        self.attributes.read_only()
+    }
+
+    fn hidden(&self) -> bool {
+        self.attributes.hidden()
+    }
+
+    fn created(&self) -> Self::Timestamp {
+        self.creation
+    }
+
+    fn accessed(&self) -> Self::Timestamp {
+        self.last_accessed
+    }
+
+    fn modified(&self) -> Self::Timestamp {
+        self.last_modified
+    }
+}
+
+impl fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use traits::Timestamp;
+        f.write_fmt(format_args!("{}-{}-{} {}:{}:{}", self.year(), self.month(), self.day(), self.hour(), self.minute(), self.second()))
+    }
+}
+
+impl fmt::Display for Metadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use traits::Metadata;
+        f.debug_struct("Metadata")
+            .field("read_only", &self.read_only())
+            .field("hidden", &self.hidden())
+            .field("created", &self.creation)
+            .field("modified", &self.last_modified)
+            .field("accessed", &self.last_accessed)
+            .finish()
+    }
+}

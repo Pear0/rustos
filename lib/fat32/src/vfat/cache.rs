@@ -76,6 +76,34 @@ impl CachedPartition {
         Some(physical_sector)
     }
 
+    fn load_sector(&mut self, buf: &mut Vec<u8>, sector: u64) -> io::Result<()> {
+        buf.clear();
+        buf.resize(self.partition.sector_size as usize, 0);
+
+        let physical_sector = self.virtual_to_physical(sector).ok_or(io::ErrorKind::InvalidInput)?;
+
+        for i in 0..self.factor() {
+            let mut raw = &mut buf.as_mut_slice()[(i*self.device.sector_size()) as usize..];
+            let s = self.device.read_sector(physical_sector + i, raw)?;
+        }
+
+        Ok(())
+    }
+
+    fn get_entry(&mut self, sector: u64) -> io::Result<&mut CacheEntry> {
+        if let None = self.cache.get_mut(&sector) {
+            let mut buf: Vec<u8> = Vec::new();
+            self.load_sector(&mut buf, sector)?;
+
+            self.cache.insert(sector, CacheEntry {
+                dirty: false,
+                data: buf,
+            });
+        }
+
+        Ok(self.cache.get_mut(&sector).unwrap())
+    }
+
     /// Returns a mutable reference to the cached sector `sector`. If the sector
     /// is not already cached, the sector is first read from the disk.
     ///
@@ -87,7 +115,10 @@ impl CachedPartition {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get_mut(&mut self, sector: u64) -> io::Result<&mut [u8]> {
-        unimplemented!("CachedPartition::get_mut()")
+        self.get_entry(sector).map(|entry| {
+            entry.dirty = true;
+            entry.data.as_mut_slice()
+        })
     }
 
     /// Returns a reference to the cached sector `sector`. If the sector is not
@@ -97,7 +128,7 @@ impl CachedPartition {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get(&mut self, sector: u64) -> io::Result<&[u8]> {
-        unimplemented!("CachedPartition::get()")
+        self.get_entry(sector).map(|entry| entry.data.as_slice())
     }
 }
 
@@ -105,15 +136,29 @@ impl CachedPartition {
 // `write_sector` methods should only read/write from/to cached sectors.
 impl BlockDevice for CachedPartition {
     fn sector_size(&self) -> u64 {
-        unimplemented!()
+        self.device.sector_size()
     }
 
     fn read_sector(&mut self, sector: u64, buf: &mut [u8]) -> io::Result<usize> {
-        unimplemented!()
+        match self.get(sector) {
+            Ok(read_sector) => {
+                let amt = core::cmp::min(read_sector.len(), buf.len());
+                buf[..amt].clone_from_slice(&read_sector[..amt]);
+                Ok(amt)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     fn write_sector(&mut self, sector: u64, buf: &[u8]) -> io::Result<usize> {
-        unimplemented!()
+        match self.get_mut(sector) {
+            Ok(write_to_sector) => {
+                let amt = core::cmp::min(write_to_sector.len(), buf.len());
+                write_to_sector[..amt].clone_from_slice(&buf[..amt]);
+                Ok(amt)
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 

@@ -62,4 +62,12 @@ impl FileSystem {
 }
 
 // FIXME: Implement `fat32::traits::FileSystem` for `&FileSystem`
-impl fat32::traits::FileSystem for &FileSystem {}
+impl fat32::traits::FileSystem for &FileSystem {
+    type File = fat32::vfat::File<PiVFatHandle>;
+    type Dir = fat32::vfat::Dir<PiVFatHandle>;
+    type Entry = fat32::vfat::Entry<PiVFatHandle>;
+
+    fn open<P: AsRef<Path>>(self, path: P) -> io::Result<Self::Entry> {
+        self.0.lock().as_ref().unwrap().open(path)
+    }
+}

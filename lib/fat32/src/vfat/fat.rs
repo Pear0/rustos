@@ -25,7 +25,15 @@ pub struct FatEntry(pub u32);
 impl FatEntry {
     /// Returns the `Status` of the FAT entry `self`.
     pub fn status(&self) -> Status {
-        unimplemented!("FatEntry::status()")
+        match self.0 & 0x0FFF_FFFF {
+            0x0 => Status::Free,
+            0x1 => Status::Reserved,
+            0x2 ..= 0xFFF_FFEF => Status::Data(Cluster::from(self.0)),
+            0xFFF_FFF0 ..= 0xFFF_FFF6 => Status::Reserved,
+            0xFFF_FFF7 => Status::Bad,
+            0xFFF_FFF8 ..= 0xFFF_FFFF => Status::Eoc(self.0),
+            _ => unreachable!(),
+        }
     }
 }
 
