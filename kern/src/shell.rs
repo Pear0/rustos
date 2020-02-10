@@ -5,12 +5,12 @@ use stack_vec::StackVec;
 
 use pi::atags::Atags;
 
-//use fat32::traits::FileSystem;
-//use fat32::traits::{Dir, Entry};
+use fat32::traits::FileSystem;
+use fat32::traits::{Dir, Entry};
 
 use crate::console::{kprint, kprintln, CONSOLE};
-//use crate::ALLOCATOR;
-//use crate::FILESYSTEM;
+use crate::ALLOCATOR;
+use crate::FILESYSTEM;
 
 /// Error type for `Command` parse failures.
 #[derive(Debug)]
@@ -122,6 +122,38 @@ fn process_command(command: &mut Command) {
             }
             kprintln!();
         }
+        "ls" => {
+            if command.args.len() == 1 {
+                kprintln!("gimme a path");
+            } else {
+                let dir = command.args[1];
+
+                let entry = FILESYSTEM.open("/").expect("could not open");
+
+                match entry {
+                    fat32::vfat::Entry::File(f) => kprintln!("{:?}", f),
+                    fat32::vfat::Entry::Dir(f) => {
+                        kprintln!("{:?}", f);
+
+                        let entries = f.entries();
+
+                        kprintln!("got entries");
+
+                        let entries = entries.expect("could not list");
+
+                        kprintln!("unwrapped entries");
+
+                        for entry in entries {
+                            kprintln!("{:?}", entry);
+                        }
+
+                    },
+                }
+
+            }
+
+        }
+
         path => {
             kprintln!("unknown command: {}", path);
         }

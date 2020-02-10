@@ -57,7 +57,20 @@ impl FileSystem {
     ///
     /// Panics if the underlying disk or file sytem failed to initialize.
     pub unsafe fn initialize(&self) {
-        unimplemented!("FileSystem::initialize()")
+        use fat32::traits::BlockDevice;
+        let mut sd = sd::Sd::new().expect("failed to init sd card");
+
+        let mut buf = [0u8; 512];
+
+        for i in 0..40_000 {
+            if i % 2 == 0 {
+                sd.read_sector(i, &mut buf).expect("failed to read");
+            }
+        }
+
+        let vfat = VFat::<PiVFatHandle>::from(sd).expect("failed to init vfat");
+
+        self.0.lock().replace(vfat);
     }
 }
 

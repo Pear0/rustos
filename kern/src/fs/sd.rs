@@ -1,6 +1,8 @@
 use core::time::Duration;
 use shim::io;
 use shim::ioerr;
+use pi::timer;
+use crate::console::kprintln;
 
 use fat32::traits::BlockDevice;
 
@@ -28,8 +30,24 @@ extern "C" {
     fn sd_readsector(n: i32, buffer: *mut u8) -> i32;
 }
 
-// FIXME: Define a `#[no_mangle]` `wait_micros` function for use by `libsd`.
-// The `wait_micros` C signature is: `void wait_micros(unsigned int);`
+const sleep_multiplier: u64 = 1;
+static mut wait_timeout: Duration = Duration::from_secs(0);
+
+#[no_mangle]
+fn wait_micros(num: u32) {
+    timer::spin_sleep(Duration::from_micros(sleep_multiplier * (num as u64)));
+//    let start = timer::current_time();
+//    let mut num = Duration::from_micros(sleep_multiplier * (num as u64));
+//
+//    while timer::current_time() - start < num {
+//
+//        // exit early if we pass the timeout
+//        if timer::current_time() > unsafe { wait_timeout } {
+//            return;
+//        }
+//
+//    }
+}
 
 /// A handle to an SD card controller.
 #[derive(Debug)]
@@ -42,7 +60,13 @@ impl Sd {
     /// with atomic memory access, but we can't use it yet since we haven't
     /// written the memory management unit (MMU).
     pub unsafe fn new() -> Result<Sd, io::Error> {
-        unimplemented!("Sd::new()")
+        wait_timeout = timer::current_time() + Duration::from_secs(2);
+        match sd_init() {
+            0 => Ok(Sd{}),
+            -1 => ioerr!(TimedOut, "sd init timed out"),
+            -2 => ioerr!(BrokenPipe, "could not send init command"),
+            _ => ioerr!(Other, "init unknown initialization error"),
+        }
     }
 }
 
@@ -60,7 +84,32 @@ impl BlockDevice for Sd {
     ///
     /// An error of kind `Other` is returned for all other errors.
     fn read_sector(&mut self, n: u64, buf: &mut [u8]) -> io::Result<usize> {
-        unimplemented!("Sd::read_sector()")
+        if buf.len() < 512 {
+            return ioerr!(InvalidInput, "invalid buf len");
+        }
+        if n > i32::max_value() as u64 {
+            kprintln!("Tried reading invalid block num: {}", n);
+            return ioerr!(InvalidInput, "invalid block number");
+        }
+
+        kprintln!("read_sector({})", n);
+
+        let result = unsafe {
+            wait_timeout = timer::current_time() + Duration::from_secs(2);
+            sd_readsector(n as i32, buf.as_mut_ptr())
+        };
+
+        if result == 0 {
+            return match unsafe { sd_err } {
+                -1 => ioerr!(TimedOut, "sd read timed out"),
+                -2 => ioerr!(BrokenPipe, "could not send command"),
+                _ => ioerr!(Other, "unknown initialization error"),
+            }
+        }
+
+        kprintln!("> DONE");
+
+        Ok(512)
     }
 
     fn write_sector(&mut self, _n: u64, _buf: &[u8]) -> io::Result<usize> {
