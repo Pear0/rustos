@@ -109,7 +109,7 @@ impl traits::Metadata for Metadata {
 impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use traits::Timestamp;
-        f.write_fmt(format_args!("{}-{}-{} {}:{}:{}", self.year(), self.month(), self.day(), self.hour(), self.minute(), self.second()))
+        f.write_fmt(format_args!("{:0>4}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2}", self.year(), self.month(), self.day(), self.hour(), self.minute(), self.second()))
     }
 }
 

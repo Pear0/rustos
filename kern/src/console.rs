@@ -49,7 +49,13 @@ impl io::Read for Console {
 
 impl io::Write for Console {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.inner().write(buf)
+        for byte in buf.iter() {
+            if *byte == b'\n' {
+                self.inner().write_byte(b'\r');
+            }
+            self.inner().write_byte(*byte);
+        }
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

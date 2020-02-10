@@ -38,7 +38,7 @@ impl VFatHandle for PiVFatHandle {
         f(&mut self.0.lock())
     }
 }
-pub struct FileSystem(Mutex<Option<PiVFatHandle>>);
+pub struct FileSystem(pub Mutex<Option<PiVFatHandle>>);
 
 impl FileSystem {
     /// Returns an uninitialized `FileSystem`.
@@ -60,13 +60,13 @@ impl FileSystem {
         use fat32::traits::BlockDevice;
         let mut sd = sd::Sd::new().expect("failed to init sd card");
 
-        let mut buf = [0u8; 512];
-
-        for i in 0..40_000 {
-            if i % 2 == 0 {
-                sd.read_sector(i, &mut buf).expect("failed to read");
-            }
-        }
+//        let mut buf = [0u8; 512];
+//
+//        for i in 0..40_000 {
+//            if i % 2 == 0 {
+//                sd.read_sector(i, &mut buf).expect("failed to read");
+//            }
+//        }
 
         let vfat = VFat::<PiVFatHandle>::from(sd).expect("failed to init vfat");
 

@@ -27,31 +27,26 @@ extern "C" {
     /// global. `sd_err` will be set to -1 if a timeout occured or -2 if an
     /// error sending commands to the SD controller occured. Other error codes
     /// are also possible but defined only as being less than zero.
+    ///
+    /// The buffer MUST BE 4 byte ALIGNED.
+    ///
     fn sd_readsector(n: i32, buffer: *mut u8) -> i32;
 }
 
-const sleep_multiplier: u64 = 1;
-static mut wait_timeout: Duration = Duration::from_secs(0);
+const SLEEP_MULTIPLIER: u64 = 1;
+const DEBUG: bool = false;
 
 #[no_mangle]
 fn wait_micros(num: u32) {
-    timer::spin_sleep(Duration::from_micros(sleep_multiplier * (num as u64)));
-//    let start = timer::current_time();
-//    let mut num = Duration::from_micros(sleep_multiplier * (num as u64));
-//
-//    while timer::current_time() - start < num {
-//
-//        // exit early if we pass the timeout
-//        if timer::current_time() > unsafe { wait_timeout } {
-//            return;
-//        }
-//
-//    }
+    if DEBUG {
+        kprintln!("Wait: {}", num);
+    }
+    timer::spin_sleep(Duration::from_micros(SLEEP_MULTIPLIER * (num as u64)));
 }
 
 /// A handle to an SD card controller.
 #[derive(Debug)]
-pub struct Sd;
+pub struct Sd();
 
 impl Sd {
     /// Initializes the SD card controller and returns a handle to it.
@@ -60,7 +55,6 @@ impl Sd {
     /// with atomic memory access, but we can't use it yet since we haven't
     /// written the memory management unit (MMU).
     pub unsafe fn new() -> Result<Sd, io::Error> {
-        wait_timeout = timer::current_time() + Duration::from_secs(2);
         match sd_init() {
             0 => Ok(Sd{}),
             -1 => ioerr!(TimedOut, "sd init timed out"),
@@ -83,7 +77,7 @@ impl BlockDevice for Sd {
     /// reading from the SD card.
     ///
     /// An error of kind `Other` is returned for all other errors.
-    fn read_sector(&mut self, n: u64, buf: &mut [u8]) -> io::Result<usize> {
+    fn read_sector(&mut self, mut n: u64, buf: &mut [u8]) -> io::Result<usize> {
         if buf.len() < 512 {
             return ioerr!(InvalidInput, "invalid buf len");
         }
@@ -92,12 +86,11 @@ impl BlockDevice for Sd {
             return ioerr!(InvalidInput, "invalid block number");
         }
 
-        kprintln!("read_sector({})", n);
+        if DEBUG {
+            kprintln!("read_sector({}, buf.len() == {}), buf = {:x}", n, buf.len(), buf.as_ptr() as usize);
+        }
 
-        let result = unsafe {
-            wait_timeout = timer::current_time() + Duration::from_secs(2);
-            sd_readsector(n as i32, buf.as_mut_ptr())
-        };
+        let result = unsafe { sd_readsector(n as i32, buf.as_mut_ptr()) };
 
         if result == 0 {
             return match unsafe { sd_err } {
@@ -107,7 +100,9 @@ impl BlockDevice for Sd {
             }
         }
 
-        kprintln!("> DONE");
+        if DEBUG {
+            kprintln!("> DONE");
+        }
 
         Ok(512)
     }

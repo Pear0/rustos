@@ -1,14 +1,18 @@
 use shim::io;
 use shim::path::{Path, PathBuf};
 
+use alloc::string::String;
+
 use stack_vec::StackVec;
+use core::ops::DerefMut;
 
 use pi::atags::Atags;
 
 use fat32::traits::FileSystem;
-use fat32::traits::{Dir, Entry};
+use fat32::traits::{Dir, Entry, File, Metadata};
 
 use crate::console::{kprint, kprintln, CONSOLE};
+use crate::timer;
 use crate::ALLOCATOR;
 use crate::FILESYSTEM;
 
@@ -51,6 +55,147 @@ impl<'a> Command<'a> {
     }
 }
 
+struct Shell {
+    cwd: Option<String>
+}
+
+type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
+
+impl Shell {
+    pub fn new() -> Shell {
+        Shell {
+            cwd: None,
+        }
+    }
+
+    pub fn cwd(&self) -> &str {
+        match &self.cwd {
+            Some(s) => s.as_str(),
+            None => "/"
+        }
+    }
+
+    fn open_file(&self, piece: &str) -> io::Result<FEntry> {
+        let mut path = Path::new(piece);
+        if path.has_root() {
+            FILESYSTEM.open(path)
+        } else {
+            FILESYSTEM.open(Path::new(self.cwd()).join(path))
+        }
+    }
+
+    fn describe_ls_entry(&self, entry: FEntry, show_all: bool) {
+        if !show_all && (entry.metadata().hidden() || entry.name() == "." || entry.name() == "..") {
+            return
+        }
+
+        let mut line = String::new();
+        if entry.is_dir() {
+            line.push('d');
+        } else {
+            line.push('-');
+        }
+        if entry.metadata().hidden() {
+            line.push('h');
+        } else {
+            line.push('-');
+        }
+        if entry.metadata().read_only() {
+            line.push('r');
+        } else {
+            line.push('-');
+        }
+
+        let size = match &entry {
+            fat32::vfat::Entry::<crate::fs::PiVFatHandle>::File(f) => f.size(),
+            fat32::vfat::Entry::<crate::fs::PiVFatHandle>::Dir(d) => 0,
+        };
+
+        kprintln!("{} {:>7} {} {}", line, size, entry.metadata().modified(), entry.name());
+
+    }
+
+    pub fn process_command(&mut self, command: &mut Command) {
+        match command.path() {
+            "echo" => {
+                for (i, arg) in command.args.iter().skip(1).enumerate() {
+                    if i > 0 {
+                        kprint!(" ");
+                    }
+                    kprint!("{}", arg);
+                }
+                kprintln!();
+            }
+            "pwd" => {
+                kprintln!("{}", self.cwd());
+            }
+            "cat" => {
+                if command.args.len() < 2 {
+                    kprintln!("expected: cat <path>");
+                } else {
+                    for arg in command.args[1..].iter() {
+                        match self.open_file(arg) {
+                            Ok(e) => {
+                                if e.is_file() {
+                                    let mut f = e.into_file().unwrap();
+                                    let mut lock = CONSOLE.lock();
+                                    io::copy(&mut f, lock.deref_mut());
+                                } else {
+                                    kprintln!("error: not a file");
+                                }
+                            }
+                            Err(e) => {
+                                kprintln!("error: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+            "cd" => {
+                if command.args.len() < 2 {
+                    kprintln!("expected: cd <path>");
+                } else if let Some(s) = Path::new(self.cwd()).join(Path::new(command.args[1])).to_str() {
+                    self.cwd = Some(String::from(s))
+                } else {
+                    kprintln!("invalid path");
+                }
+            }
+            "ls" => {
+                let mut dir: &str = self.cwd();
+                let mut all = false;
+                for arg in command.args[1..].iter() {
+                    match *arg {
+                        "-a" => all = true,
+                        other => dir = other,
+                    }
+                }
+
+                let entry = FILESYSTEM.open(dir).expect("could not open");
+
+                match &entry {
+                    fat32::vfat::Entry::File(f) => self.describe_ls_entry(entry, true),
+                    fat32::vfat::Entry::Dir(f) => {
+
+                        let entries = f.entries();
+                        let entries = entries.expect("could not list");
+
+                        for entry in entries {
+                            self.describe_ls_entry(entry, all);
+                        }
+                    }
+                }
+            }
+            "uptime" => {
+                kprintln!("Uptime: {:?}", timer::current_time());
+
+            }
+            path => {
+                kprintln!("unknown command: {}", path);
+            }
+        }
+    }
+}
+
 fn bell() {
     CONSOLE.lock().write_byte(7);
 }
@@ -69,6 +214,7 @@ fn read_byte() -> u8 {
 /// Starts a shell using `prefix` as the prefix for each line. This function
 /// never returns.
 pub fn shell(prefix: &str) -> ! {
+    let mut shell = Shell::new();
     kprintln!();
     loop {
         kprint!("{}", prefix);
@@ -106,56 +252,7 @@ pub fn shell(prefix: &str) -> ! {
             Err(Error::TooManyArgs) => {
                 kprintln!("error: too many arguments");
             }
-            Ok(mut command) => process_command(&mut command)
-        }
-    }
-}
-
-fn process_command(command: &mut Command) {
-    match command.path() {
-        "echo" => {
-            for (i, arg) in command.args.iter().skip(1).enumerate() {
-                if i > 0 {
-                    kprint!(" ");
-                }
-                kprint!("{}", arg);
-            }
-            kprintln!();
-        }
-        "ls" => {
-            if command.args.len() == 1 {
-                kprintln!("gimme a path");
-            } else {
-                let dir = command.args[1];
-
-                let entry = FILESYSTEM.open("/").expect("could not open");
-
-                match entry {
-                    fat32::vfat::Entry::File(f) => kprintln!("{:?}", f),
-                    fat32::vfat::Entry::Dir(f) => {
-                        kprintln!("{:?}", f);
-
-                        let entries = f.entries();
-
-                        kprintln!("got entries");
-
-                        let entries = entries.expect("could not list");
-
-                        kprintln!("unwrapped entries");
-
-                        for entry in entries {
-                            kprintln!("{:?}", entry);
-                        }
-
-                    },
-                }
-
-            }
-
-        }
-
-        path => {
-            kprintln!("unknown command: {}", path);
+            Ok(mut command) => shell.process_command(&mut command)
         }
     }
 }

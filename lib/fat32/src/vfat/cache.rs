@@ -5,6 +5,7 @@ use hashbrown::HashMap;
 use shim::io;
 
 use crate::traits::BlockDevice;
+use crate::util::SliceExt;
 
 #[derive(Debug)]
 struct CacheEntry {
@@ -25,6 +26,7 @@ pub struct CachedPartition {
     device: Box<dyn BlockDevice>,
     cache: HashMap<u64, CacheEntry>,
     partition: Partition,
+    cache_line_buffer: Vec<u32>,
 }
 
 impl CachedPartition {
@@ -45,15 +47,16 @@ impl CachedPartition {
     ///
     /// Panics if the partition's sector size is < the device's sector size.
     pub fn new<T>(device: T, partition: Partition) -> CachedPartition
-    where
-        T: BlockDevice + 'static,
+        where
+            T: BlockDevice + 'static,
     {
         assert!(partition.sector_size >= device.sector_size());
 
         CachedPartition {
             device: Box::new(device),
             cache: HashMap::new(),
-            partition: partition,
+            partition,
+            cache_line_buffer: Vec::new(),
         }
     }
 
@@ -76,15 +79,27 @@ impl CachedPartition {
         Some(physical_sector)
     }
 
+    /// Create 4-byte aligned line buffer.
+    fn line_buffer(buffer: &mut Vec<u32>, sector_size: u64) -> &mut [u8] {
+        let length = (sector_size / 4) + if sector_size % 4 != 0 { 1 } else { 0 };
+        buffer.resize(length as usize, 0);
+        unsafe { buffer.as_mut_slice().cast_mut() }
+    }
+
     fn load_sector(&mut self, buf: &mut Vec<u8>, sector: u64) -> io::Result<()> {
         buf.clear();
-        buf.resize(self.partition.sector_size as usize, 0);
+        buf.reserve(self.partition.sector_size as usize);
 
         let physical_sector = self.virtual_to_physical(sector).ok_or(io::ErrorKind::InvalidInput)?;
 
         for i in 0..self.factor() {
-            let mut raw = &mut buf.as_mut_slice()[(i*self.device.sector_size()) as usize..];
-            let s = self.device.read_sector(physical_sector + i, raw)?;
+            let mut raw = Self::line_buffer(&mut self.cache_line_buffer, self.device.sector_size());
+            self.device.read_sector(physical_sector + i, raw)?;
+
+            for c in raw.iter() {
+                buf.push(*c);
+            }
+
         }
 
         Ok(())
