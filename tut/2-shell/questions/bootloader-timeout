@@ -1,0 +1,4 @@
+
+If the bootloader starts before the transmitter/ttywrite is running, it will miss the initial NAK.
+Without timeout retrying on the bootloader, both will be stuck waiting for a message from the other.
+

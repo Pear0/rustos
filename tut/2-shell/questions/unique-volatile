@@ -1,0 +1,3 @@
+
+It allows a Volatile<T> to be shared across threads if T is Sync.
+a Volatile<T> cannot on its own be shared across threads.

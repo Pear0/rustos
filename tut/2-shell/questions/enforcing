@@ -1,0 +1,4 @@
+
+They restrict access by only implementing the correct Readable and Writable traits.
+The Readable and Writable traits only provide methods to read() and write() a value respectively.
+

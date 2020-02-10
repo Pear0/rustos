@@ -1,0 +1,5 @@
+
+
+You'd use SPSET0 and GPCLR0 as well as GPFSEL2.
+
+GPIO pin 27 = physical pin 13

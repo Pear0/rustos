@@ -1,0 +1,5 @@
+
+std::Vec doesn't expose the underlying storage where as StackVec does. Therefore std::Vec is able to perform an
+unsafe move out of the underlying storage without breaking guarantees. In contrast, when the StackVec disappears,
+the caller still has a copy of the slice and may read the slice so all elements must be valid. The correct way to
+fix it is to Copy/Clone out of the slice.

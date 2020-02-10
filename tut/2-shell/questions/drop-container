@@ -1,0 +1,3 @@
+
+A direct &mut T can never "release the lock" on the runtime mutability. A container implementing
+drop is able to release the lock when it goes out of scope through implementing the Drop trait.

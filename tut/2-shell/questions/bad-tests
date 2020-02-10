@@ -1,0 +1,4 @@
+
+To test ttywrite, there would need to be a similar Xmodem receiver. Our only version is the bootloader but it
+cannot easily be integrated into a test.
+

@@ -1,0 +1,10 @@
+
+The bound is necessary because it enforces that any T stored in the StackVec lives at least as long as the
+underlying slice, not just the StackVec.
+
+If it weren't for the explicit lifetime, Rust wouldn't be able to check that an item being inserted in the StackVec
+outlives the underlying slice.
+
+
+
+

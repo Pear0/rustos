@@ -1,0 +1,2 @@
+
+StackVec cannot allocate memory. push will fail if there is no more capacity in the underlying slice.

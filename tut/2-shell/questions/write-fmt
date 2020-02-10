@@ -1,0 +1,4 @@
+
+
+MutexGuard<Console> implements DerefMut to &mut Console which allows the code to call write_fmt even though
+MutexGuard<Console> doesn't directly have a write_fmt method.

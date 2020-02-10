@@ -1,0 +1,3 @@
+
+The indexing tests would fail because indexing operations deref to a slice.
+the mut indexing test would fail if DerefMut were not implemented for the same reason.

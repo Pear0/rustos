@@ -1,0 +1,4 @@
+
+Shell uses the Console which uses UART which uses GPIO to set the alt functions.
+Shell also uses StackVec to buffer user input and parse args. It does so without heap allocations!
+

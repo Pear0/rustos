@@ -1,0 +1,3 @@
+
+The use ReadVolatile<u32> enforces that (without using unsafe), we can only read(). There is no function
+defined on ReadVolatile<u32> that would write to the register.
