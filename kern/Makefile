@@ -34,18 +34,10 @@ qemu-asm: build
 
 transmit: build
 	@echo "+ Transmitting build/$(KERN).bin to $(TTY_PATH)"
-<<<<<<< HEAD
 	ttywrite -i build/$(KERN).bin $(TTY_PATH)
-	screen $(TTY_PATH) 115200
-||||||| constructed merge base
-	# ttywrite -i build/$(KERN).bin $(TTY_PATH)
-	../lib/ttywrite/target/debug/ttywrite -i build/$(KERN).bin $(TTY_PATH)
-=======
-	# ttywrite -i build/$(KERN).bin $(TTY_PATH)
-
-	ttywrite -i build/$(KERN).bin $(TTY_PATH)
+	# screen $(TTY_PATH) 115200
 	(stty -f $(TTY_PATH) 115200 >/dev/null | cat $(TTY_PATH) ) 2>/dev/null
->>>>>>> [lab 3] Implement atags, bump allocator
+
 
 objdump: build
 	cargo objdump -- -disassemble -no-show-raw-insn -print-imm-hex build/$(KERN).elf
