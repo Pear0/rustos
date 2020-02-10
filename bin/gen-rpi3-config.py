@@ -5,9 +5,7 @@ import sys
 import subprocess
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
-# READELF = os.path.join(ROOT, "aarch64-readelf")
-READELF = '/usr/local/Cellar/llvm@8/8.0.1_1/bin/llvm-readelf'
-
+READELF = os.path.join(ROOT, "aarch64-readelf")
 CONFIG = """\
 arm_control=0x200
 kernel_address=0x%x

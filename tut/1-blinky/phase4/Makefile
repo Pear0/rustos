@@ -4,11 +4,6 @@ KERN := blinky
 KERN_DEBUG := target/aarch64-unknown-none/debug/${KERN}
 KERN_RELEASE := target/aarch64-unknown-none/release/${KERN}
 
-# export PATH := /usr/lib/llvm-8/bin:$(PATH)
-# export PATH := /usr/local/Cellar/llvm@8/8.0.1_1/bin:$(PATH)
-# SHELL := env "PATH=$(PATH)" /bin/bash
-
-
 OBJCPY := cargo objcopy -- --strip-all -O binary
 
 .PHONY: all debug release qemu objdump nm check clean install test
