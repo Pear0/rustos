@@ -4,57 +4,36 @@
 #![feature(asm)]
 #![feature(global_asm)]
 #![feature(optin_builtin_traits)]
+#![feature(raw_vec_internals)]
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
 #[cfg(not(test))]
 mod init;
 
+extern crate alloc;
+
+pub mod allocator;
 pub mod console;
+pub mod fs;
 pub mod mutex;
 pub mod shell;
 
 use console::kprintln;
-use pi::{gpio, timer};
-use core::time::Duration;
-use pi::uart::MiniUart;
 
-use crate::console::CONSOLE;
+use allocator::Allocator;
+use fs::FileSystem;
 
-// FIXME: You need to add dependencies here to
-// test your drivers (Phase 2). Add them as needed.
+#[cfg_attr(not(test), global_allocator)]
+pub static ALLOCATOR: Allocator = Allocator::uninitialized();
+pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
 
 fn kmain() -> ! {
-    // FIXME: Start the shell.
+    unsafe {
+        ALLOCATOR.initialize();
+        FILESYSTEM.initialize();
+    }
 
-//    let mut pin = gpio::Gpio::new(16).into_output();
-    // pin.set();
-
-   shell::shell("> ");
-
-//    loop {
-////        pin.set();
-//         let byte = uart.read_byte();
-////        pin.clear();
-//        uart.write_byte(byte);
-//        if toggle {
-//            pin.clear();
-//        } else {
-//            pin.set();
-//        }
-//
-//        timer::spin_sleep(Duration::from_millis(100));
-//    }
-
-//    loop {
-//        pin.set();
-//
-//        timer::spin_sleep(Duration::from_millis(100));
-//
-//        pin.clear();
-//
-//        timer::spin_sleep(Duration::from_millis(100));
-//
-//    }
-
+    kprintln!("Welcome to cs3210!");
+    shell::shell("> ");
 }
