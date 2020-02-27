@@ -43,7 +43,7 @@ pub fn sys_exit(tf: &mut TrapFrame) {
 ///
 /// It only returns the usual status value.
 pub fn sys_write(b: u8, tf: &mut TrapFrame) {
-	unimplemented!("sys_write()");
+    unimplemented!("sys_write()");
 }
 
 /// Returns current process's ID.

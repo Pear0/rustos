@@ -32,7 +32,6 @@ impl VMManager {
     /// Set up the virtual memory manager.
     /// The caller should assure that `initialize()` has been called before calling this function.
     /// Sets proper configuration bits to MAIR_EL1, TCR_EL1, TTBR0_EL1, and TTBR1_EL1 registers.
-    /// XXX: isb(), dsb() ??
     ///
     /// # Panics
     ///
