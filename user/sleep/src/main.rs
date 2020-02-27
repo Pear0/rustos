@@ -16,7 +16,7 @@ pub extern "C" fn _start() -> ! {
         let ms = 10000;
         let error: u64;
         let elapsed_ms: u64;
-        
+
         unsafe {
             asm!("mov x0, $2
                   svc 1

@@ -138,7 +138,7 @@ impl PageTable {
 }
 
 // FIXME: Implement `IntoIterator` for `&PageTable`.
-    
+
 pub struct KernPageTable(Box<PageTable>);
 
 impl KernPageTable {

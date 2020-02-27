@@ -1,12 +1,14 @@
+use alloc::boxed::Box;
 use alloc::collections::vec_deque::VecDeque;
+use core::fmt;
+
+use aarch64::*;
 
 use crate::mutex::Mutex;
 use crate::param::{PAGE_MASK, PAGE_SIZE, TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State};
 use crate::traps::TrapFrame;
 use crate::VMM;
-
-use aarch64::*;
 
 /// Process scheduler for the entire machine.
 #[derive(Debug)]
@@ -18,14 +20,21 @@ impl GlobalScheduler {
         GlobalScheduler(Mutex::new(None))
     }
 
+    /// Enter a critical region and execute the provided closure with the
+    /// internal scheduler.
+    pub fn critical<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut Scheduler) -> R,
+    {
+        let mut guard = self.0.lock();
+        f(guard.as_mut().expect("scheduler uninitialized"))
+    }
+
+
     /// Adds a process to the scheduler's queue and returns that process's ID.
     /// For more details, see the documentation on `Scheduler::add()`.
     pub fn add(&self, process: Process) -> Option<Id> {
-        self.0
-            .lock()
-            .as_mut()
-            .expect("scheduler uninitialized")
-            .add(process)
+        self.critical(move |scheduler| scheduler.add(process))
     }
 
     /// Performs a context switch using `tf` by setting the state of the current
@@ -33,18 +42,13 @@ impl GlobalScheduler {
     /// restoring the next process's trap frame into `tf`. For more details, see
     /// the documentation on `Scheduler::schedule_out()` and `Scheduler::switch_to()`.
     pub fn switch(&self, new_state: State, tf: &mut TrapFrame) -> Id {
-        self.0
-            .lock()
-            .as_mut()
-            .expect("scheduler uninitialized")
-            .schedule_out(new_state, tf);
-
+        self.critical(|scheduler| scheduler.schedule_out(new_state, tf));
         self.switch_to(tf)
     }
 
     pub fn switch_to(&self, tf: &mut TrapFrame) -> Id {
         loop {
-            let rtn = self.try_switch_to(tf);
+            let rtn = self.critical(|scheduler| scheduler.switch_to(tf));
             if let Some(id) = rtn {
                 return id;
             }
@@ -52,24 +56,11 @@ impl GlobalScheduler {
         }
     }
 
-    #[must_use]
-    fn try_switch_to(&self, tf: &mut TrapFrame) -> Option<Id> {
-        self.0
-            .lock()
-            .as_mut()
-            .expect("scheduler uninitialized")
-            .switch_to(tf)
-    }
-
     /// Kills currently running process and returns that process's ID.
     /// For more details, see the documentaion on `Scheduler::kill()`.
     #[must_use]
     pub fn kill(&self, tf: &mut TrapFrame) -> Option<Id> {
-        self.0
-            .lock()
-            .as_mut()
-            .expect("scheduler uninitialized")
-            .kill(tf)
+        self.critical(|scheduler| scheduler.kill(tf))
     }
 
     /// Starts executing processes in user space using timer interrupt based
@@ -101,7 +92,8 @@ impl GlobalScheduler {
     // }
 }
 
-struct Scheduler {
+#[derive(Debug)]
+pub struct Scheduler {
     processes: VecDeque<Process>,
     last_id: Option<Id>,
 }

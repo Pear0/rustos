@@ -18,19 +18,19 @@ pub fn sys_sleep(ms: u32, tf: &mut TrapFrame) {
     unimplemented!("sys_sleep()");
 }
 
-/// Returns current time. 
+/// Returns current time.
 ///
-/// This system call does not take parameter. 
+/// This system call does not take parameter.
 ///
 /// In addition to the usual status value, this system call returns two
-/// parameter: 
+/// parameter:
 ///  - current time as seconds
 ///  - fractional part of the current time, in nanoseconds.
 pub fn sys_time(tf: &mut TrapFrame) {
     unimplemented!("sys_time()");
 }
 
-/// Kills current process. 
+/// Kills current process.
 ///
 /// This system call does not take paramer and does not return any value.
 pub fn sys_exit(tf: &mut TrapFrame) {
@@ -50,7 +50,7 @@ pub fn sys_write(b: u8, tf: &mut TrapFrame) {
 ///
 /// This system call does not take parameter.
 ///
-/// In addition to the usual status value, this system call returns a 
+/// In addition to the usual status value, this system call returns a
 /// parameter: the current process's ID.
 pub fn sys_getpid(tf: &mut TrapFrame) {
     unimplemented!("sys_getpid()");

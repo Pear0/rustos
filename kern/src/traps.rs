@@ -1,13 +1,12 @@
 mod frame;
-mod irq;
 mod syndrome;
 mod syscall;
 
-use pi::interrupt::{Controller, Interrupt};
-
+pub mod irq;
 pub use self::frame::TrapFrame;
 
-use self::irq::handle_irq;
+use pi::interrupt::{Controller, Interrupt};
+
 use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
 

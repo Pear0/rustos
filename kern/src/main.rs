@@ -18,9 +18,9 @@ pub mod allocator;
 pub mod console;
 pub mod fs;
 pub mod mutex;
+pub mod shell;
 pub mod param;
 pub mod process;
-pub mod shell;
 pub mod traps;
 pub mod vm;
 
@@ -29,6 +29,7 @@ use console::kprintln;
 use allocator::Allocator;
 use fs::FileSystem;
 use process::GlobalScheduler;
+use traps::irq::Irq;
 use vm::VMManager;
 
 #[cfg_attr(not(test), global_allocator)]
@@ -36,14 +37,14 @@ pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
 pub static SCHEDULER: GlobalScheduler = GlobalScheduler::uninitialized();
 pub static VMM: VMManager = VMManager::uninitialized();
+pub static IRQ: Irq = Irq::uninitialized();
 
-unsafe fn kmain() -> ! {
-
-    ALLOCATOR.initialize();
-    FILESYSTEM.initialize();
+fn kmain() -> ! {
+    unsafe {
+        ALLOCATOR.initialize();
+        FILESYSTEM.initialize();
+    }
 
     kprintln!("Welcome to cs3210!");
-    loop {
-        shell::shell("> ");
-    }
+    shell::shell("> ");
 }
