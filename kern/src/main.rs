@@ -49,12 +49,20 @@ use crate::fs::sd::Sd;
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
 
+fn init_jtag() {
+   use gpio::{Function, Gpio};
+
+   for pin in 22..=27 {
+      Gpio::new(pin).into_alt(Function::Alt4);
+   }
+}
+
 fn kmain() -> ! {
+
+    init_jtag();
 
     // This is so that the host computer can attach serial console/screen whatever.
     timer::spin_sleep(Duration::from_millis(100));
-
-    timer::spin_sleep(Duration::from_millis(1000));
 
     for atag in pi::atags::Atags::get() {
         kprintln!("{:?}", atag);
@@ -72,7 +80,9 @@ fn kmain() -> ! {
 
     // FIXME: Start the shell.
 
-//    let mut pin = gpio::Gpio::new(16).into_output();
+
+
+    // let mut pin = gpio::Gpio::new(16).into_output();
     // pin.set();
 
 //    let mut large_buf: Vec<u8> = Vec::new();
