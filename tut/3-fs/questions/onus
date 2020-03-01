@@ -1,0 +1,13 @@
+
+In Rust, sizes are 99% tracked by the type system so no space at all needs to be reserved to store the size.
+In a case where the size is not known, the caller/compiler must track the size by requesting additional space.
+
+This allows a very efficient fastbin implementation in Rust. Suppose you have code that allocates massive numbers
+of very small objects. In LibC, even though each allocation may be served by a fastbin, more memory operations are
+required to load/store the size of the chunk, recalling it on free() to determine the right bin.
+
+This may also have security benefits. Some heap exploits are based around corrupting metadata of an allocated chunk.
+(for example, to create two heap regions that overlap) By pushing this information to the caller, it is significantly
+harder to exploit because assertions can be added. on free(). However this is a little limited because if you want
+to merge smallbins, you need the sizes of neighboring chunks and there is no way to verify them.
+

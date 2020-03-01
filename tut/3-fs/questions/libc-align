@@ -1,0 +1,5 @@
+
+
+LibC malloc stores metadata with each chunk. Because of this metadata, there's no point allocating chunks below a
+certain size so it's used as the minimum granularity when allocating.
+

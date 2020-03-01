@@ -1,0 +1,8 @@
+
+
+pub fn is_lfn(&self) -> bool {
+        (unsafe { self.unknown.attributes } == 0xF)
+    }
+
+This corresponds to fields LFN=READ_ONLY|HIDDEN|SYSTEM|VOLUME_ID.
+

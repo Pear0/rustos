@@ -1,0 +1,11 @@
+
+
+Some functions are probably missing but generally the call stack looks like this:
+
+bin::alloc (our allocator)
+alloc::__rust_alloc (function added by Rust that will call our #[global_allocator]
+heap::reallocate() (used by RawVec to increase capacity)
+RawVec::push() (vec internals)
+Vec::push()
+
+

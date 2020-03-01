@@ -1,0 +1,5 @@
+
+
+The maximum number of clusters is determined by the enumeration of clusters.
+Since a 32bit nummber is used but only the bottom 28bits are really used for indexing,
+the maximum number of clusters is approximately 2**28 or 268,435,456.

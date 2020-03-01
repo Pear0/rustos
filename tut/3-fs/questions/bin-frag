@@ -1,0 +1,9 @@
+
+My external fragmentation is highly optimal right now.
+
+To improve internal fragmentation, I could switch from power of 2 bin sizing to multiple of 8 bin sizing for smaller
+bins.
+
+If this were a threaded allocator, I could also have a background process coalesce bins slowly to avoid
+death by a million tiny bins.
+

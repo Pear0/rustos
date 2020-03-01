@@ -1,0 +1,5 @@
+Safety in Rust is inductive, unfortunately interfacing with the outside world is unsafe.
+If we add code that forces memory safety when interacting with the outside world, the rust is our
+code that relies on it is safe by induction. Of course the "safe" rust code is only truly safe
+if the base "unsafe-to-safe" code is sound (and the compiler/OS/hardware/etc has no bugs), but it
+decreases the suspect code that may cause a memory issue.

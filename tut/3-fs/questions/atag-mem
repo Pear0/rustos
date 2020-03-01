@@ -1,0 +1,4 @@
+Mem { size: 994050048, start: 0 }
+
+It is 99.41% of a gigabyte which is commonly used in storage measurements.
+It is only 92.58% of a gibibyte which is what most software cares about.

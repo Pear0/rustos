@@ -1,0 +1,7 @@
+
+
+Rust's safety is embedded into the API/type system. Without having the source code for a Rust library,
+Rust can still guarantee safety. Since other languages don't have the same thing built in (because most FFI goes through `C` ABI LOL)
+there's no way Rust knows for sure what is safe and since the Rust compiler did not compile the other code, it doesn't
+want to assume that it's safe.
+

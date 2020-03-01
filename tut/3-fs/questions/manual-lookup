@@ -1,0 +1,25 @@
+
+
+/a/b/c.txt
+^ get root cluster and load directory entries
+
+/a/b/c.txt
+ ^ iterate through entries until a name match occurs,
+   assert directory and grab cluster
+
+/a/b/c.txt
+  ^ load directory entries
+
+/a/b/c.txt
+   ^ iterate through entries until a name match occurs,
+     assert directory and grab cluster
+
+/a/b/c.txt
+    ^ load directory entries
+
+/a/b/c.txt
+     ^ iterate through entries until a name match occurs,
+       assert file and grab cluster
+
+Tada
+

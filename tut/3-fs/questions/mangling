@@ -1,0 +1,18 @@
+
+
+Mangling is an artifact of compiling to an assembly/machine code format that is linkable.
+If two semantically different functions have the same link name you will get link errors or the wrong
+function may be called.
+
+for example,
+
+fn foo(x: i32) -> ....
+fn foo(x: f32) -> ....
+
+if these are both not mangled the linker will see two names `_foo` and calls will be `call _foo`. The function that
+ends up getting called assuming the linker and compiler don't give an error is somewhat random.
+
+Mangling enables the function to be uniquely identified by the full function signature rather than just the name.
+
+for example `_foo_1i32` and `_foo_1f32` won't exhibit the same collision.
+

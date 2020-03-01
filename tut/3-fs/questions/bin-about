@@ -1,0 +1,14 @@
+
+
+I have 30 bins, powers of 2, minimum size 8. Upper bins will never be used because there is not enough wilderness.
+I did it this way for simplicity and to enable external fragmentation optimizations later on.
+
+My allocator aligns_up the wilderness to 8 bytes and this is the only external fragmentation ever created.
+All future allocations are 8 bytes or a power of 2 multiple of 8 bytes. If we are unaligned for a large bin,
+rather than aligning up and creating external fragmentation, smaller bins are added to the free bins so as to fill up
+the space up to the required alignment. Due to the above size constraints, this will always fill perfectly.
+
+bins may be split into smaller bins if memory is tight but never coalesced into larger bins.
+
+external: 7 bytes maximum
+internal: lots. I think 50% is the theoretical maximum.

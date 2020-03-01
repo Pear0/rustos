@@ -1,0 +1,7 @@
+
+
+My Sd implementation is not thread safe because it does not perform any synchronization on its own.
+
+However all usage of my Sd is thread-safe because it is only constructed for VFat which is wrapped in
+a PiVFatHandle which has a mutex, synchronizing multithread access.
+
