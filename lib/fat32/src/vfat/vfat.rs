@@ -42,8 +42,8 @@ pub struct SeekHandle {
 
 impl<HANDLE: VFatHandle> VFat<HANDLE> {
     pub fn from<T>(mut device: T) -> Result<HANDLE, Error>
-    where
-        T: BlockDevice + 'static,
+        where
+            T: BlockDevice + 'static,
     {
         let mbr = MasterBootRecord::from(&mut device).map_err(|e| Error::Mbr(e))?;
 
@@ -56,7 +56,7 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
         let device_sector_size = device.sector_size();
 
         Ok(HANDLE::new(VFat {
-            phantom: PhantomData{},
+            phantom: PhantomData {},
             device: CachedPartition::new(device, Partition {
                 start: partition.relative_sector as u64,
                 num_sectors: (partition.total_sectors as u64) / ((bpb.bytes_per_sector as u64) / device_sector_size),
@@ -76,6 +76,9 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
     }
 
     pub fn read_cluster(&mut self, cluster: Cluster, mut offset: usize, buf: &mut [u8]) -> io::Result<usize> {
+        if offset >= self.cluster_size_bytes() {
+            return Ok(0)
+        }
 
         let cluster_start = self.cluster_start(cluster);
         let cluster_end = cluster_start + self.sectors_per_cluster as u64;
@@ -85,7 +88,6 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
 
         let mut ptr: usize = 0;
         'sector_loop: while ptr < buf.len() && current_sector < cluster_end {
-
             let sector_data = &self.device.get(current_sector)?[offset..];
             offset = 0;
 
@@ -103,6 +105,10 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
         Ok(ptr)
     }
 
+    fn cluster_size_bytes(&self) -> usize {
+        self.bytes_per_sector as usize * self.sectors_per_cluster as usize
+    }
+
     pub fn read_cluster_unaligned(&mut self, mut cloff: SeekHandle, buf: &mut [u8]) -> io::Result<(usize, SeekHandle)> {
         let mut written = 0usize;
 
@@ -112,7 +118,7 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
             cloff.offset += amt;
             cloff.total_offset += amt;
 
-            if cloff.offset == (self.sectors_per_cluster as usize) * (self.bytes_per_sector as usize) {
+            if cloff.offset == self.cluster_size_bytes() {
                 match self.fat_entry(cloff.cluster)?.status() {
                     Status::Data(next) => cloff = SeekHandle { cluster: next, offset: 0, total_offset: cloff.total_offset },
                     Status::Eoc(_) => break 'cluster_loop,
@@ -130,7 +136,7 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
 
         'cluster_loop: loop {
             let start = buf.len();
-            buf.resize(start + self.bytes_per_sector as usize * self.sectors_per_cluster as usize, 0);
+            buf.resize(start + self.cluster_size_bytes(), 0);
             let wrote = self.read_cluster(cluster, 0, &mut buf.as_mut_slice()[start..])?;
             buf.truncate(start + wrote);
 
@@ -158,6 +164,38 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
         self.rootdir_cluster
     }
 
+    pub fn seek_handle(&mut self, start: Cluster, cloff: SeekHandle, offset: usize) -> io::Result<SeekHandle> {
+
+        let mut current_cluster: Cluster;
+        let mut current_offset: usize;
+        if offset > cloff.total_offset {
+            // we can be smart and seek from current cluster
+
+            current_cluster = cloff.cluster;
+            current_offset = offset - cloff.total_offset;
+        } else {
+            // we need to seek from file start cluster
+
+            current_cluster = start;
+            current_offset = offset;
+        }
+
+        'cluster_loop: while current_offset >= self.cluster_size_bytes() {
+            match self.fat_entry(current_cluster)?.status() {
+                Status::Data(next) => current_cluster = next,
+                Status::Eoc(_) => break 'cluster_loop,
+                _ => return ioerr!(Other, "unexpected fat entry"),
+            }
+
+            current_offset -= self.cluster_size_bytes();
+        }
+
+        Ok(SeekHandle {
+            total_offset: offset,
+            offset: current_offset,
+            cluster: current_cluster,
+        })
+    }
 }
 
 impl<'a, HANDLE: VFatHandle> FileSystem for &'a HANDLE {
@@ -166,7 +204,7 @@ impl<'a, HANDLE: VFatHandle> FileSystem for &'a HANDLE {
     type Entry = Entry<HANDLE>;
 
     fn open<P: AsRef<Path>>(self, path: P) -> io::Result<Self::Entry> {
-        use crate::traits::{Entry as TraitEntry};
+        use crate::traits::Entry as TraitEntry;
 
         let mut pointer: Entry<HANDLE> = Entry::Dir(Dir::root(self.clone()));
 
@@ -174,9 +212,9 @@ impl<'a, HANDLE: VFatHandle> FileSystem for &'a HANDLE {
             match component {
                 Component::RootDir => pointer = Entry::Dir(Dir::root(self.clone())),
                 Component::Normal(s) => match pointer.as_dir() {
-                        Some(d) => pointer = d.find(s)?,
-                        None => return ioerr!(PermissionDenied, "found file in path traversal"),
-                    }
+                    Some(d) => pointer = d.find(s)?,
+                    None => return ioerr!(PermissionDenied, "found file in path traversal"),
+                }
                 _ => return ioerr!(InvalidInput, "unexpected path item"),
             }
         }

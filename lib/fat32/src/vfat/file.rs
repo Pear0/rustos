@@ -1,5 +1,6 @@
 use alloc::string::String;
 
+use shim::ioerr;
 use shim::io::{self, SeekFrom};
 
 use crate::traits;
@@ -35,7 +36,7 @@ impl<HANDLE: VFatHandle> File<HANDLE> {
 
 impl<HANDLE: VFatHandle> traits::File for File<HANDLE> {
     fn sync(&mut self) -> io::Result<()> {
-        unimplemented!()
+        unimplemented!("read only file system")
     }
 
     fn size(&self) -> u64 {
@@ -45,11 +46,11 @@ impl<HANDLE: VFatHandle> traits::File for File<HANDLE> {
 
 impl<HANDLE: VFatHandle> io::Write for File<HANDLE> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        unimplemented!()
+        unimplemented!("read only file system")
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        unimplemented!()
+        unimplemented!("read only file system")
     }
 }
 
@@ -83,7 +84,23 @@ impl<HANDLE: VFatHandle> io::Seek for File<HANDLE> {
     ///
     /// Seeking before the start of a file or beyond the end of the file results
     /// in an `InvalidInput` error.
-    fn seek(&mut self, _pos: SeekFrom) -> io::Result<u64> {
-        unimplemented!("File::seek()")
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+
+        let f = |offset| self.vfat.lock(|fs| {
+            if offset < 0 {
+                return ioerr!(InvalidInput, "cannot seek before start of file");
+            }
+
+            fs.seek_handle(self.cluster, self.pointer, offset as usize)
+        });
+
+        let cloff = match pos {
+            SeekFrom::Start(start) => f(start as isize)?,
+            SeekFrom::End(end) => f(self.size as isize + end as isize)?,
+            SeekFrom::Current(current) => f(self.pointer.total_offset as isize + current as isize)?,
+        };
+
+        self.pointer = cloff;
+        Ok(cloff.total_offset as u64)
     }
 }
