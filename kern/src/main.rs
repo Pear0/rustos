@@ -4,6 +4,7 @@
 #![feature(asm)]
 #![feature(global_asm)]
 #![feature(optin_builtin_traits)]
+#![feature(ptr_internals)]
 #![feature(raw_vec_internals)]
 #![feature(panic_info_message)]
 #![cfg_attr(not(test), no_std)]
@@ -24,6 +25,10 @@ pub mod console;
 pub mod fs;
 pub mod mutex;
 pub mod shell;
+pub mod param;
+pub mod process;
+pub mod traps;
+pub mod vm;
 
 use console::kprintln;
 
@@ -39,6 +44,9 @@ use crate::console::CONSOLE;
 
 use allocator::Allocator;
 use fs::FileSystem;
+use process::GlobalScheduler;
+use traps::irq::Irq;
+use vm::VMManager;
 
 use fat32::vfat::{VFatHandle, Dir as VDir, Metadata};
 use fat32::traits::FileSystem as fs32FileSystem;
@@ -48,6 +56,9 @@ use crate::fs::sd::Sd;
 #[cfg_attr(not(test), global_allocator)]
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
+pub static SCHEDULER: GlobalScheduler = GlobalScheduler::uninitialized();
+pub static VMM: VMManager = VMManager::uninitialized();
+pub static IRQ: Irq = Irq::uninitialized();
 
 fn init_jtag() {
    use gpio::{Function, Gpio};
