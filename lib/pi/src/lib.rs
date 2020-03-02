@@ -8,5 +8,7 @@
 pub mod atags;
 pub mod common;
 pub mod gpio;
+pub mod mbox;
+pub mod pm;
 pub mod timer;
 pub mod uart;

@@ -1,6 +1,10 @@
 use core::panic::PanicInfo;
 use core::fmt::{Write, self};
 use pi::uart::MiniUart;
+use pi::pm::reset;
+use pi::timer::spin_sleep;
+use core::time::Duration;
+
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -38,5 +42,16 @@ fn panic(info: &PanicInfo) -> ! {
         writeln!(uart, "{}", payload);
     }
 
-    loop {}
+    spin_sleep(Duration::from_millis(1500));
+
+    while uart.has_byte() {
+        uart.read_byte();
+    }
+
+    writeln!(uart, "Press any key to reset...");
+
+    while !uart.has_byte() {}
+
+    unsafe { reset(); }
+
 }

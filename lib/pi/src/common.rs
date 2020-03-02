@@ -12,10 +12,51 @@ pub const NCORES: usize = 4;
 pub const SPINNING_BASE: *mut usize = 0xd8 as *mut usize;
 
 /// Generates `pub enums` with no variants for each `ident` passed in.
-pub macro states($($name:ident),*) {
-    $(
-        /// A possible state.
-        #[doc(hidden)]
-        pub enum $name {  }
-    )*
+pub macro states($ ($ name: ident), *) {
+$ (
+/// A possible state.
+# [doc(hidden)]
+pub enum $ name {}
+) *
 }
+
+/// MBox
+pub const VIDEOCORE_MBOX: usize = IO_BASE + 0x0000B880;
+
+pub const MBOX_READ: *mut u32 = (VIDEOCORE_MBOX + 0x0) as *mut u32;
+pub const MBOX_POLL: *mut u32 = (VIDEOCORE_MBOX + 0x10) as *mut u32;
+pub const MBOX_SENDER: *mut u32 = (VIDEOCORE_MBOX + 0x14) as *mut u32;
+pub const MBOX_STATUS: *mut u32 = (VIDEOCORE_MBOX + 0x18) as *mut u32;
+pub const MBOX_CONFIG: *mut u32 = (VIDEOCORE_MBOX + 0x1C) as *mut u32;
+pub const MBOX_WRITE: *mut u32 = (VIDEOCORE_MBOX + 0x20) as *mut u32;
+
+pub const MBOX_RESPONSE: u32 = 0x80000000;
+pub const MBOX_FULL: u32 = 0x80000000;
+pub const MBOX_EMPTY: u32 = 0x40000000;
+
+pub const MBOX_REQUEST: u32 = 0;
+
+/// MBox channels
+pub const MBOX_CH_POWER: u8 = 0;
+pub const MBOX_CH_FB: u8 = 1;
+pub const MBOX_CH_VUART: u8 = 2;
+pub const MBOX_CH_VCHIQ: u8 = 3;
+pub const MBOX_CH_LEDS: u8 = 4;
+pub const MBOX_CH_BTNS: u8 = 5;
+pub const MBOX_CH_TOUCH: u8 = 6;
+pub const MBOX_CH_COUNT: u8 = 7;
+pub const MBOX_CH_PROP: u8 = 8;
+
+/// MBox tags
+pub const MBOX_TAG_GETREVISION: u32 = 0x10002;
+pub const MBOX_TAG_GETMAC: u32 = 0x10003;
+pub const MBOX_TAG_GETSERIAL: u32 = 0x10004;
+pub const MBOX_TAG_LAST: u32 = 0;
+
+
+/// Power Management
+pub const PM_RSTC: *mut u32 = (IO_BASE + 0x0010001c) as *mut u32;
+pub const PM_RSTS: *mut u32 = (IO_BASE + 0x00100020) as *mut u32;
+pub const PM_WDOG: *mut u32 = (IO_BASE + 0x00100024) as *mut u32;
+pub const PM_WDOG_MAGIC: u32 = 0x5a000000;
+pub const PM_RSTC_FULLRST: u32 = 0x00000020;
