@@ -1,10 +1,13 @@
 use shim::io;
-use shim::path::{Path, PathBuf};
+use shim::ioerr;
+use shim::path::{Path, PathBuf, Component};
+// use std::path::{Path, PathBuf, Component};
 
 use alloc::string::String;
 
 use stack_vec::StackVec;
 use core::ops::DerefMut;
+use core::borrow::Borrow;
 
 use pi::atags::Atags;
 
@@ -56,7 +59,7 @@ impl<'a> Command<'a> {
 }
 
 struct Shell {
-    cwd: Option<String>
+    cwd: PathBuf
 }
 
 type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
@@ -64,15 +67,12 @@ type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
 impl Shell {
     pub fn new() -> Shell {
         Shell {
-            cwd: None,
+            cwd: PathBuf::from("/"),
         }
     }
 
-    pub fn cwd(&self) -> &str {
-        match &self.cwd {
-            Some(s) => s.as_str(),
-            None => "/"
-        }
+    pub fn cwd_str(&self) -> &str {
+        self.cwd.to_str().unwrap()
     }
 
     fn open_file(&self, piece: &str) -> io::Result<FEntry> {
@@ -80,7 +80,7 @@ impl Shell {
         if path.has_root() {
             FILESYSTEM.open(path)
         } else {
-            FILESYSTEM.open(Path::new(self.cwd()).join(path))
+            FILESYSTEM.open(self.cwd.join(path))
         }
     }
 
@@ -92,9 +92,12 @@ impl Shell {
         let mut line = String::new();
         if entry.is_dir() {
             line.push('d');
+        } else if entry.metadata().attributes.volume_id() {
+            line.push('V');
         } else {
             line.push('-');
         }
+
         if entry.metadata().hidden() {
             line.push('h');
         } else {
@@ -115,7 +118,7 @@ impl Shell {
 
     }
 
-    pub fn process_command(&mut self, command: &mut Command) {
+    pub fn process_command(&mut self, command: &mut Command) -> io::Result<()> {
         match command.path() {
             "echo" => {
                 for (i, arg) in command.args.iter().skip(1).enumerate() {
@@ -127,7 +130,7 @@ impl Shell {
                 kprintln!();
             }
             "pwd" => {
-                kprintln!("{}", self.cwd());
+                kprintln!("{}", self.cwd_str());
             }
             "cat" => {
                 if command.args.len() < 2 {
@@ -136,10 +139,10 @@ impl Shell {
                     for arg in command.args[1..].iter() {
                         match self.open_file(arg) {
                             Ok(e) => {
-                                if e.is_file() {
-                                    let mut f = e.into_file().unwrap();
+
+                                if let Some(mut f) = e.into_file() {
                                     let mut lock = CONSOLE.lock();
-                                    io::copy(&mut f, lock.deref_mut());
+                                    io::copy(&mut f, lock.deref_mut())?;
                                 } else {
                                     kprintln!("error: not a file");
                                 }
@@ -154,14 +157,36 @@ impl Shell {
             "cd" => {
                 if command.args.len() < 2 {
                     kprintln!("expected: cd <path>");
-                } else if let Some(s) = Path::new(self.cwd()).join(Path::new(command.args[1])).to_str() {
-                    self.cwd = Some(String::from(s))
                 } else {
-                    kprintln!("invalid path");
+
+                    for component in Path::new(command.args[1]).components() {
+                        match component {
+                            Component::Prefix(_) => return ioerr!(InvalidInput, "bad path component"),
+                            Component::RootDir => {
+                                self.cwd = PathBuf::from("/");
+                            },
+                            Component::CurDir => {},
+                            Component::ParentDir => {
+                                self.cwd.pop();
+                            },
+                            c @ Component::Normal(_) => {
+                                let new = self.cwd.join(c);
+
+                                if let fat32::vfat::Entry::Dir(d) = FILESYSTEM.open(new.to_str().unwrap())? {
+                                    self.cwd.push(d.name);
+                                } else {
+                                    kprintln!("error: invalid path");
+                                    return Ok(())
+                                }
+
+                            },
+                        }
+                    }
+
                 }
             }
             "ls" => {
-                let mut dir: &str = self.cwd();
+                let mut dir: &str = self.cwd_str();
                 let mut all = false;
                 for arg in command.args[1..].iter() {
                     match *arg {
@@ -170,14 +195,13 @@ impl Shell {
                     }
                 }
 
-                let entry = FILESYSTEM.open(dir).expect("could not open");
+                let entry = FILESYSTEM.open(dir)?;
 
                 match &entry {
                     fat32::vfat::Entry::File(f) => self.describe_ls_entry(entry, true),
                     fat32::vfat::Entry::Dir(f) => {
 
-                        let entries = f.entries();
-                        let entries = entries.expect("could not list");
+                        let entries = f.entries()?;
 
                         for entry in entries {
                             self.describe_ls_entry(entry, all);
@@ -189,10 +213,28 @@ impl Shell {
                 kprintln!("Uptime: {:?}", timer::current_time());
 
             }
+            "reboot" => {
+                use pi::pm::reset;
+
+                kprintln!("Resetting");
+                unsafe { reset(); }
+
+            }
+            "pi-info" => {
+                use pi::mbox::MBox;
+                kprintln!("Serial: {:?}", MBox::serial_number());
+                kprintln!("MAC: {:?}", MBox::mac_address());
+                kprintln!("Board Revision: {:?}", MBox::board_revision());
+            }
+            "panic" => {
+                panic!("Oh no, panic!");
+            }
             path => {
                 kprintln!("unknown command: {}", path);
             }
         }
+
+        Ok(())
     }
 }
 
@@ -252,7 +294,11 @@ pub fn shell(prefix: &str) -> ! {
             Err(Error::TooManyArgs) => {
                 kprintln!("error: too many arguments");
             }
-            Ok(mut command) => shell.process_command(&mut command)
+            Ok(mut command) => {
+                if let Err(e) = shell.process_command(&mut command) {
+                    kprintln!("error: {}", e);
+                }
+            }
         }
     }
 }
