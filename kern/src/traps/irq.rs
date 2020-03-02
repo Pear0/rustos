@@ -21,12 +21,14 @@ impl Irq {
     /// Register an irq handler for an interrupt.
     /// The caller should assure that `initialize()` has been called before calling this function.
     pub fn register(&self, int: Interrupt, handler: IrqHandler) {
-        unimplemented!("Irq::register()")
+        self.0.lock().as_mut().unwrap()[int as usize] = Some(handler);
     }
 
     /// Executes an irq handler for the givven interrupt.
     /// The caller should assure that `initialize()` has been called before calling this function.
     pub fn invoke(&self, int: Interrupt, tf: &mut TrapFrame) {
-        unimplemented!("Irq::register()")
+        if let Some(handler) = &mut self.0.lock().as_mut().unwrap()[int as usize] {
+            handler(tf);
+        }
     }
 }

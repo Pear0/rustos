@@ -33,7 +33,11 @@ impl Process {
     /// If enough memory could not be allocated to start the process, returns
     /// `None`. Otherwise returns `Some` of the new `Process`.
     pub fn new() -> OsResult<Process> {
-        unimplemented!("Process::new()")
+        Ok(Process {
+            context: Box::new(TrapFrame::default()),
+            stack: Stack::new().ok_or(OsError::NoMemory)?,
+            state: State::Ready,
+        })
     }
 
     /// Load a program stored in the given path by calling `do_load()` method.

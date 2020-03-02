@@ -43,7 +43,14 @@ impl Timer {
     /// interrupts for timer 1 are enabled and IRQs are unmasked, then a timer
     /// interrupt will be issued in `t` duration.
     pub fn tick_in(&mut self, t: Duration) {
-        unimplemented!()
+        let timer_id = 1;
+
+        let current = self.registers.CLO.read();
+        let target = current.wrapping_add(t.as_micros() as u32);
+
+        self.registers.COMPARE[timer_id].write(target);
+        self.registers.CS.write(0b1 << timer_id); // clear any detected match on timer
+
     }
 }
 
@@ -62,5 +69,5 @@ pub fn spin_sleep(t: Duration) {
 /// interrupts for timer 1 are enabled and IRQs are unmasked, then a timer
 /// interrupt will be issued in `t` duration.
 pub fn tick_in(t: Duration) {
-    unimplemented!()
+    Timer::new().tick_in(t);
 }

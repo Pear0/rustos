@@ -8,11 +8,26 @@ use crate::mutex::Mutex;
 use crate::param::{PAGE_MASK, PAGE_SIZE, TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State};
 use crate::traps::TrapFrame;
-use crate::VMM;
+use crate::{VMM, IRQ};
+use crate::shell;
+use crate::console::kprintln;
 
 /// Process scheduler for the entire machine.
 #[derive(Debug)]
 pub struct GlobalScheduler(Mutex<Option<Scheduler>>);
+
+#[no_mangle]
+pub extern "C" fn my_thread() {
+
+    shell::shell("$ ");
+}
+
+extern "C" {
+    fn context_restore();
+
+    fn _start();
+}
+
 
 impl GlobalScheduler {
     /// Returns an uninitialized wrapper around a local scheduler.
@@ -23,8 +38,8 @@ impl GlobalScheduler {
     /// Enter a critical region and execute the provided closure with the
     /// internal scheduler.
     pub fn critical<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut Scheduler) -> R,
+        where
+            F: FnOnce(&mut Scheduler) -> R,
     {
         let mut guard = self.0.lock();
         f(guard.as_mut().expect("scheduler uninitialized"))
@@ -66,7 +81,48 @@ impl GlobalScheduler {
     /// Starts executing processes in user space using timer interrupt based
     /// preemptive scheduling. This method should not return under normal conditions.
     pub fn start(&self) -> ! {
-        unimplemented!("GlobalScheduler::start()")
+        let mut proc = Process::new().unwrap();
+        proc.context.elr = my_thread as u64;
+        proc.context.sp = proc.stack.top().as_u64();
+        proc.context.spsr = 0;
+
+        let el = unsafe { aarch64::current_el() };
+        kprintln!("Current EL: {}", el);
+
+        IRQ.register(pi::interrupt::Interrupt::Timer1, Box::new(|tf| {
+            pi::timer::tick_in(TICK);
+            kprintln!("TICK");
+        }));
+
+        pi::timer::tick_in(TICK);
+        pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
+
+
+        // Bootstrap the first process
+
+        let st = proc.context.as_mut() as *mut TrapFrame as u64;
+        let start = _start as u64;
+
+        unsafe {
+            asm!("  mov x0, $0
+                    mov sp, x0"
+                    :: "r"(st)
+                    :: "volatile");
+        }
+
+        unsafe { context_restore(); }
+
+        unsafe {
+            asm!("  mov x0, $0
+                    mov sp, x0"
+                    :: "r"(start)
+                    :: "volatile");
+        }
+
+        aarch64::eret();
+
+
+        loop {}
     }
 
     /// Initializes the scheduler and add userspace processes to the Scheduler
@@ -145,7 +201,7 @@ impl Scheduler {
     }
 }
 
-pub extern "C" fn  test_user_process() -> ! {
+pub extern "C" fn test_user_process() -> ! {
     loop {
         let ms = 10000;
         let error: u64;

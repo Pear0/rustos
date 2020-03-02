@@ -7,8 +7,11 @@ pub use self::frame::TrapFrame;
 
 use pi::interrupt::{Controller, Interrupt};
 
+use crate::{shell, IRQ};
+use crate::console::kprintln;
 use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
+use crate::traps::Kind::Synchronous;
 
 #[repr(u16)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -41,5 +44,37 @@ pub struct Info {
 /// the trap frame for the exception.
 #[no_mangle]
 pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
-    unimplemented!("handle_exception");
+
+    let ctl = Controller::new();
+
+    match info.kind {
+        Kind::Irq => {
+            for int in Interrupt::iter() {
+                if ctl.is_pending(*int) {
+                    IRQ.invoke(*int, tf);
+                }
+            }
+        },
+        other => {
+            if info.kind == Synchronous {
+                let syndrome = Syndrome::from(esr);
+
+                kprintln!("{:?} {:?}", info, syndrome);
+            }
+            kprintln!("{:?}", info);
+            // kprintln!("{:?}", tf);
+
+            shell::shell("#>");
+
+        }
+    }
+
+    // continue execution
+    if info.kind == Synchronous {
+        let syndrome = Syndrome::from(esr);
+        if let Syndrome::Brk(_) = syndrome {
+            tf.elr += 4;
+        }
+    }
+
 }

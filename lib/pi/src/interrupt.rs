@@ -1,5 +1,6 @@
 use crate::common::IO_BASE;
 
+use shim::const_assert_size;
 use volatile::prelude::*;
 use volatile::{Volatile, ReadVolatile};
 
@@ -77,7 +78,16 @@ impl From<usize> for Interrupt {
 #[allow(non_snake_case)]
 struct Registers {
     // FIXME: Fill me in.
+    irq_basic_pending: Volatile<u32>,
+    irq_pending: [Volatile<u32>; 2],
+    fiq_control: Volatile<u32>,
+    irq_enable: [Volatile<u32>; 2],
+    irq_basic_enable: Volatile<u32>,
+    irq_disable: [Volatile<u32>; 2],
+    irq_basic_disable: Volatile<u32>,
 }
+
+const_assert_size!(Registers, 40);
 
 /// An interrupt controller. Used to enable and disable interrupts as well as to
 /// check if an interrupt is pending.
@@ -93,18 +103,22 @@ impl Controller {
         }
     }
 
+    fn mask(int: Interrupt, regs: &mut [Volatile<u32>; 2]) {
+        regs[(int as usize) / 32].write(1 << ((int as usize) % 32))
+    }
+
     /// Enables the interrupt `int`.
     pub fn enable(&mut self, int: Interrupt) {
-        unimplemented!()
+        Controller::mask(int, &mut self.registers.irq_enable);
     }
 
     /// Disables the interrupt `int`.
     pub fn disable(&mut self, int: Interrupt) {
-        unimplemented!()
+        Controller::mask(int, &mut self.registers.irq_disable);
     }
 
     /// Returns `true` if `int` is pending. Otherwise, returns `false`.
     pub fn is_pending(&self, int: Interrupt) -> bool {
-        unimplemented!()
+        (self.registers.irq_pending[(int as usize) / 32].read() & (1 << ((int as usize) % 32))) != 0
     }
 }

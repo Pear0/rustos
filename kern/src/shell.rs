@@ -59,7 +59,8 @@ impl<'a> Command<'a> {
 }
 
 struct Shell {
-    cwd: PathBuf
+    cwd: PathBuf,
+    dead_shell: bool
 }
 
 type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
@@ -68,6 +69,7 @@ impl Shell {
     pub fn new() -> Shell {
         Shell {
             cwd: PathBuf::from("/"),
+            dead_shell: false,
         }
     }
 
@@ -229,6 +231,13 @@ impl Shell {
             "panic" => {
                 panic!("Oh no, panic!");
             }
+            "exit" => {
+                self.dead_shell = true;
+            }
+            "brk" => {
+
+                aarch64::brk!(7);
+            }
             path => {
                 kprintln!("unknown command: {}", path);
             }
@@ -255,10 +264,10 @@ fn read_byte() -> u8 {
 
 /// Starts a shell using `prefix` as the prefix for each line. This function
 /// never returns.
-pub fn shell(prefix: &str) -> ! {
+pub fn shell(prefix: &str) {
     let mut shell = Shell::new();
     kprintln!();
-    loop {
+    while !shell.dead_shell {
         kprint!("{}", prefix);
         let mut raw_buf = [0u8; 512];
         let mut line_buf = StackVec::new(&mut raw_buf);

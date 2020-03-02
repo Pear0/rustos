@@ -19,6 +19,7 @@ global_asm!(include_str!("init/vectors.s"));
 // so, no debug build support!
 //
 
+#[link_section = ".text.init"]
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
     if MPIDR_EL1.get_value(MPIDR_EL1::Aff0) == 0 {
@@ -87,6 +88,8 @@ unsafe fn switch_to_el1() {
         // set up exception handlers
         // FIXME: load `vectors` addr into appropriate register (guide: 10.4)
 
+        VBAR_EL1.set((&vectors) as *const u64 as u64);
+
         // change execution level to EL1 (ref: C5.2.19)
         SPSR_EL2.set(
             (SPSR_EL2::M & 0b0101) // EL1h
@@ -96,7 +99,9 @@ unsafe fn switch_to_el1() {
             | SPSR_EL2::A,
         );
 
-        // FIXME: eret to itself, expecting current_el() == 1 this time
+        ELR_EL2.set(switch_to_el1 as u64);
+        // ELR_EL1.set(switch_to_el1 as u64);
+        aarch64::eret();
     }
 }
 

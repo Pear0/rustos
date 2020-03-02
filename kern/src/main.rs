@@ -75,105 +75,16 @@ fn kmain() -> ! {
     // This is so that the host computer can attach serial console/screen whatever.
     timer::spin_sleep(Duration::from_millis(100));
 
-    for atag in pi::atags::Atags::get() {
-        kprintln!("{:?}", atag);
-    }
+    // for atag in pi::atags::Atags::get() {
+    //     kprintln!("{:?}", atag);
+    // }
 
     unsafe {
-        kprintln!("Initing allocator");
-
         ALLOCATOR.initialize();
-
-        kprintln!("Initing filesystem");
-
         FILESYSTEM.initialize();
     }
 
-    // FIXME: Start the shell.
+    IRQ.initialize();
+    SCHEDULER.start();
 
-
-
-    // let mut pin = gpio::Gpio::new(16).into_output();
-    // pin.set();
-
-//    let mut large_buf: Vec<u8> = Vec::new();
-
-
-//    kprintln!("Trying to read 2");
-//    FILESYSTEM.0.lock().as_ref().unwrap().lock(|fs| {
-//        fs.read_chain(Cluster::from(2), &mut large_buf);
-//    });
-//
-//    kprintln!("open()");
-
-    {
-//        let lock = FILESYSTEM.0.lock();
-//        let vfat = lock.as_ref().unwrap();
-//
-//        let cluster = vfat.lock(|fs| fs.root_cluster());
-//
-//        let vfat2 = vfat.clone();
-
-//        Vec::<u8>::new().push(b'/');
-        // let name = String::from("/");
-//        let metadata: Metadata = Default::default();
-
-//        VDir {
-//            vfat: vfat.clone(),
-//            cluster: cluster,
-//            name: String::from("/"),
-//            metadata: Default::default()
-//        };
-
-//        VDir::root(vfat.clone());
-
-    }
-
-    let mut entry = FILESYSTEM.open("/config.txt").expect("could not open");
-
-
-
-//    kprintln!("Trying to read 308");
-//    FILESYSTEM.0.lock().as_ref().unwrap().lock(|fs| {
-//        fs.read_chain(Cluster::from(308), &mut large_buf);
-//    });
-
-
-
-    {
-        kprintln!("Reading file:");
-        let mut f = entry.into_file().unwrap();
-        let mut lock = CONSOLE.lock();
-        io::copy(&mut f, lock.deref_mut());
-    }
-
-//    match &mut entry {
-//        fat32::vfat::Entry::File(f) => {
-//            kprintln!("{:?}", f);
-//
-//            {
-//                let mut lock = CONSOLE.lock();
-//                io::copy(f, lock.deref_mut());
-//            }
-//
-//        },
-//        fat32::vfat::Entry::Dir(f) => {
-//            kprintln!("{:?}", f);
-//
-//            let entries = f.entries();
-//
-//            kprintln!("got entries");
-//
-//            let entries = entries.expect("could not list");
-//
-//            kprintln!("unwrapped entries");
-//
-//            for entry in entries {
-//                kprintln!("{:?}", entry);
-//            }
-//
-//        },
-//    }
-
-    shell::shell("> ");
 }
