@@ -30,7 +30,7 @@ pub mod process;
 pub mod traps;
 pub mod vm;
 
-use console::kprintln;
+use console::{kprint, kprintln};
 
 use pi::{gpio, timer};
 use core::time::Duration;
@@ -52,6 +52,7 @@ use fat32::vfat::{VFatHandle, Dir as VDir, Metadata};
 use fat32::traits::FileSystem as fs32FileSystem;
 use fat32::traits::{Dir, Entry, File};
 use crate::fs::sd::Sd;
+use crate::process::Process;
 
 #[cfg_attr(not(test), global_allocator)]
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
@@ -67,6 +68,39 @@ fn init_jtag() {
       Gpio::new(pin).into_alt(Function::Alt4);
    }
 }
+
+#[no_mangle]
+pub extern "C" fn my_thread() {
+
+    shell::shell("$ ");
+}
+
+
+#[no_mangle]
+pub extern "C" fn my_thread2() {
+
+    shell::shell("@ ");
+}
+
+
+#[no_mangle]
+pub extern "C" fn my_thread3() {
+
+    shell::shell("% ");
+}
+
+#[no_mangle]
+pub extern "C" fn my_thread4() {
+
+    let mut g = gpio::Gpio::new(29).into_output();
+    loop {
+        g.set();
+        timer::spin_sleep(Duration::from_millis(250));
+        g.clear();
+        timer::spin_sleep(Duration::from_millis(250));
+    }
+}
+
 
 fn kmain() -> ! {
 
@@ -85,6 +119,28 @@ fn kmain() -> ! {
     }
 
     IRQ.initialize();
+
+    unsafe { SCHEDULER.initialize() };
+
+    {
+        let mut proc = Process::new().unwrap();
+        proc.context.elr = my_thread as u64;
+        SCHEDULER.add(proc);
+    }
+
+    {
+        let mut proc = Process::new().unwrap();
+        proc.context.elr = my_thread4 as u64;
+        SCHEDULER.add(proc);
+    }
+    //
+    // {
+    //     let mut proc = Process::new().unwrap();
+    //     proc.context.elr = my_thread3 as u64;
+    //     SCHEDULER.add(proc);
+    // }
+
+
     SCHEDULER.start();
 
 }

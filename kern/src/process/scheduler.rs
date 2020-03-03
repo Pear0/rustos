@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::collections::vec_deque::VecDeque;
+use core::borrow::{Borrow, BorrowMut};
 use core::fmt;
 
 use aarch64::*;
@@ -8,19 +9,15 @@ use crate::mutex::Mutex;
 use crate::param::{PAGE_MASK, PAGE_SIZE, TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State};
 use crate::traps::TrapFrame;
-use crate::{VMM, IRQ};
+use crate::{VMM, IRQ, SCHEDULER};
 use crate::shell;
+use crate::console::kprint;
 use crate::console::kprintln;
+use core::time::Duration;
 
 /// Process scheduler for the entire machine.
 #[derive(Debug)]
 pub struct GlobalScheduler(Mutex<Option<Scheduler>>);
-
-#[no_mangle]
-pub extern "C" fn my_thread() {
-
-    shell::shell("$ ");
-}
 
 extern "C" {
     fn context_restore();
@@ -67,7 +64,23 @@ impl GlobalScheduler {
             if let Some(id) = rtn {
                 return id;
             }
+
+            // FIXME lol??????? I don't want to DIE
+            unsafe {
+                let mut v = aarch64::regs::CNTKCTL_EL1.get();
+                let m = aarch64::regs::CNTKCTL_EL1::EVNTI;
+
+                v &= !m;
+                // seems to wait around 134μs
+                v |= (13) << m.trailing_zeros();
+
+                v |= aarch64::regs::CNTKCTL_EL1::EVNTEN;
+
+                aarch64::regs::CNTKCTL_EL1.set(v);
+            }
+
             aarch64::wfe();
+
         }
     }
 
@@ -81,17 +94,19 @@ impl GlobalScheduler {
     /// Starts executing processes in user space using timer interrupt based
     /// preemptive scheduling. This method should not return under normal conditions.
     pub fn start(&self) -> ! {
-        let mut proc = Process::new().unwrap();
-        proc.context.elr = my_thread as u64;
-        proc.context.sp = proc.stack.top().as_u64();
-        proc.context.spsr = 0;
+        // let mut proc = Process::new().unwrap();
+        // proc.state = State::Running;
+        // proc.context.elr = my_thread as u64;
+        // proc.context.sp = proc.stack.top().as_u64();
+        // proc.context.spsr = 0;
 
         let el = unsafe { aarch64::current_el() };
         kprintln!("Current EL: {}", el);
 
         IRQ.register(pi::interrupt::Interrupt::Timer1, Box::new(|tf| {
             pi::timer::tick_in(TICK);
-            kprintln!("TICK");
+            // kprintln!("TICK");
+            SCHEDULER.switch(State::Ready, tf);
         }));
 
         pi::timer::tick_in(TICK);
@@ -100,7 +115,10 @@ impl GlobalScheduler {
 
         // Bootstrap the first process
 
-        let st = proc.context.as_mut() as *mut TrapFrame as u64;
+        let mut bootstrap_frame: TrapFrame = Default::default();
+        self.switch_to(&mut bootstrap_frame);
+
+        let st = (&mut bootstrap_frame) as *mut TrapFrame as u64;
         let start = _start as u64;
 
         unsafe {
@@ -121,13 +139,15 @@ impl GlobalScheduler {
 
         aarch64::eret();
 
-
         loop {}
     }
 
     /// Initializes the scheduler and add userspace processes to the Scheduler
     pub unsafe fn initialize(&self) {
-        unimplemented!("GlobalScheduler::initialize()")
+        let lock = &mut self.0.lock();
+        if lock.is_none() {
+            lock.replace(Scheduler::new());
+        }
     }
 
     // The following method may be useful for testing Phase 3:
@@ -157,7 +177,16 @@ pub struct Scheduler {
 impl Scheduler {
     /// Returns a new `Scheduler` with an empty queue.
     fn new() -> Scheduler {
-        unimplemented!("Scheduler::new()")
+        Scheduler {
+            processes: VecDeque::new(),
+            last_id: Some(1),
+        }
+    }
+
+    fn next_id(&mut self) -> Option<Id> {
+        let next = self.last_id?.checked_add(1)?;
+        self.last_id = Some(next);
+        Some(next)
     }
 
     /// Adds a process to the scheduler's queue and returns that process's ID if
@@ -168,7 +197,10 @@ impl Scheduler {
     /// It is the caller's responsibility to ensure that the first time `switch`
     /// is called, that process is executing on the CPU.
     fn add(&mut self, mut process: Process) -> Option<Id> {
-        unimplemented!("Scheduler::add()")
+        let id = self.next_id()?;
+        process.context.tpidr = id;
+        self.processes.push_back(process);
+        Some(id)
     }
 
     /// Finds the currently running process, sets the current process's state
@@ -179,7 +211,21 @@ impl Scheduler {
     /// If the `processes` queue is empty or there is no current process,
     /// returns `false`. Otherwise, returns `true`.
     fn schedule_out(&mut self, new_state: State, tf: &mut TrapFrame) -> bool {
-        unimplemented!("Scheduler::schedule_out()")
+        let proc = self.processes.iter_mut().enumerate()
+            .find(|(_, p)| p.context.tpidr == tf.tpidr);
+        match proc {
+            None => false,
+            Some((idx, proc)) => {
+                proc.state = new_state;
+                *(proc.context.borrow_mut()) = *tf;
+
+                // something is very bad if the entry we found is no longer here.
+                let owned = self.processes.remove(idx).unwrap();
+                self.processes.push_back(owned);
+
+                true
+            }
+        }
     }
 
     /// Finds the next process to switch to, brings the next process to the
@@ -190,14 +236,48 @@ impl Scheduler {
     /// If there is no process to switch to, returns `None`. Otherwise, returns
     /// `Some` of the next process`s process ID.
     fn switch_to(&mut self, tf: &mut TrapFrame) -> Option<Id> {
-        unimplemented!("Scheduler::switch_to()")
+
+        // is_ready() is &mut so it doesn't work with .find() 😡😡😡
+        let mut proc: Option<(usize, &mut Process)> = None;
+        for entry in self.processes.iter_mut().enumerate() {
+            if entry.1.is_ready() {
+                proc = Some(entry);
+                break;
+            }
+        }
+
+        let (idx, proc) = proc?;
+
+        proc.state = State::Running;
+        *tf = *proc.context.borrow();
+
+        let id = proc.context.tpidr;
+
+        // something is very bad if the entry we found is no longer here.
+        let owned = self.processes.remove(idx).unwrap();
+        self.processes.push_front(owned);
+
+        Some(id)
     }
 
     /// Kills currently running process by scheduling out the current process
     /// as `Dead` state. Removes the dead process from the queue, drop the
     /// dead process's instance, and returns the dead process's process ID.
     fn kill(&mut self, tf: &mut TrapFrame) -> Option<Id> {
-        unimplemented!("Scheduler::kill()")
+        let proc = self.processes.iter_mut().enumerate()
+            .find(|(_, p)| p.context.tpidr == tf.tpidr);
+        match proc {
+            None => None,
+            Some((idx, proc)) => {
+                proc.state = State::Dead;
+                *(proc.context.borrow_mut()) = *tf;
+
+                // something is very bad if the entry we found is no longer here.
+                let proc = self.processes.remove(idx).unwrap();
+
+                Some(proc.context.tpidr)
+            }
+        }
     }
 }
 

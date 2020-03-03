@@ -12,6 +12,7 @@ use crate::console::kprintln;
 use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
 use crate::traps::Kind::Synchronous;
+use crate::traps::syscall::sys_sleep;
 
 #[repr(u16)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -44,7 +45,6 @@ pub struct Info {
 /// the trap frame for the exception.
 #[no_mangle]
 pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
-
     let ctl = Controller::new();
 
     match info.kind {
@@ -55,17 +55,24 @@ pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
                 }
             }
         },
-        other => {
-            if info.kind == Synchronous {
-                let syndrome = Syndrome::from(esr);
-
-                kprintln!("{:?} {:?}", info, syndrome);
+        Kind::Synchronous => {
+            match Syndrome::from(esr) {
+                Syndrome::Svc(svc) => {
+                    handle_syscall(svc, tf);
+                }
+                Syndrome::Brk(b) => {
+                    kprintln!("{:?} {:?}", info, Syndrome::Brk(b));
+                    kprintln!("brk #{}", b);
+                    shell::shell("#>");
+                }
+                s => {
+                    kprintln!("{:?} {:?}", info, s);
+                }
             }
+        }
+        other => {
             kprintln!("{:?}", info);
-            // kprintln!("{:?}", tf);
-
             shell::shell("#>");
-
         }
     }
 

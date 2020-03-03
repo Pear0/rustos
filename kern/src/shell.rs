@@ -18,6 +18,7 @@ use crate::console::{kprint, kprintln, CONSOLE};
 use crate::timer;
 use crate::ALLOCATOR;
 use crate::FILESYSTEM;
+use core::time::Duration;
 
 /// Error type for `Command` parse failures.
 #[derive(Debug)]
@@ -237,6 +238,26 @@ impl Shell {
             "brk" => {
 
                 aarch64::brk!(7);
+            }
+            "sleep" => {
+
+                if command.args.len() == 2 {
+
+                    let ms: u32 = match command.args[1].parse() {
+                        Ok(ms) => ms,
+                        Err(e) => {
+                            kprintln!("error: {}", e);
+                            return Ok(())
+                        }
+                    };
+
+                    let res = kernel_api::syscall::sleep(Duration::from_millis(ms as u64));
+                    kprintln!("-> {:?}", res);
+
+                } else {
+                    kprintln!("usage: sleep <ms>");
+                }
+
             }
             path => {
                 kprintln!("unknown command: {}", path);

@@ -9,6 +9,7 @@ use crate::process::{Stack, State};
 use crate::traps::TrapFrame;
 use crate::vm::*;
 use kernel_api::{OsError, OsResult};
+use crate::process::state::EventPollFn;
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
@@ -33,9 +34,13 @@ impl Process {
     /// If enough memory could not be allocated to start the process, returns
     /// `None`. Otherwise returns `Some` of the new `Process`.
     pub fn new() -> OsResult<Process> {
+        let stack = Stack::new().ok_or(OsError::NoMemory)?;
+        let mut context = Box::new(TrapFrame::default());
+        context.sp = stack.top().as_u64();
+
         Ok(Process {
-            context: Box::new(TrapFrame::default()),
-            stack: Stack::new().ok_or(OsError::NoMemory)?,
+            context,
+            stack,
             state: State::Ready,
         })
     }
@@ -104,6 +109,24 @@ impl Process {
     ///
     /// Returns `false` in all other cases.
     pub fn is_ready(&mut self) -> bool {
-        unimplemented!("Process::is_ready()")
+        if let State::Waiting(h) = &mut self.state {
+
+            let mut copy = core::mem::replace(h, Box::new(|_| false));
+            if copy(self) {
+                self.state = State::Ready;
+            } else {
+
+                // this will always succeed. Cannot re-use h due to lifetimes of passing self
+                // into copy()
+                if let State::Waiting(h) = &mut self.state {
+                    core::mem::replace(h, copy);
+                }
+            }
+        }
+
+        match self.state {
+            State::Ready => true,
+            _ => false,
+        }
     }
 }

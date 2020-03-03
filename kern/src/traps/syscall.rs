@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 use core::time::Duration;
 
 use crate::console::CONSOLE;
-use crate::process::State;
+use crate::process::{State, EventPollFn};
 use crate::traps::TrapFrame;
 use crate::SCHEDULER;
 use kernel_api::*;
@@ -15,7 +15,12 @@ use kernel_api::*;
 /// parameter: the approximate true elapsed time from when `sleep` was called to
 /// when `sleep` returned.
 pub fn sys_sleep(ms: u32, tf: &mut TrapFrame) {
-    unimplemented!("sys_sleep()");
+    let wait_until = pi::timer::current_time() + Duration::from_millis(ms as u64);
+
+    let time_fn: EventPollFn = Box::new(move |p| {
+        pi::timer::current_time() >= wait_until
+    });
+    SCHEDULER.switch(State::Waiting(time_fn), tf);
 }
 
 /// Returns current time.
@@ -58,5 +63,12 @@ pub fn sys_getpid(tf: &mut TrapFrame) {
 
 pub fn handle_syscall(num: u16, tf: &mut TrapFrame) {
     use crate::console::kprintln;
-    unimplemented!("handle_syscall()")
+
+    match num {
+        1 => {
+            let time = tf.regs[0];
+            sys_sleep(time as u32, tf);
+        }
+        _ => kprintln!("Unknown syscall: {}", num),
+    }
 }

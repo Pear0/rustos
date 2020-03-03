@@ -225,3 +225,17 @@ defreg!(CNTHCTL_EL2, [
 ]);
 
 defreg!(CNTVOFF_EL2);
+
+
+// (ref. G6.5.9 Counter-timer kernel control register)
+// FIXME aka make sure we wake up from `wfe`!!!
+defreg!(CNTKCTL_EL1, [
+    EL0PTEN  [9-9],
+    EL0VTEN  [8-8],
+    EVNTI    [7-4],
+    EVNTDIR  [3-3],
+    EVNTEN   [2-2],
+    EL0VCTEN [1-1],
+    EL0PCTEN [0-0],
+]);
+

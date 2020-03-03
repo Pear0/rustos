@@ -19,6 +19,7 @@ global_asm!(include_str!("init/vectors.s"));
 // so, no debug build support!
 //
 
+/// FIXME lmao i needed this
 #[link_section = ".text.init"]
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
