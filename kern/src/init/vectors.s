@@ -1,7 +1,5 @@
 .global context_save
 context_save:
-    // FIXME: Save the remaining context to the stack.
-
     stp     x26, x27, [SP, #-16]!
     stp     x24, x25, [SP, #-16]!
     stp     x22, x23, [SP, #-16]!
@@ -70,8 +68,6 @@ context_save:
 
 .global context_restore
 context_restore:
-    // FIXME: Restore the context from the stack.
-
     ldp     x0, x1, [SP], #16
     msr     ELR_EL1, x0
     msr     SPSR_EL1, x1

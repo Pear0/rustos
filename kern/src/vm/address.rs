@@ -9,9 +9,6 @@ pub struct VirtualAddr(usize);
 #[derive(Copy, Clone, PartialEq)]
 pub struct PhysicalAddr(usize);
 
-// FIXME: Implement `Add`, `AddAssign`, `Sub`, `SubAssign`, `BitAnd`,
-// and `BitOr` for `VirtualAddr` and `PhysicalAddr`.
-
 macro_rules! impl_for {
     ($T:tt) => {
         impl Add for $T {

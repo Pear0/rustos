@@ -246,4 +246,3 @@ impl LocalAlloc for Allocator {
     }
 }
 
-// FIXME: Implement `Debug` for `Allocator`.

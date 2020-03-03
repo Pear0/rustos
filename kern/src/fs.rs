@@ -60,21 +60,12 @@ impl FileSystem {
         use fat32::traits::BlockDevice;
         let mut sd = sd::Sd::new().expect("failed to init sd card");
 
-//        let mut buf = [0u8; 512];
-//
-//        for i in 0..40_000 {
-//            if i % 2 == 0 {
-//                sd.read_sector(i, &mut buf).expect("failed to read");
-//            }
-//        }
-
         let vfat = VFat::<PiVFatHandle>::from(sd).expect("failed to init vfat");
 
         self.0.lock().replace(vfat);
     }
 }
 
-// FIXME: Implement `fat32::traits::FileSystem` for `&FileSystem`
 impl fat32::traits::FileSystem for &FileSystem {
     type File = fat32::vfat::File<PiVFatHandle>;
     type Dir = fat32::vfat::Dir<PiVFatHandle>;

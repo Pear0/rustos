@@ -363,9 +363,6 @@ impl Drop for UserPageTable {
     }
 }
 
-// FIXME: Implement `Drop` for `UserPageTable`.
-// FIXME: Implement `fmt::Debug` as you need.
-
 impl fmt::Debug for UserPageTable {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("UserPageTable")
