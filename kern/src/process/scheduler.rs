@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use alloc::collections::vec_deque::VecDeque;
 use core::borrow::{Borrow, BorrowMut};
 use core::fmt;
@@ -14,6 +15,7 @@ use crate::shell;
 use crate::console::kprint;
 use crate::console::kprintln;
 use core::time::Duration;
+use crate::process::snap::SnapProcess;
 
 /// Process scheduler for the entire machine.
 #[derive(Debug)]
@@ -46,10 +48,6 @@ impl GlobalScheduler {
     /// Adds a process to the scheduler's queue and returns that process's ID.
     /// For more details, see the documentation on `Scheduler::add()`.
     pub fn add(&self, mut process: Process) -> Option<Id> {
-        process.context.ttbr0 = VMM.get_baddr().as_u64();
-        process.context.ttbr1 = process.vmap.get_baddr().as_u64();
-        process.context.elr = USER_IMG_BASE as u64;
-
         self.critical(move |scheduler| scheduler.add(process))
     }
 
@@ -285,6 +283,13 @@ impl Scheduler {
             }
         }
     }
+
+    pub fn get_process_snaps(&mut self, snaps: &mut Vec<SnapProcess>) {
+        for proc in self.processes.iter() {
+            snaps.push(SnapProcess::from(proc));
+        }
+    }
+
 }
 
 pub extern "C" fn test_user_process() -> ! {

@@ -1,5 +1,6 @@
 mod process;
 mod scheduler;
+mod snap;
 mod stack;
 mod state;
 

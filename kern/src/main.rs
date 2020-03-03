@@ -69,35 +69,21 @@ fn init_jtag() {
    }
 }
 
-#[no_mangle]
-pub extern "C" fn my_thread() {
+fn my_thread() {
 
     shell::shell("$ ");
 }
 
-
-#[no_mangle]
-pub extern "C" fn my_thread2() {
-
-    shell::shell("@ ");
-}
-
-
-#[no_mangle]
-pub extern "C" fn my_thread3() {
-
-    shell::shell("% ");
-}
-
-#[no_mangle]
-pub extern "C" fn my_thread4() {
+fn led_blink() {
 
     let mut g = gpio::Gpio::new(29).into_output();
     loop {
         g.set();
-        timer::spin_sleep(Duration::from_millis(250));
+        kernel_api::syscall::sleep(Duration::from_millis(250));
+        // timer::spin_sleep(Duration::from_millis(250));
         g.clear();
-        timer::spin_sleep(Duration::from_millis(250));
+        kernel_api::syscall::sleep(Duration::from_millis(250));
+        // timer::spin_sleep(Duration::from_millis(250));
     }
 }
 
@@ -120,36 +106,25 @@ fn kmain() -> ! {
 
     IRQ.initialize();
 
-    kprintln!("A");
     VMM.initialize();
-    kprintln!("B");
+    kprintln!("Initing Scheduler");
 
     unsafe { SCHEDULER.initialize() };
 
     {
-        let mut proc = Process::new().unwrap();
-        // proc.context.elr = my_thread as u64;
-
-        SCHEDULER.test_phase_3(&mut proc);
-
+        let mut proc = Process::kernel_process(my_thread).unwrap();
         SCHEDULER.add(proc);
     }
 
     {
-        let mut proc = Process::new().unwrap();
-        // proc.context.elr = my_thread4 as u64;
-
-        SCHEDULER.test_phase_3(&mut proc);
-
+        let mut proc = Process::kernel_process(led_blink).unwrap();
         SCHEDULER.add(proc);
     }
-    //
-    // {
-    //     let mut proc = Process::new().unwrap();
-    //     proc.context.elr = my_thread3 as u64;
-    //     SCHEDULER.add(proc);
-    // }
 
+    {
+        let mut proc = Process::load("/fib.bin").expect("failed to load");
+        SCHEDULER.add(proc);
+    }
 
     SCHEDULER.start();
 

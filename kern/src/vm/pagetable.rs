@@ -238,24 +238,24 @@ impl KernPageTable {
             table.set_entry(VirtualAddr::from(addr), entry);
         }
 
-        kprintln!("PageTable:");
-        for (i, entry) in table.l2.entries.iter().enumerate() {
-            if entry.get() != 0 {
-
-                let addr = entry.get_value(RawL2Entry::ADDR) << 16;
-
-                kprintln!("index = {}, addr = {:x}, value = {:x}", i, addr, entry.get());
-
-                if addr != 0 {
-                    let l3: &L3PageTable = unsafe { &*(addr as *const L3PageTable) };
-
-                    for (i, e) in l3.entries.iter().take(100).enumerate() {
-                        kprintln!("  index = {}, value = {:x}", i, e.0.get());
-                    }
-                }
-
-            }
-        }
+        // kprintln!("PageTable:");
+        // for (i, entry) in table.l2.entries.iter().enumerate() {
+        //     if entry.get() != 0 {
+        //
+        //         let addr = entry.get_value(RawL2Entry::ADDR) << 16;
+        //
+        //         kprintln!("index = {}, addr = {:x}, value = {:x}", i, addr, entry.get());
+        //
+        //         if addr != 0 {
+        //             let l3: &L3PageTable = unsafe { &*(addr as *const L3PageTable) };
+        //
+        //             for (i, e) in l3.entries.iter().take(100).enumerate() {
+        //                 kprintln!("  index = {}, value = {:x}", i, e.0.get());
+        //             }
+        //         }
+        //
+        //     }
+        // }
 
         KernPageTable(table)
     }
@@ -292,9 +292,9 @@ impl UserPageTable {
             panic!("Tried to create user page below USER_IMG_BASE: {:x}", va.as_usize());
         }
 
-        let va = va.sub(VirtualAddr::from(USER_IMG_BASE));
+        let va_sub = va.sub(VirtualAddr::from(USER_IMG_BASE));
 
-        if self.0.is_valid(va) {
+        if self.0.is_valid(va_sub) {
             panic!("Tried to double allocate page: {:x}", va.as_usize());
         }
 
@@ -314,7 +314,7 @@ impl UserPageTable {
 
         entry.set_value((alloc as u64) >> 16, RawL3Entry::ADDR);
 
-        self.0.set_entry(va, entry);
+        self.0.set_entry(va_sub, entry);
 
         unsafe { core::slice::from_raw_parts_mut(alloc, PAGE_SIZE) }
     }

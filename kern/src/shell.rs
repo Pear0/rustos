@@ -4,6 +4,7 @@ use shim::path::{Path, PathBuf, Component};
 // use std::path::{Path, PathBuf, Component};
 
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use stack_vec::StackVec;
 use core::ops::DerefMut;
@@ -15,10 +16,11 @@ use fat32::traits::FileSystem;
 use fat32::traits::{Dir, Entry, File, Metadata};
 
 use crate::console::{kprint, kprintln, CONSOLE};
-use crate::timer;
+use crate::{timer, SCHEDULER};
 use crate::ALLOCATOR;
 use crate::FILESYSTEM;
 use core::time::Duration;
+use crate::process::Process;
 
 /// Error type for `Command` parse failures.
 #[derive(Debug)]
@@ -85,6 +87,17 @@ impl Shell {
         } else {
             FILESYSTEM.open(self.cwd.join(path))
         }
+    }
+
+    fn load_process(&self, piece: &str) -> kernel_api::OsResult<Process> {
+
+        let mut path = Path::new(piece);
+        if path.has_root() {
+            Process::load(path)
+        } else {
+            Process::load(self.cwd.join(path))
+        }
+
     }
 
     fn describe_ls_entry(&self, entry: FEntry, show_all: bool) {
@@ -257,6 +270,38 @@ impl Shell {
                 } else {
                     kprintln!("usage: sleep <ms>");
                 }
+
+            }
+            "run" => {
+
+                if command.args.len() == 2 {
+
+                    match self.load_process(command.args[1]) {
+                        Ok(proc) => {
+
+                            SCHEDULER.add(proc);
+
+                        },
+                        Err(e) => {
+                            kprintln!("error: {:?}", e);
+                            return Ok(())
+                        }
+                    }
+
+                } else {
+                    kprintln!("usage: run <program>");
+                }
+
+            }
+            "procs" => {
+
+                let mut snaps = Vec::new();
+                SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+
+                for snap in snaps.iter() {
+                    kprintln!("{:?}", snap);
+                }
+
 
             }
             path => {
