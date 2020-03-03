@@ -22,7 +22,7 @@ pub struct Process {
     /// The memory allocation used for the process's stack.
     pub stack: Stack,
     /// The page table describing the Virtual Memory of the process
-    // pub vmap: Box<UserPageTable>,
+    pub vmap: Box<UserPageTable>,
     /// The scheduling state of the process.
     pub state: State,
 }
@@ -41,6 +41,7 @@ impl Process {
         Ok(Process {
             context,
             stack,
+            vmap: Box::new(UserPageTable::new()),
             state: State::Ready,
         })
     }

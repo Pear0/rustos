@@ -45,7 +45,11 @@ impl GlobalScheduler {
 
     /// Adds a process to the scheduler's queue and returns that process's ID.
     /// For more details, see the documentation on `Scheduler::add()`.
-    pub fn add(&self, process: Process) -> Option<Id> {
+    pub fn add(&self, mut process: Process) -> Option<Id> {
+        process.context.ttbr0 = VMM.get_baddr().as_u64();
+        process.context.ttbr1 = process.vmap.get_baddr().as_u64();
+        process.context.elr = USER_IMG_BASE as u64;
+
         self.critical(move |scheduler| scheduler.add(process))
     }
 
@@ -154,18 +158,20 @@ impl GlobalScheduler {
     //
     // * A method to load a extern function to the user process's page table.
     //
-    // pub fn test_phase_3(&self, proc: &mut Process){
-    //     use crate::vm::{VirtualAddr, PagePerm};
-    //
-    //     let mut page = proc.vmap.alloc(
-    //         VirtualAddr::from(USER_IMG_BASE as u64), PagePerm::RWX);
-    //
-    //     let text = unsafe {
-    //         core::slice::from_raw_parts(test_user_process as *const u8, 24)
-    //     };
-    //
-    //     page[0..24].copy_from_slice(text);
-    // }
+    pub fn test_phase_3(&self, proc: &mut Process){
+        use crate::vm::{VirtualAddr, PagePerm};
+
+        let len = 50;
+
+        let mut page = proc.vmap.alloc(
+            VirtualAddr::from(USER_IMG_BASE as u64), PagePerm::RWX);
+
+        let text = unsafe {
+            core::slice::from_raw_parts(test_user_process as *const u8, len)
+        };
+
+        page[0..len].copy_from_slice(text);
+    }
 }
 
 #[derive(Debug)]
@@ -289,6 +295,7 @@ pub extern "C" fn test_user_process() -> ! {
 
         unsafe {
             asm!("mov x0, $2
+              brk 7
               svc 1
               mov $0, x0
               mov $1, x7"

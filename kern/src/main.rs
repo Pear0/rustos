@@ -120,17 +120,27 @@ fn kmain() -> ! {
 
     IRQ.initialize();
 
+    kprintln!("A");
+    VMM.initialize();
+    kprintln!("B");
+
     unsafe { SCHEDULER.initialize() };
 
     {
         let mut proc = Process::new().unwrap();
-        proc.context.elr = my_thread as u64;
+        // proc.context.elr = my_thread as u64;
+
+        SCHEDULER.test_phase_3(&mut proc);
+
         SCHEDULER.add(proc);
     }
 
     {
         let mut proc = Process::new().unwrap();
-        proc.context.elr = my_thread4 as u64;
+        // proc.context.elr = my_thread4 as u64;
+
+        SCHEDULER.test_phase_3(&mut proc);
+
         SCHEDULER.add(proc);
     }
     //

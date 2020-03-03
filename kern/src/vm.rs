@@ -26,7 +26,8 @@ impl VMManager {
     /// The caller should assure that the method is invoked only once during the kernel
     /// initialization.
     pub fn initialize(&self) {
-        unimplemented!();
+        self.0.lock().replace(KernPageTable::new());
+        self.setup();
     }
 
     /// Set up the virtual memory manager.
@@ -41,7 +42,7 @@ impl VMManager {
         let baddr = kern_page_table.as_ref().unwrap().get_baddr().as_u64();
 
         unsafe {
-            assert!(ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::TGran64) == 0);
+            assert_eq!(ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::TGran64), 0);
 
             let ips = ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::PARange);
 
@@ -84,6 +85,7 @@ impl VMManager {
 
     /// Returns the base address of the kernel page table as `PhysicalAddr`.
     pub fn get_baddr(&self) -> PhysicalAddr {
-        unimplemented!();
+        let lock = self.0.lock();
+        lock.as_ref().unwrap().get_baddr()
     }
 }

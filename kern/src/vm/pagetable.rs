@@ -13,6 +13,10 @@ use crate::ALLOCATOR;
 
 use aarch64::vmsa::*;
 use shim::const_assert_size;
+use aarch64::vmsa::EntryPerm::{KERN_RW, USER_RW};
+use core::fmt::{Formatter, Error};
+use crate::console::kprintln;
+use core::ops::Sub;
 
 #[repr(C)]
 pub struct Page([u8; PAGE_SIZE]);
@@ -110,7 +114,14 @@ impl PageTable {
         });
 
         for (i, l3) in table.l3.iter().enumerate() {
-            table.l2.entries[i].set_value(l3.as_ptr().as_u64(), RawL2Entry::ADDR);
+            table.l2.entries[i].set_value(l3.as_ptr().as_u64() >> PAGE_ALIGN, RawL2Entry::ADDR);
+            table.l2.entries[i].set_value(perm, RawL2Entry::AP);
+            table.l2.entries[i].set_value(EntryValid::Valid, RawL2Entry::VALID);
+            table.l2.entries[i].set_value(EntryType::Table, RawL2Entry::TYPE);
+            table.l2.entries[i].set_value(EntryAttr::Mem, RawL2Entry::ATTR);
+            table.l2.entries[i].set_value(EntrySh::ISh, RawL2Entry::SH);
+            table.l2.entries[i].set_value(1, RawL2Entry::AF);
+            table.l2.entries[i].set_value(1, RawL3Entry::NS);
         }
 
         table
@@ -126,8 +137,8 @@ impl PageTable {
     /// Panics if extracted L2index exceeds the number of L3PageTable.
     fn locate(va: VirtualAddr) -> (usize, usize) {
         let mut addr = va.as_u64();
-        if addr % 0xFF_FF != 0 {
-            panic!("Address: {:?} is not aligned", addr);
+        if addr as usize % PAGE_SIZE != 0 {
+            panic!("Address: {:x} is not aligned", addr);
         }
 
         addr = addr >> 16;
@@ -139,7 +150,7 @@ impl PageTable {
         let l2 = addr & (0b1_1111_1111_1111); // 13 bits
 
         if l2 >= 2 {
-            panic!("Address: {:?} -> L2 invalid: {}", va.as_u64(), l2);
+            panic!("Address: {:x} -> L2 invalid: {:x}", va.as_u64(), l2);
         }
 
         (l2 as usize, l3 as usize)
@@ -194,7 +205,59 @@ impl KernPageTable {
     /// as address[47:16]. Refer to the definition of `RawL3Entry` in `vmsa.rs` for
     /// more details.
     pub fn new() -> KernPageTable {
-        unimplemented!("KernPageTable::new()")
+        let mut table = PageTable::new(KERN_RW);
+
+        let (start, end) = allocator::memory_map().expect("failed to memory map");
+        let start = 0usize; // allocator::util::align_up(start, PAGE_SIZE);
+        // FIXME LOL WTF memory_map() does not work for this because IO exists after main memory !!!
+        let end = 1024usize * 1024 * 1024; //  allocator::util::align_down(end, PAGE_SIZE);
+
+        kprintln!("mem: ({:x}, {:x})", start, end);
+
+        // assert!(end > IO_BASE);
+        // assert!(end > IO_BASE_END);
+
+        for addr in (start..end).step_by(PAGE_SIZE) {
+            let mut entry = RawL3Entry::new(0);
+            entry.set_value(EntryValid::Valid, RawL3Entry::VALID);
+            entry.set_value(EntryType::Table, RawL3Entry::TYPE);
+            entry.set_value(EntryPerm::KERN_RW, RawL3Entry::AP);
+            entry.set_value(1, RawL3Entry::AF);
+            entry.set_value(1, RawL3Entry::NS);
+
+            if addr >= IO_BASE && addr < IO_BASE_END {
+                entry.set_value(EntrySh::OSh, RawL3Entry::SH);
+                entry.set_value(EntryAttr::Dev, RawL3Entry::ATTR);
+            } else {
+                entry.set_value(EntrySh::ISh, RawL3Entry::SH);
+                entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
+            }
+
+            entry.set_value((addr >> PAGE_ALIGN) as u64, RawL3Entry::ADDR);
+
+            table.set_entry(VirtualAddr::from(addr), entry);
+        }
+
+        kprintln!("PageTable:");
+        for (i, entry) in table.l2.entries.iter().enumerate() {
+            if entry.get() != 0 {
+
+                let addr = entry.get_value(RawL2Entry::ADDR) << 16;
+
+                kprintln!("index = {}, addr = {:x}, value = {:x}", i, addr, entry.get());
+
+                if addr != 0 {
+                    let l3: &L3PageTable = unsafe { &*(addr as *const L3PageTable) };
+
+                    for (i, e) in l3.entries.iter().take(100).enumerate() {
+                        kprintln!("  index = {}, value = {:x}", i, e.0.get());
+                    }
+                }
+
+            }
+        }
+
+        KernPageTable(table)
     }
 }
 
@@ -210,7 +273,7 @@ impl UserPageTable {
     /// Returns a new `UserPageTable` containing a `PageTable` created with
     /// `USER_RW` permission.
     pub fn new() -> UserPageTable {
-        unimplemented!("UserPageTable::new()")
+        UserPageTable(PageTable::new(USER_RW))
     }
 
     /// Allocates a page and set an L3 entry translates given virtual address to the
@@ -224,7 +287,36 @@ impl UserPageTable {
     /// TODO. use Result<T> and make it failurable
     /// TODO. use perm properly
     pub fn alloc(&mut self, va: VirtualAddr, _perm: PagePerm) -> &mut [u8] {
-        unimplemented!("alloc()");
+
+        if va.as_usize() < USER_IMG_BASE {
+            panic!("Tried to create user page below USER_IMG_BASE: {:x}", va.as_usize());
+        }
+
+        let va = va.sub(VirtualAddr::from(USER_IMG_BASE));
+
+        if self.0.is_valid(va) {
+            panic!("Tried to double allocate page: {:x}", va.as_usize());
+        }
+
+        let mut entry = RawL3Entry::new(0);
+        entry.set_value(EntryValid::Valid, RawL3Entry::VALID);
+        entry.set_value(EntryType::Table, RawL3Entry::TYPE);
+        entry.set_value(EntryPerm::USER_RW, RawL3Entry::AP);
+
+        entry.set_value(EntrySh::ISh, RawL3Entry::SH);
+        entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
+
+        // FIXME why do i need to set AF???
+        entry.set_value(1, RawL3Entry::AF);
+        entry.set_value(1, RawL3Entry::NS);
+
+        let alloc = unsafe { ALLOCATOR.alloc(Page::layout()) };
+
+        entry.set_value((alloc as u64) >> 16, RawL3Entry::ADDR);
+
+        self.0.set_entry(va, entry);
+
+        unsafe { core::slice::from_raw_parts_mut(alloc, PAGE_SIZE) }
     }
 }
 
@@ -256,5 +348,27 @@ impl DerefMut for UserPageTable {
     }
 }
 
+impl Drop for UserPageTable {
+    fn drop(&mut self) {
+
+        for l3 in self.l3.iter_mut() {
+            for entry in l3.entries.iter_mut() {
+                if entry.is_valid() {
+                    let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
+                    unsafe { ALLOCATOR.dealloc(addr as *mut u8, Page::layout()) }
+                }
+            }
+        }
+
+    }
+}
+
 // FIXME: Implement `Drop` for `UserPageTable`.
 // FIXME: Implement `fmt::Debug` as you need.
+
+impl fmt::Debug for UserPageTable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UserPageTable")
+            .finish()
+    }
+}
