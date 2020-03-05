@@ -12,4 +12,5 @@ rustflags = [
     # link to libsd.a
     "-C", "link-arg=-L.cargo",
     "-C", "link-arg=-lsd",
+    "-C", "link-arg=-luspi",
 ]

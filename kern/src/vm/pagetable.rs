@@ -207,58 +207,67 @@ impl KernPageTable {
     pub fn new() -> KernPageTable {
         let mut table = PageTable::new(KERN_RW);
 
-        let (start, end) = allocator::memory_map().expect("failed to memory map");
-        let start = 0usize; // allocator::util::align_up(start, PAGE_SIZE);
-        // FIXME LOL WTF memory_map() does not work for this because IO exists after main memory !!!
-        let end = 1024usize * 1024 * 1024; //  allocator::util::align_down(end, PAGE_SIZE);
+        let (_, end) = allocator::memory_map().expect("failed to memory map");
+        let end = allocator::util::align_down(end, PAGE_SIZE);
 
-        kprintln!("mem: ({:x}, {:x})", start, end);
-
-        // assert!(end > IO_BASE);
-        // assert!(end > IO_BASE_END);
-
-        for addr in (start..end).step_by(PAGE_SIZE) {
-            let mut entry = RawL3Entry::new(0);
-            entry.set_value(EntryValid::Valid, RawL3Entry::VALID);
-            entry.set_value(EntryType::Table, RawL3Entry::TYPE);
-            entry.set_value(EntryPerm::KERN_RW, RawL3Entry::AP);
-            entry.set_value(1, RawL3Entry::AF);
-            entry.set_value(1, RawL3Entry::NS);
-
-            if addr >= IO_BASE && addr < IO_BASE_END {
-                entry.set_value(EntrySh::OSh, RawL3Entry::SH);
-                entry.set_value(EntryAttr::Dev, RawL3Entry::ATTR);
-            } else {
-                entry.set_value(EntrySh::ISh, RawL3Entry::SH);
-                entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
-            }
-
-            entry.set_value((addr >> PAGE_ALIGN) as u64, RawL3Entry::ADDR);
-
-            table.set_entry(VirtualAddr::from(addr), entry);
+        // Correct page type is chosen by address region. We just have to init.
+        for addr in (0..end).step_by(PAGE_SIZE) {
+            table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr));
         }
 
-        // kprintln!("PageTable:");
-        // for (i, entry) in table.l2.entries.iter().enumerate() {
-        //     if entry.get() != 0 {
-        //
-        //         let addr = entry.get_value(RawL2Entry::ADDR) << 16;
-        //
-        //         kprintln!("index = {}, addr = {:x}, value = {:x}", i, addr, entry.get());
-        //
-        //         if addr != 0 {
-        //             let l3: &L3PageTable = unsafe { &*(addr as *const L3PageTable) };
-        //
-        //             for (i, e) in l3.entries.iter().take(100).enumerate() {
-        //                 kprintln!("  index = {}, value = {:x}", i, e.0.get());
-        //             }
-        //         }
-        //
-        //     }
-        // }
+        for addr in (IO_BASE..IO_BASE_END).step_by(PAGE_SIZE) {
+            table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr));
+        }
 
         KernPageTable(table)
     }
+
+    pub fn dump(&self) {
+        kprintln!("PageTable:");
+        for (i, entry) in self.0.l2.entries.iter().enumerate() {
+            if entry.get() != 0 {
+
+                let addr = entry.get_value(RawL2Entry::ADDR) << 16;
+
+                kprintln!("index = {}, addr = {:x}, value = {:x}", i, addr, entry.get());
+
+                if addr != 0 {
+                    let l3: &L3PageTable = unsafe { &*(addr as *const L3PageTable) };
+
+                    for (i, e) in l3.entries.iter().enumerate() {
+                        kprintln!("  index = {}, value = {:x}", i, e.0.get());
+                    }
+                }
+
+            }
+        }
+    }
+
+    fn create_l3_entry(addr: usize) -> RawL3Entry {
+        assert_eq!(addr % PAGE_SIZE, 0);
+
+        let mut entry = RawL3Entry::new(0);
+        entry.set_value(EntryValid::Valid, RawL3Entry::VALID);
+        entry.set_value(EntryType::Table, RawL3Entry::TYPE);
+        entry.set_value(EntryPerm::KERN_RW, RawL3Entry::AP);
+        entry.set_value(1, RawL3Entry::AF);
+        entry.set_value(1, RawL3Entry::NS);
+
+        if addr >= IO_BASE && addr < IO_BASE_END {
+            entry.set_value(EntrySh::OSh, RawL3Entry::SH);
+            entry.set_value(EntryAttr::Dev, RawL3Entry::ATTR);
+        } else {
+            entry.set_value(EntrySh::ISh, RawL3Entry::SH);
+            // FIXME caching disabled so that MBox works properly.
+            entry.set_value(EntryAttr::Nc, RawL3Entry::ATTR);
+        }
+
+        entry.set_value((addr >> PAGE_ALIGN) as u64, RawL3Entry::ADDR);
+
+        entry
+    }
+
+
 }
 
 pub enum PagePerm {

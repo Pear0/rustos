@@ -3,7 +3,9 @@ pub const IO_BASE: usize = 0x3F000000;
 pub const IO_BASE_END: usize = 0x40000000;
 
 /// The base address of the `GPIO` registers
-pub const GPIO_BASE: usize = IO_BASE + 0x200000;
+pub const GPIO_BASE: usize = IO_BASE + 0x20_0000;
+
+pub const USB_BASE: usize = IO_BASE + 0x98_0000;
 
 /// The number of cores in Rpi3
 pub const NCORES: usize = 4;
@@ -51,6 +53,8 @@ pub const MBOX_CH_PROP: u8 = 8;
 pub const MBOX_TAG_GETREVISION: u32 = 0x10002;
 pub const MBOX_TAG_GETMAC: u32 = 0x10003;
 pub const MBOX_TAG_GETSERIAL: u32 = 0x10004;
+pub const MBOX_TAG_TEMPERATURE: u32 = 0x30006;
+pub const MBOX_TAG_SET_POWER: u32 = 0x28001;
 pub const MBOX_TAG_LAST: u32 = 0;
 
 

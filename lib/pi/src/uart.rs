@@ -7,11 +7,12 @@ use shim::const_assert_size;
 use volatile::prelude::*;
 use volatile::{Volatile, ReadVolatile, Reserved};
 
-use crate::timer;
+use crate::{timer, interrupt};
 use crate::common::IO_BASE;
 use crate::gpio::{Gpio, Function};
 use crate::uart::LsrStatus::{DataReady, TxAvailable};
 use core::fmt::Error;
+use crate::interrupt::Interrupt;
 
 /// The base address for the `MU` registers.
 const MU_REG_BASE: usize = IO_BASE + 0x215040;
@@ -75,12 +76,15 @@ impl MiniUart {
             &mut *(MU_REG_BASE as *mut Registers)
         };
 
+        // interrupt::Controller::new().enable(Interrupt::Uart);
+
         // ref: https://github.com/bztsrc/raspi3-tutorial/blob/master/03_uart1/uart.c
 
         registers.CNTL_REG.write(0);
         registers.LCR_REG.write(0b11); // 8 bit mode
 //        registers.MCR_REG.write(0);
-//        registers.IER_REG.write(0);
+//         registers.IER_REG.write(0b1111_1111); // receive interrupts / no transmit
+
 //        registers.IIR_REG.write(0xc6); // disable interrupts
         registers.BAUD_REG.write(270); // 151200 baud
 

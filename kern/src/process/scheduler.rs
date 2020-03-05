@@ -17,6 +17,8 @@ use crate::console::kprintln;
 use core::time::Duration;
 use crate::process::snap::SnapProcess;
 
+use pi::{timer, interrupt};
+
 /// Process scheduler for the entire machine.
 #[derive(Debug)]
 pub struct GlobalScheduler(Mutex<Option<Scheduler>>);
@@ -60,6 +62,14 @@ impl GlobalScheduler {
         self.switch_to(tf)
     }
 
+    pub fn mask_next_tick(&self) {
+        self.critical(|c| c.mask_next_tick())
+    }
+
+    pub fn clear_mask_next_tick(&self) -> bool {
+        self.critical(|c| c.clear_mask_next_tick())
+    }
+
     pub fn switch_to(&self, tf: &mut TrapFrame) -> Id {
         loop {
             let rtn = self.critical(|scheduler| scheduler.switch_to(tf));
@@ -68,20 +78,24 @@ impl GlobalScheduler {
             }
 
             // FIXME lol??????? I don't want to DIE
-            unsafe {
-                let mut v = aarch64::regs::CNTKCTL_EL1.get();
-                let m = aarch64::regs::CNTKCTL_EL1::EVNTI;
+            // unsafe {
+            //     let mut v = aarch64::regs::CNTKCTL_EL1.get();
+            //     let m = aarch64::regs::CNTKCTL_EL1::EVNTI;
+            //
+            //     v &= !m;
+            //     // seems to wait around 134μs
+            //     v |= (13) << m.trailing_zeros();
+            //
+            //     v |= aarch64::regs::CNTKCTL_EL1::EVNTEN;
+            //
+            //     aarch64::regs::CNTKCTL_EL1.set(v);
+            // }
 
-                v &= !m;
-                // seems to wait around 134μs
-                v |= (13) << m.trailing_zeros();
-
-                v |= aarch64::regs::CNTKCTL_EL1::EVNTEN;
-
-                aarch64::regs::CNTKCTL_EL1.set(v);
-            }
-
+            self.mask_next_tick();
+            unsafe { aarch64::sti() }
             aarch64::wfe();
+            unsafe { aarch64::cli() }
+            self.clear_mask_next_tick();
 
         }
     }
@@ -96,23 +110,19 @@ impl GlobalScheduler {
     /// Starts executing processes in user space using timer interrupt based
     /// preemptive scheduling. This method should not return under normal conditions.
     pub fn start(&self) -> ! {
-        // let mut proc = Process::new().unwrap();
-        // proc.state = State::Running;
-        // proc.context.elr = my_thread as u64;
-        // proc.context.sp = proc.stack.top().as_u64();
-        // proc.context.spsr = 0;
 
         let el = unsafe { aarch64::current_el() };
         kprintln!("Current EL: {}", el);
 
         IRQ.register(pi::interrupt::Interrupt::Timer1, Box::new(|tf| {
-            pi::timer::tick_in(TICK);
-            // kprintln!("TICK");
-            SCHEDULER.switch(State::Ready, tf);
+            timer::tick_in(TICK);
+            if !SCHEDULER.clear_mask_next_tick() {
+                SCHEDULER.switch(State::Ready, tf);
+            }
         }));
 
-        pi::timer::tick_in(TICK);
-        pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
+        timer::tick_in(TICK);
+        interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
 
 
         // Bootstrap the first process
@@ -176,6 +186,7 @@ impl GlobalScheduler {
 pub struct Scheduler {
     processes: VecDeque<Process>,
     last_id: Option<Id>,
+    mask_next: bool,
 }
 
 impl Scheduler {
@@ -184,6 +195,7 @@ impl Scheduler {
         Scheduler {
             processes: VecDeque::new(),
             last_id: Some(1),
+            mask_next: false,
         }
     }
 
@@ -191,6 +203,14 @@ impl Scheduler {
         let next = self.last_id?.checked_add(1)?;
         self.last_id = Some(next);
         Some(next)
+    }
+
+    pub fn mask_next_tick(&mut self) {
+        self.mask_next = true
+    }
+
+    pub fn clear_mask_next_tick(&mut self) -> bool {
+        core::mem::replace(&mut self.mask_next, false)
     }
 
     /// Adds a process to the scheduler's queue and returns that process's ID if

@@ -28,6 +28,7 @@ impl MBox {
                 // Rust is smart enough to optimize out this read
                 // which obviously breaks the mailbox.
                 asm!("" ::: "memory" : "volatile");
+                aarch64::dsb();
 
                 /* is it a valid successful response? */
                 return self.0[1] == MBOX_RESPONSE;
@@ -88,6 +89,50 @@ impl MBox {
 
         if unsafe { mbox.call(MBOX_CH_PROP) } {
             Some(mbox.0[5])
+        } else {
+            None
+        }
+    }
+
+    pub fn core_temperature() -> Option<u32> {
+        let mut mbox = MBox::new();
+
+        mbox.0[0] = 8*4;
+        mbox.0[1] = MBOX_REQUEST;
+        mbox.0[2] = MBOX_TAG_TEMPERATURE;
+        mbox.0[3] = 8;
+        mbox.0[4] = 8;
+        mbox.0[5] = 0;
+        mbox.0[6] = 0;
+        mbox.0[7] = MBOX_TAG_LAST;
+
+        if unsafe { mbox.call(MBOX_CH_PROP) } {
+            Some(mbox.0[6])
+        } else {
+            None
+        }
+    }
+
+    pub fn set_power_state(device_id: u32, enable: bool) -> Option<bool> {
+        let mut mbox = MBox::new();
+
+        let mut state = 0u32;
+        state |= 1 << 1; // wait for power change
+        if enable {
+            state |= 1;
+        }
+
+        mbox.0[0] = 8*4;
+        mbox.0[1] = MBOX_REQUEST;
+        mbox.0[2] = MBOX_TAG_SET_POWER;
+        mbox.0[3] = 8;
+        mbox.0[4] = 8;
+        mbox.0[5] = device_id;
+        mbox.0[6] = state;
+        mbox.0[7] = MBOX_TAG_LAST;
+
+        if unsafe { mbox.call(MBOX_CH_PROP) } {
+            Some((mbox.0[6] & 0b10) == 0)
         } else {
             None
         }

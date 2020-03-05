@@ -8,7 +8,7 @@ pub use self::frame::TrapFrame;
 use pi::interrupt::{Controller, Interrupt};
 
 use crate::{shell, IRQ};
-use crate::console::kprintln;
+use crate::console::{kprint, kprintln};
 use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
 use crate::traps::Kind::Synchronous;

@@ -12,4 +12,6 @@ pub mod interrupt;
 pub mod mbox;
 pub mod pm;
 pub mod timer;
+pub mod types;
 pub mod uart;
+pub mod usb;

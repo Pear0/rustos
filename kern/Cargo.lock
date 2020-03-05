@@ -81,6 +81,7 @@ version = "0.1.0"
 dependencies = [
  "aarch64 0.1.0",
  "fat32 0.1.0",
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "kernel_api 0.1.0",
  "pi 0.1.0",
  "shim 0.1.0",
@@ -103,6 +104,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "pi"
 version = "0.1.0"
 dependencies = [
+ "aarch64 0.1.0",
  "shim 0.1.0",
  "volatile 0.1.0",
 ]

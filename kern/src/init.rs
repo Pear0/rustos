@@ -27,7 +27,11 @@ pub unsafe extern "C" fn _start() -> ! {
         SP.set(KERN_STACK_BASE);
         kinit()
     }
-    unreachable!()
+
+    loop {
+        aarch64::wfe();
+    }
+    // unreachable!()
 }
 
 unsafe fn zeros_bss() {

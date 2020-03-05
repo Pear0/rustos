@@ -13,3 +13,4 @@ edition = "2018"
 [dependencies]
 volatile = { path = "../volatile" }
 shim = { path = "../shim", features = ["no_std"] }
+aarch64 = { path = "../aarch64" }

@@ -16,11 +16,12 @@ use fat32::traits::FileSystem;
 use fat32::traits::{Dir, Entry, File, Metadata};
 
 use crate::console::{kprint, kprintln, CONSOLE};
-use crate::{timer, SCHEDULER};
+use crate::{timer, SCHEDULER, IRQ};
 use crate::ALLOCATOR;
 use crate::FILESYSTEM;
 use core::time::Duration;
 use crate::process::Process;
+use pi::interrupt::Interrupt;
 
 /// Error type for `Command` parse failures.
 #[derive(Debug)]
@@ -241,6 +242,7 @@ impl Shell {
                 kprintln!("Serial: {:?}", MBox::serial_number());
                 kprintln!("MAC: {:?}", MBox::mac_address());
                 kprintln!("Board Revision: {:?}", MBox::board_revision());
+                kprintln!("Temp: {:?}", MBox::core_temperature());
             }
             "panic" => {
                 panic!("Oh no, panic!");
@@ -301,7 +303,17 @@ impl Shell {
                 for snap in snaps.iter() {
                     kprintln!("{:?}", snap);
                 }
+            }
+            "current-el" => {
+                let el = unsafe { aarch64::current_el() };
+                kprintln!("Current EL: {}", el);
+            }
+            "irqs" => {
 
+                let stats = IRQ.get_stats();
+                for (i, stat) in stats.iter().enumerate() {
+                    kprintln!("{:?}: {:?}", Interrupt::from_index(i), stat);
+                }
 
             }
             path => {

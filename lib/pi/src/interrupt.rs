@@ -6,7 +6,7 @@ use volatile::{Volatile, ReadVolatile};
 
 const INT_BASE: usize = IO_BASE + 0xB000 + 0x200;
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Interrupt {
     Timer1 = 1,
     Timer3 = 3,

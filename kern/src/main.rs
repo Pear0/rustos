@@ -7,6 +7,7 @@
 #![feature(ptr_internals)]
 #![feature(raw_vec_internals)]
 #![feature(panic_info_message)]
+#![feature(c_variadic)]
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
@@ -21,9 +22,11 @@ use alloc::string::String;
 
 
 pub mod allocator;
+mod compat;
 pub mod console;
 pub mod fs;
 pub mod mutex;
+pub mod net;
 pub mod shell;
 pub mod param;
 pub mod process;
@@ -32,10 +35,11 @@ pub mod vm;
 
 use console::{kprint, kprintln};
 
-use pi::{gpio, timer};
+use pi::{gpio, timer, interrupt};
 use core::time::Duration;
 use core::ops::DerefMut;
 use pi::uart::MiniUart;
+use pi::mbox::MBox;
 use shim::io::{self, Write, Read};
 
 use fat32::traits::{BlockDevice};
@@ -53,6 +57,7 @@ use fat32::traits::FileSystem as fs32FileSystem;
 use fat32::traits::{Dir, Entry, File};
 use crate::fs::sd::Sd;
 use crate::process::Process;
+use pi::interrupt::Interrupt;
 
 #[cfg_attr(not(test), global_allocator)]
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
@@ -70,6 +75,8 @@ fn init_jtag() {
 }
 
 fn my_thread() {
+
+    unsafe { net::do_stuff(); }
 
     shell::shell("$ ");
 }
@@ -121,10 +128,10 @@ fn kmain() -> ! {
         SCHEDULER.add(proc);
     }
 
-    {
-        let mut proc = Process::load("/fib.bin").expect("failed to load");
-        SCHEDULER.add(proc);
-    }
+    // {
+    //     let mut proc = Process::load("/fib.bin").expect("failed to load");
+    //     SCHEDULER.add(proc);
+    // }
 
     SCHEDULER.start();
 

@@ -74,6 +74,7 @@ pub static CONSOLE: Mutex<Console> = Mutex::new(Console::new());
 
 /// Internal function called by the `kprint[ln]!` macros.
 #[doc(hidden)]
+#[no_mangle]
 pub fn _print(args: fmt::Arguments) {
     #[cfg(not(test))]
     {

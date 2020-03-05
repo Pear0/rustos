@@ -17,6 +17,18 @@ pub fn nop() {
     unsafe { asm!("nop" :::: "volatile") };
 }
 
+/// Data Memory Barrier (ref. B2.3.5) (ref. C6.2.65)
+#[inline(always)]
+pub fn dmb() {
+    unsafe { asm!("dmb SY" ::: "memory" : "volatile") };
+}
+
+/// Data Synchronization Barrier (ref. B2.3.5) (ref. C6.2.67)
+#[inline(always)]
+pub fn dsb() {
+    unsafe { asm!("dsb SY" ::: "memory" : "volatile") };
+}
+
 /// Transition to a lower level
 #[inline(always)]
 pub fn eret() {
