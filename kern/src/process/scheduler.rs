@@ -1,23 +1,17 @@
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use alloc::collections::vec_deque::VecDeque;
+use alloc::vec::Vec;
 use core::borrow::{Borrow, BorrowMut};
-use core::fmt;
 
-use aarch64::*;
+use pi::{interrupt, timer};
 
-use crate::mutex::Mutex;
-use crate::param::{PAGE_MASK, PAGE_SIZE, TICK, USER_IMG_BASE};
-use crate::process::{Id, Process, State};
-use crate::traps::TrapFrame;
-use crate::{VMM, IRQ, SCHEDULER};
-use crate::shell;
-use crate::console::kprint;
+use crate::{IRQ, SCHEDULER};
 use crate::console::kprintln;
-use core::time::Duration;
+use crate::mutex::Mutex;
+use crate::param::{TICK, USER_IMG_BASE};
+use crate::process::{Id, Process, State};
 use crate::process::snap::SnapProcess;
-
-use pi::{timer, interrupt};
+use crate::traps::TrapFrame;
 
 /// Process scheduler for the entire machine.
 #[derive(Debug)]
@@ -49,7 +43,7 @@ impl GlobalScheduler {
 
     /// Adds a process to the scheduler's queue and returns that process's ID.
     /// For more details, see the documentation on `Scheduler::add()`.
-    pub fn add(&self, mut process: Process) -> Option<Id> {
+    pub fn add(&self, process: Process) -> Option<Id> {
         self.critical(move |scheduler| scheduler.add(process))
     }
 
@@ -171,7 +165,7 @@ impl GlobalScheduler {
 
         let len = 50;
 
-        let mut page = proc.vmap.alloc(
+        let page = proc.vmap.alloc(
             VirtualAddr::from(USER_IMG_BASE as u64), PagePerm::RWX);
 
         let text = unsafe {

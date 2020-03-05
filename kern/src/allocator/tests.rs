@@ -72,8 +72,8 @@ mod align_util {
 
 mod allocator {
     extern crate alloc;
-    use alloc::raw_vec::RawVec;
 
+    use alloc::raw_vec::RawVec;
     use core::alloc::Layout;
 
     use crate::allocator::{bin, bump, LocalAlloc};

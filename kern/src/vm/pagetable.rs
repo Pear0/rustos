@@ -1,22 +1,21 @@
-use core::iter::Chain;
-use core::ops::{Deref, DerefMut};
-use core::slice::Iter;
-
 use alloc::boxed::Box;
 use alloc::fmt;
 use core::alloc::{GlobalAlloc, Layout};
-
-use crate::allocator;
-use crate::param::*;
-use crate::vm::{PhysicalAddr, VirtualAddr};
-use crate::ALLOCATOR;
+use core::fmt::Formatter;
+use core::iter::Chain;
+use core::ops::{Deref, DerefMut};
+use core::ops::Sub;
+use core::slice::Iter;
 
 use aarch64::vmsa::*;
-use shim::const_assert_size;
 use aarch64::vmsa::EntryPerm::{KERN_RW, USER_RW};
-use core::fmt::{Formatter, Error};
+use shim::const_assert_size;
+
+use crate::allocator;
+use crate::ALLOCATOR;
 use crate::console::kprintln;
-use core::ops::Sub;
+use crate::param::*;
+use crate::vm::{PhysicalAddr, VirtualAddr};
 
 #[repr(C)]
 pub struct Page([u8; PAGE_SIZE]);

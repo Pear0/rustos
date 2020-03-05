@@ -1,27 +1,22 @@
-use shim::io;
-use shim::ioerr;
-use shim::path::{Path, PathBuf, Component};
-// use std::path::{Path, PathBuf, Component};
-
 use alloc::string::String;
 use alloc::vec::Vec;
-
-use stack_vec::StackVec;
 use core::ops::DerefMut;
-use core::borrow::Borrow;
-
-use pi::atags::Atags;
-
-use fat32::traits::FileSystem;
-use fat32::traits::{Dir, Entry, File, Metadata};
-
-use crate::console::{kprint, kprintln, CONSOLE};
-use crate::{timer, SCHEDULER, IRQ};
-use crate::ALLOCATOR;
-use crate::FILESYSTEM;
 use core::time::Duration;
-use crate::process::Process;
+
+use fat32::traits::{Dir, Entry, File, Metadata};
+use fat32::traits::FileSystem;
 use pi::interrupt::Interrupt;
+use shim::io;
+use shim::ioerr;
+use shim::path::{Component, Path, PathBuf};
+use stack_vec::StackVec;
+
+use crate::{IRQ, SCHEDULER, timer};
+use crate::console::{CONSOLE, kprint, kprintln};
+use crate::FILESYSTEM;
+use crate::process::Process;
+
+// use std::path::{Path, PathBuf, Component};
 
 /// Error type for `Command` parse failures.
 #[derive(Debug)]
@@ -82,7 +77,7 @@ impl Shell {
     }
 
     fn open_file(&self, piece: &str) -> io::Result<FEntry> {
-        let mut path = Path::new(piece);
+        let path = Path::new(piece);
         if path.has_root() {
             FILESYSTEM.open(path)
         } else {
@@ -91,14 +86,12 @@ impl Shell {
     }
 
     fn load_process(&self, piece: &str) -> kernel_api::OsResult<Process> {
-
-        let mut path = Path::new(piece);
+        let path = Path::new(piece);
         if path.has_root() {
             Process::load(path)
         } else {
             Process::load(self.cwd.join(path))
         }
-
     }
 
     fn describe_ls_entry(&self, entry: FEntry, show_all: bool) {
@@ -128,7 +121,7 @@ impl Shell {
 
         let size = match &entry {
             fat32::vfat::Entry::<crate::fs::PiVFatHandle>::File(f) => f.size(),
-            fat32::vfat::Entry::<crate::fs::PiVFatHandle>::Dir(d) => 0,
+            fat32::vfat::Entry::<crate::fs::PiVFatHandle>::Dir(_) => 0,
         };
 
         kprintln!("{} {:>7} {} {}", line, size, entry.metadata().modified(), entry.name());
@@ -215,7 +208,7 @@ impl Shell {
                 let entry = FILESYSTEM.open(dir)?;
 
                 match &entry {
-                    fat32::vfat::Entry::File(f) => self.describe_ls_entry(entry, true),
+                    fat32::vfat::Entry::File(_) => self.describe_ls_entry(entry, true),
                     fat32::vfat::Entry::Dir(f) => {
 
                         let entries = f.entries()?;

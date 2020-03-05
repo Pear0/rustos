@@ -1,8 +1,7 @@
 use core::alloc::Layout;
-use core::ptr;
 
-use crate::allocator::util::*;
 use crate::allocator::LocalAlloc;
+use crate::allocator::util::*;
 use crate::console::kprintln;
 
 /// A "bump" allocator: allocates memory by bumping a pointer; never frees.
@@ -60,7 +59,7 @@ impl LocalAlloc for Allocator {
         }
 
         self.current = end;
-        unsafe { aligned_current as *mut u8 }
+        aligned_current as *mut u8
     }
 
     /// Deallocates the memory referenced by `ptr`.

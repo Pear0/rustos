@@ -1,14 +1,15 @@
 #![allow(non_snake_case)]
 
-use pi::timer;
+use alloc::alloc::{GlobalAlloc, Layout};
+use alloc::boxed::Box;
 use core::time::Duration;
-use alloc::alloc::{Layout, GlobalAlloc};
+
+use pi::interrupt::{Controller, Interrupt};
+use pi::mbox::MBox;
+use pi::timer;
+
 use crate::{ALLOCATOR, IRQ};
 use crate::console::{kprint, kprintln};
-use pi::interrupt::{Controller, Interrupt};
-use alloc::boxed::Box;
-use pi::mbox::MBox;
-use core::ffi::VaList;
 
 /// Function implementations for linked C libraries
 
@@ -60,7 +61,7 @@ extern "C" fn usDelay(amt: u32) {
 extern "C" fn malloc(size: u32) -> *mut u8 {
     unsafe {
         let l = Layout::from_size_align_unchecked((size+4) as usize, 4);
-        let mut p = ALLOCATOR.alloc(l);
+        let p = ALLOCATOR.alloc(l);
         *(p as *mut u32) = size+4; // store size (to deallocate) in first byte
         p.offset(4)
     }

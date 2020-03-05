@@ -1,6 +1,5 @@
-use core::fmt;
-
 use alloc::boxed::Box;
+use core::fmt;
 
 use crate::process::Process;
 

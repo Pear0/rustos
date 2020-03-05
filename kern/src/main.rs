@@ -11,15 +11,23 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-#[cfg(not(test))]
-mod init;
-
 extern crate alloc;
 
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::string::String;
+use core::time::Duration;
 
+use allocator::Allocator;
+use console::kprintln;
+use fs::FileSystem;
+use pi::{gpio, timer};
+use process::GlobalScheduler;
+use traps::irq::Irq;
+use vm::VMManager;
+
+use crate::net::GlobalNetHandler;
+use crate::process::Process;
+
+#[cfg(not(test))]
+mod init;
 
 pub mod allocator;
 mod compat;
@@ -33,70 +41,46 @@ pub mod process;
 pub mod traps;
 pub mod vm;
 
-use console::{kprint, kprintln};
-
-use pi::{gpio, timer, interrupt};
-use core::time::Duration;
-use core::ops::DerefMut;
-use pi::uart::MiniUart;
-use pi::mbox::MBox;
-use shim::io::{self, Write, Read};
-
-use fat32::traits::{BlockDevice};
-
-use crate::console::CONSOLE;
-
-use allocator::Allocator;
-use fs::FileSystem;
-use process::GlobalScheduler;
-use traps::irq::Irq;
-use vm::VMManager;
-
-use fat32::vfat::{VFatHandle, Dir as VDir, Metadata};
-use fat32::traits::FileSystem as fs32FileSystem;
-use fat32::traits::{Dir, Entry, File};
-use crate::fs::sd::Sd;
-use crate::process::Process;
-use pi::interrupt::Interrupt;
-
 #[cfg_attr(not(test), global_allocator)]
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
 pub static SCHEDULER: GlobalScheduler = GlobalScheduler::uninitialized();
 pub static VMM: VMManager = VMManager::uninitialized();
 pub static IRQ: Irq = Irq::uninitialized();
+pub static NET: GlobalNetHandler = GlobalNetHandler::uninitialized();
 
 fn init_jtag() {
-   use gpio::{Function, Gpio};
+    use gpio::{Function, Gpio};
 
-   for pin in 22..=27 {
-      Gpio::new(pin).into_alt(Function::Alt4);
-   }
+    for pin in 22..=27 {
+        Gpio::new(pin).into_alt(Function::Alt4);
+    }
 }
 
 fn my_thread() {
-
-    unsafe { net::do_stuff(); }
+    kprintln!("Initing Net");
+    unsafe {
+        NET.initialize();
+    }
+    // unsafe { net::do_stuff(); }
 
     shell::shell("$ ");
 }
 
 fn led_blink() {
-
     let mut g = gpio::Gpio::new(29).into_output();
     loop {
         g.set();
-        kernel_api::syscall::sleep(Duration::from_millis(250));
+        kernel_api::syscall::sleep(Duration::from_millis(250)).ok();
         // timer::spin_sleep(Duration::from_millis(250));
         g.clear();
-        kernel_api::syscall::sleep(Duration::from_millis(250));
+        kernel_api::syscall::sleep(Duration::from_millis(250)).ok();
         // timer::spin_sleep(Duration::from_millis(250));
     }
 }
 
 
 fn kmain() -> ! {
-
     init_jtag();
 
     // This is so that the host computer can attach serial console/screen whatever.
@@ -116,15 +100,20 @@ fn kmain() -> ! {
     VMM.initialize();
     kprintln!("Initing Scheduler");
 
-    unsafe { SCHEDULER.initialize() };
+    unsafe {
+        SCHEDULER.initialize();
+
+
+        // NET.initialize();
+    };
 
     {
-        let mut proc = Process::kernel_process(my_thread).unwrap();
+        let proc = Process::kernel_process(my_thread).unwrap();
         SCHEDULER.add(proc);
     }
 
     {
-        let mut proc = Process::kernel_process(led_blink).unwrap();
+        let proc = Process::kernel_process(led_blink).unwrap();
         SCHEDULER.add(proc);
     }
 
@@ -134,5 +123,4 @@ fn kmain() -> ! {
     // }
 
     SCHEDULER.start();
-
 }

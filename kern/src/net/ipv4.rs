@@ -1,7 +1,7 @@
 use core::fmt;
 
 #[repr(C, packed)]
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Address([u8; 4]);
 
 impl From<&[u8]> for Address {

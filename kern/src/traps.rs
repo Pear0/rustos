@@ -1,18 +1,18 @@
+use pi::interrupt::{Controller, Interrupt};
+
+use crate::{IRQ, shell};
+use crate::console::kprintln;
+use crate::traps::Kind::Synchronous;
+
+pub use self::frame::TrapFrame;
+use self::syndrome::Syndrome;
+use self::syscall::handle_syscall;
+
 mod frame;
 mod syndrome;
 mod syscall;
 
 pub mod irq;
-pub use self::frame::TrapFrame;
-
-use pi::interrupt::{Controller, Interrupt};
-
-use crate::{shell, IRQ};
-use crate::console::{kprint, kprintln};
-use self::syndrome::Syndrome;
-use self::syscall::handle_syscall;
-use crate::traps::Kind::Synchronous;
-use crate::traps::syscall::sys_sleep;
 
 #[repr(u16)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -71,7 +71,7 @@ pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
                 }
             }
         }
-        other => {
+        _ => {
             kprintln!("{:?}", info);
             shell::shell("#>");
         }

@@ -1,7 +1,7 @@
-use core::fmt;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
-use core::ops::{DerefMut, Deref, Drop};
+use core::fmt;
+use core::ops::{Deref, DerefMut, Drop};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 #[repr(align(32))]
 pub struct Mutex<T> {

@@ -1,16 +1,9 @@
 use core::alloc::Layout;
-use core::fmt;
-use core::ptr;
-use core::result;
 
 use crate::allocator::linked_list::LinkedList;
-use crate::allocator::util::*;
 use crate::allocator::LocalAlloc;
 
 use super::util::align_up;
-
-type Result<T> = result::Result<T, &'static str>;
-
 
 /// A simple allocator that allocates based on size classes.
 ///   bin 0 (2^3 bytes)    : handles allocations in (0, 2^3]
@@ -43,11 +36,6 @@ impl Allocator {
             wilderness_end: end,
             bins: [LinkedList::new(); 30],
         }
-    }
-
-    fn dump(&self, msg: &'static str) {
-        // println!("[dump:{}] BinAlloc(wilderness: 0x{:x}, wilderness_end: 0x{:x}) -> wilderness size: 0x{:x}",
-        //          msg, self.wilderness, self.wilderness_end, self.wilderness_end - self.wilderness);
     }
 
     fn map_to_bin(&self, mut size: usize) -> usize {

@@ -1,10 +1,11 @@
 use core::time::Duration;
-use shim::io;
-use shim::ioerr;
-use pi::timer;
-use crate::console::kprintln;
 
 use fat32::traits::BlockDevice;
+use pi::timer;
+use shim::io;
+use shim::ioerr;
+
+use crate::console::kprintln;
 
 extern "C" {
     /// A global representing the last SD controller error that occured.
@@ -78,7 +79,7 @@ impl BlockDevice for Sd {
     /// reading from the SD card.
     ///
     /// An error of kind `Other` is returned for all other errors.
-    fn read_sector(&mut self, mut n: u64, buf: &mut [u8]) -> io::Result<usize> {
+    fn read_sector(&mut self, n: u64, buf: &mut [u8]) -> io::Result<usize> {
         if buf.len() < 512 {
             return ioerr!(InvalidInput, "invalid buf len");
         }

@@ -1,10 +1,10 @@
+use core::time::Duration;
+
+pub use pi::common::*;
 use shim::{const_assert_eq, const_assert_size};
 
 // we only support 64-bit
 const_assert_size!(usize, 64 / 8);
-
-use core::time::Duration;
-pub use pi::common::*;
 
 pub const PAGE_ALIGN: usize = 16;
 pub const PAGE_SIZE: usize = 64 * 1024;

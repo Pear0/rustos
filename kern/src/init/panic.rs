@@ -1,10 +1,10 @@
+use core::fmt::Write;
 use core::panic::PanicInfo;
-use core::fmt::{Write, self};
-use pi::uart::MiniUart;
-use pi::pm::reset;
-use pi::timer::spin_sleep;
 use core::time::Duration;
 
+use pi::pm::reset;
+use pi::timer::spin_sleep;
+use pi::uart::MiniUart;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -27,19 +27,19 @@ fn panic(info: &PanicInfo) -> ! {
     The pi is overdone.
 
 ---------- PANIC ----------
-"#);
+"#).ok();
 
     if let Some(location) = info.location() {
-        writeln!(uart, "FILE: {}", location.file());
-        writeln!(uart, "LINE: {}", location.line());
-        writeln!(uart, "COL: {}", location.column());
-        writeln!(uart, "");
+        writeln!(uart, "FILE: {}", location.file()).ok();
+        writeln!(uart, "LINE: {}", location.line()).ok();
+        writeln!(uart, "COL: {}", location.column()).ok();
+        writeln!(uart, "").ok();
     }
 
     if let Some(message) = info.message() {
-        writeln!(uart, "{}", message);
+        writeln!(uart, "{}", message).ok();
     } else if let Some(payload) = info.payload().downcast_ref::<&'static str>() {
-        writeln!(uart, "{}", payload);
+        writeln!(uart, "{}", payload).ok();
     }
 
     spin_sleep(Duration::from_millis(1500));
@@ -48,7 +48,7 @@ fn panic(info: &PanicInfo) -> ! {
         uart.read_byte();
     }
 
-    writeln!(uart, "Press any key to reset...");
+    writeln!(uart, "Press any key to reset...").ok();
 
     while !uart.has_byte() {}
 

@@ -1,4 +1,4 @@
-use crate::process::{State, Process};
+use crate::process::{Process, State};
 
 #[derive(Debug, Clone, Copy)]
 pub enum SnapState {

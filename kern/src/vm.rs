@@ -1,14 +1,13 @@
-use crate::console::kprintln;
-use crate::mutex::Mutex;
-
 use aarch64::*;
 
-mod address;
-mod pagetable;
+use crate::mutex::Mutex;
+use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS};
 
 pub use self::address::{PhysicalAddr, VirtualAddr};
 pub use self::pagetable::*;
-use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS};
+
+mod address;
+mod pagetable;
 
 /// Thread-safe (locking) wrapper around a kernel page table.
 pub struct VMManager(Mutex<Option<KernPageTable>>);

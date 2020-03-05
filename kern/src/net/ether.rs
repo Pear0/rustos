@@ -1,15 +1,18 @@
-use core::fmt;
-use pi::types::BigU16;
-use pi::usb::Usb;
 use alloc::boxed::Box;
-use crate::console::kprintln;
+use alloc::sync::Arc;
+use core::fmt;
 
 use hashbrown::HashMap;
-use crate::net::try_parse_struct;
+
+use pi::types::BigU16;
 use pi::usb;
+use pi::usb::Usb;
+
+use crate::console::kprintln;
+use crate::net::try_parse_struct;
 
 #[repr(C, packed)]
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Mac([u8; 6]);
 
 impl From<&[u8]> for Mac {
@@ -56,23 +59,27 @@ pub struct EthFrame<T: EthPayload> {
     pub payload: T,
 }
 
-pub type EthHandler<T: EthPayload> = Box<dyn FnMut(&mut Interface, &EthHeader, &mut T) + Send>;
+pub type EthHandler<T> = Box<dyn FnMut(&mut Interface, &EthHeader, &mut T) + Send>;
 
 type RawEthHandler = Box<dyn FnMut(&mut Interface, &EthHeader, &[u8]) + Send>;
 
-pub struct Interface<'a> {
-    usb: &'a Usb,
+pub struct Interface {
+    usb: Arc<Usb>,
     handlers: HashMap<u16, Option<RawEthHandler>>,
     address: Mac,
 }
 
-impl Interface<'_> {
-    pub fn new(usb: &Usb, address: Mac) -> Interface {
+impl Interface {
+    pub fn new(usb: Arc<Usb>, address: Mac) -> Interface {
         Interface {
             usb,
             handlers: HashMap::new(),
             address,
         }
+    }
+
+    pub fn address(&self) -> Mac {
+        self.address
     }
 
     pub fn send<T: EthPayload>(&mut self, to: Mac, payload: T) -> Option<()> {
@@ -117,7 +124,7 @@ impl Interface<'_> {
         // we pass a mutable reference to self but also have a FnMut so we have to move
         // the FnMut out of &mut self while this happens.
         if self.handlers.contains_key(&protocol) {
-            let mut handler = self.handlers.insert(protocol, None).unwrap();
+            let handler = self.handlers.insert(protocol, None).unwrap();
             let mut handler = handler.expect("recursion???");
 
             handler(self, &eth, frame);

@@ -1,10 +1,11 @@
-use pi::types::BigU16;
-use crate::net::ether::EthPayload;
-use shim::const_assert_size;
-use crate::net::{ether, ipv4};
+use hashbrown::HashMap;
 
-const MAC_ADDRESS_SIZE: usize = 6;
-const IP_ADDRESS_SIZE: usize = 4;
+use pi::types::BigU16;
+use shim::const_assert_size;
+
+use crate::mutex::Mutex;
+use crate::net::{ether, ipv4};
+use crate::net::ether::EthPayload;
 
 pub const HW_ADDR_ETHER: u16 = 1;
 pub const PROT_ADDR_IP: u16 = 0x800;
@@ -65,5 +66,29 @@ impl ArpPacket {
 
 impl EthPayload for ArpPacket {
     const ETHER_TYPE: u16 = 0x806;
+}
+
+/// Thread safe ARP table
+pub struct ArpTable {
+    table: Mutex<HashMap<(u16, ipv4::Address), ether::Mac>>,
+}
+
+impl ArpTable {
+    pub fn new() -> Self {
+        ArpTable {
+            table: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn insert(&self, protocol: u16, ip: ipv4::Address, mac: ether::Mac) {
+        let mut lock = self.table.lock();
+        lock.insert((protocol, ip), mac);
+    }
+
+    pub fn get(&self, protocol: u16, ip: ipv4::Address) -> Option<ether::Mac> {
+        let lock = self.table.lock();
+        lock.get(&(protocol, ip)).map(|x| x.clone())
+    }
+
 }
 

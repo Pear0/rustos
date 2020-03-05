@@ -1,13 +1,13 @@
-use aarch64::*;
-
 use core::mem::zeroed;
 use core::ptr::write_volatile;
 
-mod oom;
-mod panic;
+use aarch64::*;
 
 use crate::kmain;
 use crate::param::*;
+
+mod oom;
+mod panic;
 
 global_asm!(include_str!("init/vectors.s"));
 

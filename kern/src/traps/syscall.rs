@@ -1,11 +1,12 @@
 use alloc::boxed::Box;
 use core::time::Duration;
 
-use crate::console::CONSOLE;
-use crate::process::{State, EventPollFn};
-use crate::traps::TrapFrame;
-use crate::SCHEDULER;
 use kernel_api::*;
+
+use crate::console::CONSOLE;
+use crate::process::{EventPollFn, State};
+use crate::SCHEDULER;
+use crate::traps::TrapFrame;
 
 /// Sleep for `ms` milliseconds.
 ///
@@ -17,7 +18,7 @@ use kernel_api::*;
 pub fn sys_sleep(ms: u32, tf: &mut TrapFrame) {
     let wait_until = pi::timer::current_time() + Duration::from_millis(ms as u64);
 
-    let time_fn: EventPollFn = Box::new(move |p| {
+    let time_fn: EventPollFn = Box::new(move |_| {
         pi::timer::current_time() >= wait_until
     });
     SCHEDULER.switch(State::Waiting(time_fn), tf);
@@ -54,7 +55,7 @@ pub fn sys_exit(tf: &mut TrapFrame) {
 /// This system call takes one parameter: a u8 character to print.
 ///
 /// It only returns the usual status value.
-pub fn sys_write(b: u8, tf: &mut TrapFrame) {
+pub fn sys_write(b: u8, _tf: &mut TrapFrame) {
 
     CONSOLE.lock().write_byte(b);
 

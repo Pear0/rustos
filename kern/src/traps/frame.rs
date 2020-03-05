@@ -1,4 +1,3 @@
-use core::fmt;
 
 #[repr(C)]
 #[derive(Default, Copy, Clone, Debug)]

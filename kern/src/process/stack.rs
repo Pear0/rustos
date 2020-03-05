@@ -2,8 +2,8 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::fmt;
 use core::ptr::Unique;
 
-use crate::vm::PhysicalAddr;
 use crate::ALLOCATOR;
+use crate::vm::PhysicalAddr;
 
 /// A process stack. The default size is 1MiB with an alignment of 16 bytes.
 pub struct Stack {

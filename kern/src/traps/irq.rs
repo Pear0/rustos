@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+
 use pi::interrupt::Interrupt;
 
 use crate::mutex::Mutex;
@@ -24,13 +25,13 @@ impl IrqEntry {
         }
     }
 
-    fn record_stats(&mut self, tf: &TrapFrame) {
+    fn record_stats(&mut self, _tf: &TrapFrame) {
         self.stats.count = self.stats.count.wrapping_add(1);
     }
 
 }
 
-pub type IrqHandlers = [IrqEntry; Interrupt::MAX];
+type IrqHandlers = [IrqEntry; Interrupt::MAX];
 
 pub struct Irq(Mutex<Option<IrqHandlers>>);
 

@@ -1,3 +1,10 @@
+use core::alloc::{GlobalAlloc, Layout};
+use core::fmt;
+
+use pi::atags::Atags;
+
+use crate::mutex::Mutex;
+
 mod linked_list;
 pub mod util;
 
@@ -8,13 +15,6 @@ type AllocatorImpl = bin::Allocator;
 
 #[cfg(test)]
 mod tests;
-
-use core::alloc::{GlobalAlloc, Layout};
-use core::fmt;
-
-use crate::console::kprintln;
-use crate::mutex::Mutex;
-use pi::atags::{Atag, Atags};
 
 /// `LocalAlloc` is an analogous trait to the standard library's `GlobalAlloc`,
 /// but it takes `&mut self` in `alloc()` and `dealloc()`.
@@ -75,7 +75,7 @@ extern "C" {
 ///
 /// This function is expected to return `Some` under all normal cirumstances.
 pub fn memory_map() -> Option<(usize, usize)> {
-    let page_size = 1 << 12;
+    // let page_size = 1 << 12;
     let binary_end = unsafe { (&__text_end as *const u8) as usize };
 
     let mut mem_end = 0u32;
