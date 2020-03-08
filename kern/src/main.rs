@@ -13,6 +13,9 @@
 
 extern crate alloc;
 
+#[macro_use]
+extern crate modular_bitfield;
+
 use core::time::Duration;
 
 use allocator::Allocator;
@@ -25,6 +28,9 @@ use vm::VMManager;
 
 use crate::net::GlobalNetHandler;
 use crate::process::Process;
+use alloc::sync::Arc;
+use crate::io::{SyncWrite, ConsoleSync, ReadWrapper, SyncRead, WriteWrapper};
+use crate::net::tcp::{SHELL_READ, SHELL_WRITE};
 
 #[cfg(not(test))]
 mod init;
@@ -33,6 +39,8 @@ pub mod allocator;
 mod compat;
 pub mod console;
 pub mod fs;
+pub mod io;
+pub mod mbox;
 pub mod mutex;
 pub mod net;
 pub mod shell;
@@ -57,14 +65,30 @@ fn init_jtag() {
     }
 }
 
-fn my_thread() {
-    kprintln!("Initing Net");
+fn network_thread() {
     unsafe {
         NET.initialize();
     }
-    // unsafe { net::do_stuff(); }
+
+    loop {
+        if !NET.critical(|n| n.dispatch()) {
+            kernel_api::syscall::sleep(Duration::from_micros(1000)).ok();
+        }
+    }
+}
+
+fn my_thread() {
 
     shell::shell("$ ");
+}
+
+fn my_net_thread() {
+
+    let write: Arc<dyn SyncWrite> = Arc::new(SHELL_WRITE.get());
+    let read: Arc<dyn SyncRead> = Arc::new(SHELL_READ.get());
+
+    shell::Shell::new("$ ", ReadWrapper::new(read), WriteWrapper::new(write)).shell_loop();
+
 }
 
 fn led_blink() {
@@ -109,6 +133,16 @@ fn kmain() -> ! {
 
     {
         let proc = Process::kernel_process(my_thread).unwrap();
+        SCHEDULER.add(proc);
+    }
+
+    {
+        let proc = Process::kernel_process(my_net_thread).unwrap();
+        SCHEDULER.add(proc);
+    }
+
+    {
+        let proc = Process::kernel_process(network_thread).unwrap();
         SCHEDULER.add(proc);
     }
 

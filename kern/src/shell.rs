@@ -11,10 +11,12 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, SCHEDULER, timer};
-use crate::console::{CONSOLE, kprint, kprintln};
+use crate::{IRQ, SCHEDULER, timer, NET};
 use crate::FILESYSTEM;
 use crate::process::Process;
+use crate::io::{ConsoleSync, ReadWrapper, WriteWrapper, SyncRead, SyncWrite};
+use alloc::sync::Arc;
+use crate::net::arp::ArpResolver;
 
 // use std::path::{Path, PathBuf, Component};
 
@@ -57,18 +59,24 @@ impl<'a> Command<'a> {
     }
 }
 
-struct Shell {
+pub struct Shell<R: io::Read, W: io::Write> {
+    prefix: &'static str,
     cwd: PathBuf,
-    dead_shell: bool
+    dead_shell: bool,
+    reader: R,
+    writer: W,
 }
 
 type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
 
-impl Shell {
-    pub fn new() -> Shell {
+impl<R: io::Read, W: io::Write> Shell<R, W> {
+    pub fn new(prefix: &'static str, reader: R, writer: W) -> Self {
         Shell {
+            prefix,
             cwd: PathBuf::from("/"),
             dead_shell: false,
+            reader,
+            writer,
         }
     }
 
@@ -94,7 +102,7 @@ impl Shell {
         }
     }
 
-    fn describe_ls_entry(&self, entry: FEntry, show_all: bool) {
+    fn describe_ls_entry(&mut self, entry: FEntry, show_all: bool) {
         if !show_all && (entry.metadata().hidden() || entry.name() == "." || entry.name() == "..") {
             return
         }
@@ -124,41 +132,42 @@ impl Shell {
             fat32::vfat::Entry::<crate::fs::PiVFatHandle>::Dir(_) => 0,
         };
 
-        kprintln!("{} {:>7} {} {}", line, size, entry.metadata().modified(), entry.name());
+        writeln!(self.writer, "{} {:>7} {} {}", line, size, entry.metadata().modified(), entry.name());
 
     }
 
-    pub fn process_command(&mut self, command: &mut Command) -> io::Result<()> {
+    fn process_command(&mut self, command: &mut Command) -> io::Result<()> {
         match command.path() {
             "echo" => {
                 for (i, arg) in command.args.iter().skip(1).enumerate() {
                     if i > 0 {
-                        kprint!(" ");
+                        write!(self.writer, " ");
                     }
-                    kprint!("{}", arg);
+                    write!(self.writer, "{}", arg);
                 }
-                kprintln!();
+                writeln!(self.writer, );
             }
             "pwd" => {
-                kprintln!("{}", self.cwd_str());
+                use alloc::borrow::ToOwned;
+                let cwd = self.cwd_str().to_owned();
+                writeln!(&mut self.writer, "{}", cwd);
             }
             "cat" => {
                 if command.args.len() < 2 {
-                    kprintln!("expected: cat <path>");
+                    writeln!(self.writer, "expected: cat <path>");
                 } else {
                     for arg in command.args[1..].iter() {
                         match self.open_file(arg) {
                             Ok(e) => {
 
                                 if let Some(mut f) = e.into_file() {
-                                    let mut lock = CONSOLE.lock();
-                                    io::copy(&mut f, lock.deref_mut())?;
+                                    io::copy(&mut f, &mut self.writer)?;
                                 } else {
-                                    kprintln!("error: not a file");
+                                    writeln!(self.writer, "error: not a file");
                                 }
                             }
                             Err(e) => {
-                                kprintln!("error: {}", e);
+                                writeln!(self.writer, "error: {}", e);
                             }
                         }
                     }
@@ -166,7 +175,7 @@ impl Shell {
             }
             "cd" => {
                 if command.args.len() < 2 {
-                    kprintln!("expected: cd <path>");
+                    writeln!(self.writer, "expected: cd <path>");
                 } else {
 
                     for component in Path::new(command.args[1]).components() {
@@ -185,7 +194,7 @@ impl Shell {
                                 if let fat32::vfat::Entry::Dir(d) = FILESYSTEM.open(new.to_str().unwrap())? {
                                     self.cwd.push(d.name);
                                 } else {
-                                    kprintln!("error: invalid path");
+                                    writeln!(self.writer, "error: invalid path");
                                     return Ok(())
                                 }
 
@@ -220,22 +229,58 @@ impl Shell {
                 }
             }
             "uptime" => {
-                kprintln!("Uptime: {:?}", timer::current_time());
+                writeln!(self.writer, "Uptime: {:?}", timer::current_time());
 
             }
             "reboot" => {
                 use pi::pm::reset;
 
-                kprintln!("Resetting");
+                writeln!(self.writer, "Resetting");
                 unsafe { reset(); }
 
             }
             "pi-info" => {
-                use pi::mbox::MBox;
-                kprintln!("Serial: {:?}", MBox::serial_number());
-                kprintln!("MAC: {:?}", MBox::mac_address());
-                kprintln!("Board Revision: {:?}", MBox::board_revision());
-                kprintln!("Temp: {:?}", MBox::core_temperature());
+                use crate::mbox::with_mbox;
+
+                with_mbox(|mbox| {
+                    writeln!(self.writer, "Serial: {:?}", mbox.serial_number());
+                    writeln!(self.writer, "MAC: {:?}", mbox.mac_address());
+                    writeln!(self.writer, "Board Revision: {:?}", mbox.board_revision());
+                    writeln!(self.writer, "Temp: {:?}", mbox.core_temperature());
+                });
+
+
+            }
+            "arp" => {
+
+
+                if command.args.len() == 2 {
+
+                    match command.args[1].parse() {
+                        Ok(addr) => {
+                            match NET.critical(|n| n.arp_request(addr)) {
+                                Ok(mac) => {
+                                    writeln!(self.writer, "existing entry at {}", mac);
+                                }
+                                Err(e) => {
+                                    writeln!(self.writer, "error: {:?}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            writeln!(self.writer, "error: {}", e);
+                        }
+                    }
+
+                } else {
+                    let arp_table = NET.critical(|n| n.arp.copy_table());
+
+                    writeln!(self.writer, "ARP Table:");
+                    for entry in arp_table.iter() {
+                        writeln!(self.writer, "{:04x} {} -> {}", (entry.0).0, (entry.0).1, entry.1);
+                    }
+                }
+
             }
             "panic" => {
                 panic!("Oh no, panic!");
@@ -254,16 +299,16 @@ impl Shell {
                     let ms: u32 = match command.args[1].parse() {
                         Ok(ms) => ms,
                         Err(e) => {
-                            kprintln!("error: {}", e);
+                            writeln!(self.writer, "error: {}", e);
                             return Ok(())
                         }
                     };
 
                     let res = kernel_api::syscall::sleep(Duration::from_millis(ms as u64));
-                    kprintln!("-> {:?}", res);
+                    writeln!(self.writer, "-> {:?}", res);
 
                 } else {
-                    kprintln!("usage: sleep <ms>");
+                    writeln!(self.writer, "usage: sleep <ms>");
                 }
 
             }
@@ -278,13 +323,13 @@ impl Shell {
 
                         },
                         Err(e) => {
-                            kprintln!("error: {:?}", e);
+                            writeln!(self.writer, "error: {:?}", e);
                             return Ok(())
                         }
                     }
 
                 } else {
-                    kprintln!("usage: run <program>");
+                    writeln!(self.writer, "usage: run <program>");
                 }
 
             }
@@ -294,92 +339,109 @@ impl Shell {
                 SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
 
                 for snap in snaps.iter() {
-                    kprintln!("{:?}", snap);
+                    writeln!(self.writer, "{:?}", snap);
                 }
             }
             "current-el" => {
                 let el = unsafe { aarch64::current_el() };
-                kprintln!("Current EL: {}", el);
+                writeln!(self.writer, "Current EL: {}", el);
             }
             "irqs" => {
 
                 let stats = IRQ.get_stats();
                 for (i, stat) in stats.iter().enumerate() {
-                    kprintln!("{:?}: {:?}", Interrupt::from_index(i), stat);
+                    writeln!(self.writer, "{:?}: {:?}", Interrupt::from_index(i), stat);
                 }
 
             }
             path => {
-                kprintln!("unknown command: {}", path);
+                writeln!(self.writer, "unknown command: {}", path);
             }
         }
 
         Ok(())
     }
-}
 
-fn bell() {
-    CONSOLE.lock().write_byte(7);
-}
+    pub fn shell_loop(&mut self) {
+        writeln!(self.writer);
+        while !self.dead_shell {
+            write!(self.writer, "{}", self.prefix);
+            let mut raw_buf = [0u8; 512];
+            let mut line_buf = StackVec::new(&mut raw_buf);
 
-fn backspace() {
-    let mut console = CONSOLE.lock();
-    console.write_byte(8);
-    console.write_byte(b' ');
-    console.write_byte(8);
-}
-
-fn read_byte() -> u8 {
-    CONSOLE.lock().read_byte()
-}
-
-/// Starts a shell using `prefix` as the prefix for each line. This function
-/// never returns.
-pub fn shell(prefix: &str) {
-    let mut shell = Shell::new();
-    kprintln!();
-    while !shell.dead_shell {
-        kprint!("{}", prefix);
-        let mut raw_buf = [0u8; 512];
-        let mut line_buf = StackVec::new(&mut raw_buf);
-
-        'line_loop: loop {
-            match read_byte() {
-                b'\r' | b'\n' => {
-                    kprintln!();
-                    break 'line_loop;
-                }
-                8u8 | 127u8 => {
-                    if line_buf.len() > 0 {
-                        backspace();
-                        line_buf.pop();
-                    } else {
-                        bell();
+            'line_loop: loop {
+                match self.read_byte() {
+                    b'\r' | b'\n' => {
+                        writeln!(self.writer);
+                        break 'line_loop;
+                    }
+                    8u8 | 127u8 => {
+                        if line_buf.len() > 0 {
+                            self.backspace();
+                            line_buf.pop();
+                        } else {
+                            self.bell();
+                        }
+                    }
+                    // if we are in the first or fourth ASCII block and
+                    // haven't already handled it, treat this as invalid.
+                    byte if byte < 0x20 || byte >= 0x80 => self.bell(),
+                    byte => match line_buf.push(byte) {
+                        Ok(()) => {
+                            self.writer.write(core::slice::from_ref(&byte));
+                        }
+                        Err(_) => self.bell(),
                     }
                 }
-                // if we are in the first or fourth ASCII block and
-                // haven't already handled it, treat this as invalid.
-                byte if byte < 0x20 || byte >= 0x80 => bell(),
-                byte => match line_buf.push(byte) {
-                    Ok(()) => CONSOLE.lock().write_byte(byte),
-                    Err(_) => bell(),
-                }
             }
-        }
 
-        let text_buf = core::str::from_utf8(line_buf.as_slice());
-        let mut arg_buf = [""; 64];
-        match Command::parse(text_buf.unwrap(), &mut arg_buf) {
-            Err(Error::Empty) => {}
-            Err(Error::TooManyArgs) => {
-                kprintln!("error: too many arguments");
-            }
-            Ok(mut command) => {
-                if let Err(e) = shell.process_command(&mut command) {
-                    kprintln!("error: {}", e);
+            let text_buf = core::str::from_utf8(line_buf.as_slice());
+            let mut arg_buf = [""; 64];
+            match Command::parse(text_buf.unwrap(), &mut arg_buf) {
+                Err(Error::Empty) => {}
+                Err(Error::TooManyArgs) => {
+                    writeln!(self.writer, "error: too many arguments");
+                }
+                Ok(mut command) => {
+                    if let Err(e) = self.process_command(&mut command) {
+                        writeln!(self.writer, "error: {}", e);
+                    }
                 }
             }
         }
     }
+
+    fn bell(&mut self) {
+        write!(self.writer, "\x07");
+    }
+
+    fn backspace(&mut self) {
+        write!(self.writer, "\x08 \x08");
+    }
+
+    fn read_byte(&mut self) -> u8 {
+        loop {
+            let mut b: u8 = 0;
+            if let Ok(n) = self.reader.read(core::slice::from_mut(&mut b)) {
+                if n == 1 {
+                    return b;
+                }
+            }
+            timer::spin_sleep(Duration::from_millis(1));
+        }
+    }
+
+}
+/// Starts a shell using `prefix` as the prefix for each line. This function
+/// never returns.
+pub fn shell(prefix: &'static str) {
+
+    let read: Arc<dyn SyncRead> = Arc::new(ConsoleSync::new());
+    let write: Arc<dyn SyncWrite> = Arc::new(ConsoleSync::new());
+
+    Shell::new(prefix,
+               ReadWrapper::new(read),
+               WriteWrapper::new(write)
+    ).shell_loop();
 }
 

@@ -1,7 +1,8 @@
 use aarch64::*;
 
 use crate::mutex::Mutex;
-use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS};
+use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS, PAGE_MASK, PAGE_SIZE};
+use crate::console::kprintln;
 
 pub use self::address::{PhysicalAddr, VirtualAddr};
 pub use self::pagetable::*;
@@ -26,6 +27,19 @@ impl VMManager {
     /// initialization.
     pub fn initialize(&self) {
         self.0.lock().replace(KernPageTable::new());
+        self.setup();
+    }
+
+    pub unsafe fn mark_page_non_cached(&self, addr: usize) {
+        assert_eq!(addr % PAGE_SIZE, 0);
+
+        kprintln!("marking 0x{:x} as non cached", addr);
+
+        let mut lock = self.0.lock();
+        let kern_page_table = lock.as_mut().unwrap();
+        kern_page_table.set_entry(VirtualAddr::from(addr),
+                                  KernPageTable::create_l3_entry(addr, EntryAttr::Nc));
+
         self.setup();
     }
 

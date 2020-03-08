@@ -1,18 +1,17 @@
 use core::fmt;
+use core::fmt::Error;
 use core::time::Duration;
 
-use shim::io;
 use shim::const_assert_size;
-
+use shim::io;
+use volatile::{ReadVolatile, Reserved, Volatile};
 use volatile::prelude::*;
-use volatile::{Volatile, ReadVolatile, Reserved};
 
-use crate::{timer, interrupt};
+use crate::{interrupt, timer};
 use crate::common::IO_BASE;
-use crate::gpio::{Gpio, Function};
-use crate::uart::LsrStatus::{DataReady, TxAvailable};
-use core::fmt::Error;
+use crate::gpio::{Function, Gpio};
 use crate::interrupt::Interrupt;
+use crate::uart::LsrStatus::{DataReady, TxAvailable};
 
 /// The base address for the `MU` registers.
 const MU_REG_BASE: usize = IO_BASE + 0x215040;
@@ -155,6 +154,16 @@ impl MiniUart {
         while !self.has_byte() {}
         self.registers.IO_REG.read()
     }
+
+    pub fn read_nonblocking(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        for i in 0..buf.len() {
+            if !self.has_byte() {
+                return Ok(i);
+            }
+            buf[i] = self.read_byte();
+        }
+        Ok(buf.len())
+    }
 }
 
 // FIXME: Implement `fmt::Write` for `MiniUart`. A b'\r' byte should be written
@@ -173,10 +182,11 @@ impl fmt::Write for MiniUart {
 }
 
 pub mod uart_io {
+    use shim::ioerr;
+    use volatile::prelude::*;
+
     use super::io;
     use super::MiniUart;
-    use volatile::prelude::*;
-    use shim::ioerr;
 
     impl io::Write for MiniUart {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -197,7 +207,7 @@ pub mod uart_io {
                 Ok(_) => {
                     for i in 0..buf.len() {
                         if !self.has_byte() {
-                            return Ok(i)
+                            return Ok(i);
                         }
                         buf[i] = self.read_byte();
                     }

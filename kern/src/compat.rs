@@ -10,6 +10,7 @@ use pi::timer;
 
 use crate::{ALLOCATOR, IRQ};
 use crate::console::{kprint, kprintln};
+use crate::mbox::with_mbox;
 
 /// Function implementations for linked C libraries
 
@@ -156,7 +157,7 @@ extern "C" fn StartKernelTimer() {
 #[no_mangle]
 extern "C" fn SetPowerStateOn() {
 
-    MBox::set_power_state(0x00000003, true);
+    with_mbox(|mbox| mbox.set_power_state(0x00000003, true));
 
 }
 
@@ -186,7 +187,7 @@ extern "C" fn DebugHexdump() {
 
 #[no_mangle]
 extern "C" fn GetMACAddress(ptr: &mut [u8; 6]) {
-    match MBox::mac_address() {
+    match with_mbox(|mbox| mbox.mac_address()) {
         Some(raw) => {
             let raw: [u8; 8] = unsafe { core::mem::transmute(raw) };
             for i in 0..6 {

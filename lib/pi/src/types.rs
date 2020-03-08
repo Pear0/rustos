@@ -8,6 +8,10 @@ impl BigU16 {
         BigU16(u16::to_be(val))
     }
 
+    pub fn or_mask(&mut self, val: u16) {
+        self.set(self.get() | val);
+    }
+
     pub fn get(&self) -> u16 {
         u16::from_be(self.0)
     }

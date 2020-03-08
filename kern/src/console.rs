@@ -36,6 +36,10 @@ impl Console {
         self.inner().read_byte()
     }
 
+    pub fn read_nonblocking(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner().read_nonblocking(buf)
+    }
+
     /// Writes the byte `byte` to the UART device.
     pub fn write_byte(&mut self, byte: u8) {
         self.inner().write_byte(byte)

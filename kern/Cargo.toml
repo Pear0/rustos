@@ -21,6 +21,7 @@ fat32 = { path = "../lib/fat32/", features = ["no_std"] }
 aarch64 = { path = "../lib/aarch64/" }
 kernel_api = { path = "../lib/kernel_api" }
 hashbrown = "0.6.3"
+modular-bitfield = "0.6.0"
 
 [dev-dependencies]
 shim = { path = "../lib/shim", features = ["alloc"] }

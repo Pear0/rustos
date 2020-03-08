@@ -4,7 +4,7 @@ use crate::common::*;
 pub struct MBox(pub [u32; 36]);
 
 impl MBox {
-    pub fn new() -> MBox {
+    pub unsafe fn new() -> MBox {
         MBox([0; 36])
     }
 
@@ -27,7 +27,7 @@ impl MBox {
 
                 // Rust is smart enough to optimize out this read
                 // which obviously breaks the mailbox.
-                asm!("" ::: "memory" : "volatile");
+                // asm!("" ::: "memory" : "volatile");
                 aarch64::dsb();
 
                 /* is it a valid successful response? */
@@ -36,85 +36,79 @@ impl MBox {
         }
     }
 
-    pub fn serial_number() -> Option<u64> {
-        let mut mbox = MBox::new();
+    pub fn serial_number(&mut self) -> Option<u64> {
 
-        mbox.0[0] = 8*4;
-        mbox.0[1] = MBOX_REQUEST;
-        mbox.0[2] = MBOX_TAG_GETSERIAL;
-        mbox.0[3] = 8;
-        mbox.0[4] = 8;
-        mbox.0[5] = 0;
-        mbox.0[6] = 0;
-        mbox.0[7] = MBOX_TAG_LAST;
+        self.0[0] = 8*4;
+        self.0[1] = MBOX_REQUEST;
+        self.0[2] = MBOX_TAG_GETSERIAL;
+        self.0[3] = 8;
+        self.0[4] = 8;
+        self.0[5] = 0;
+        self.0[6] = 0;
+        self.0[7] = MBOX_TAG_LAST;
 
-        if unsafe { mbox.call(MBOX_CH_PROP) } {
-            let ser: u64 = (mbox.0[5] as u64) | ((mbox.0[6] as u64) << 32);
+        if unsafe { self.call(MBOX_CH_PROP) } {
+            let ser: u64 = (self.0[5] as u64) | ((self.0[6] as u64) << 32);
             Some(ser)
         } else {
             None
         }
     }
 
-    pub fn mac_address() -> Option<u64> {
-        let mut mbox = MBox::new();
+    pub fn mac_address(&mut self) -> Option<u64> {
 
-        mbox.0[0] = 8*4;
-        mbox.0[1] = MBOX_REQUEST;
-        mbox.0[2] = MBOX_TAG_GETMAC;
-        mbox.0[3] = 6;
-        mbox.0[4] = 8;
-        mbox.0[5] = 0;
-        mbox.0[6] = 0;
-        mbox.0[7] = MBOX_TAG_LAST;
+        self.0[0] = 8*4;
+        self.0[1] = MBOX_REQUEST;
+        self.0[2] = MBOX_TAG_GETMAC;
+        self.0[3] = 6;
+        self.0[4] = 8;
+        self.0[5] = 0;
+        self.0[6] = 0;
+        self.0[7] = MBOX_TAG_LAST;
 
-        if unsafe { mbox.call(MBOX_CH_PROP) } {
-            let ser: u64 = (mbox.0[5] as u64) | ((mbox.0[6] as u64) << 32);
+        if unsafe { self.call(MBOX_CH_PROP) } {
+            let ser: u64 = (self.0[5] as u64) | ((self.0[6] as u64) << 32);
             Some(ser)
         } else {
             None
         }
     }
 
-    pub fn board_revision() -> Option<u32> {
-        let mut mbox = MBox::new();
+    pub fn board_revision(&mut self) -> Option<u32> {
+        self.0[0] = 7*4;
+        self.0[1] = MBOX_REQUEST;
+        self.0[2] = MBOX_TAG_GETREVISION;
+        self.0[3] = 4;
+        self.0[4] = 8;
+        self.0[5] = 0;
+        self.0[6] = MBOX_TAG_LAST;
 
-        mbox.0[0] = 7*4;
-        mbox.0[1] = MBOX_REQUEST;
-        mbox.0[2] = MBOX_TAG_GETREVISION;
-        mbox.0[3] = 4;
-        mbox.0[4] = 8;
-        mbox.0[5] = 0;
-        mbox.0[6] = MBOX_TAG_LAST;
-
-        if unsafe { mbox.call(MBOX_CH_PROP) } {
-            Some(mbox.0[5])
+        if unsafe { self.call(MBOX_CH_PROP) } {
+            Some(self.0[5])
         } else {
             None
         }
     }
 
-    pub fn core_temperature() -> Option<u32> {
-        let mut mbox = MBox::new();
+    pub fn core_temperature(&mut self) -> Option<u32> {
 
-        mbox.0[0] = 8*4;
-        mbox.0[1] = MBOX_REQUEST;
-        mbox.0[2] = MBOX_TAG_TEMPERATURE;
-        mbox.0[3] = 8;
-        mbox.0[4] = 8;
-        mbox.0[5] = 0;
-        mbox.0[6] = 0;
-        mbox.0[7] = MBOX_TAG_LAST;
+        self.0[0] = 8*4;
+        self.0[1] = MBOX_REQUEST;
+        self.0[2] = MBOX_TAG_TEMPERATURE;
+        self.0[3] = 8;
+        self.0[4] = 8;
+        self.0[5] = 0;
+        self.0[6] = 0;
+        self.0[7] = MBOX_TAG_LAST;
 
-        if unsafe { mbox.call(MBOX_CH_PROP) } {
-            Some(mbox.0[6])
+        if unsafe { self.call(MBOX_CH_PROP) } {
+            Some(self.0[6])
         } else {
             None
         }
     }
 
-    pub fn set_power_state(device_id: u32, enable: bool) -> Option<bool> {
-        let mut mbox = MBox::new();
+    pub fn set_power_state(&mut self, device_id: u32, enable: bool) -> Option<bool> {
 
         let mut state = 0u32;
         state |= 1 << 1; // wait for power change
@@ -122,17 +116,17 @@ impl MBox {
             state |= 1;
         }
 
-        mbox.0[0] = 8*4;
-        mbox.0[1] = MBOX_REQUEST;
-        mbox.0[2] = MBOX_TAG_SET_POWER;
-        mbox.0[3] = 8;
-        mbox.0[4] = 8;
-        mbox.0[5] = device_id;
-        mbox.0[6] = state;
-        mbox.0[7] = MBOX_TAG_LAST;
+        self.0[0] = 8*4;
+        self.0[1] = MBOX_REQUEST;
+        self.0[2] = MBOX_TAG_SET_POWER;
+        self.0[3] = 8;
+        self.0[4] = 8;
+        self.0[5] = device_id;
+        self.0[6] = state;
+        self.0[7] = MBOX_TAG_LAST;
 
-        if unsafe { mbox.call(MBOX_CH_PROP) } {
-            Some((mbox.0[6] & 0b10) == 0)
+        if unsafe { self.call(MBOX_CH_PROP) } {
+            Some((self.0[6] & 0b10) == 0)
         } else {
             None
         }

@@ -211,11 +211,13 @@ impl KernPageTable {
 
         // Correct page type is chosen by address region. We just have to init.
         for addr in (0..end).step_by(PAGE_SIZE) {
-            table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr));
+            // not act
+            table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Mem));
         }
 
         for addr in (IO_BASE..IO_BASE_END).step_by(PAGE_SIZE) {
-            table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr));
+            // attr not actually used here
+            table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Dev));
         }
 
         KernPageTable(table)
@@ -242,7 +244,7 @@ impl KernPageTable {
         }
     }
 
-    fn create_l3_entry(addr: usize) -> RawL3Entry {
+    pub fn create_l3_entry(addr: usize, attr: u64) -> RawL3Entry {
         assert_eq!(addr % PAGE_SIZE, 0);
 
         let mut entry = RawL3Entry::new(0);
@@ -258,7 +260,7 @@ impl KernPageTable {
         } else {
             entry.set_value(EntrySh::ISh, RawL3Entry::SH);
             // FIXME caching disabled so that MBox works properly.
-            entry.set_value(EntryAttr::Nc, RawL3Entry::ATTR);
+            entry.set_value(attr, RawL3Entry::ATTR);
         }
 
         entry.set_value((addr >> PAGE_ALIGN) as u64, RawL3Entry::ADDR);
