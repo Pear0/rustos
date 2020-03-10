@@ -2,19 +2,22 @@ use alloc::boxed::Box;
 use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
 use core::borrow::{Borrow, BorrowMut};
+use core::time::Duration;
 
+use aarch64::{MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
 
 use crate::{IRQ, SCHEDULER};
-use crate::console::kprintln;
+use crate::cls::CoreLocal;
+use crate::console::{kprint, kprintln};
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State};
 use crate::process::snap::SnapProcess;
 use crate::traps::TrapFrame;
+use crate::process::state::RunContext;
 
 /// Process scheduler for the entire machine.
-#[derive(Debug)]
 pub struct GlobalScheduler(Mutex<Option<Scheduler>>);
 
 extern "C" {
@@ -37,7 +40,9 @@ impl GlobalScheduler {
             F: FnOnce(&mut Scheduler) -> R,
     {
         let mut guard = self.0.lock();
-        f(guard.as_mut().expect("scheduler uninitialized"))
+        let r = f(guard.as_mut().expect("scheduler uninitialized"));
+        core::mem::drop(guard);
+        r
     }
 
 
@@ -56,17 +61,27 @@ impl GlobalScheduler {
         self.switch_to(tf)
     }
 
-    pub fn mask_next_tick(&self) {
-        self.critical(|c| c.mask_next_tick())
+    pub fn mask_next_tick(&self, val: bool) {
+        self.critical(|c| c.mask_next_tick(val))
     }
 
-    pub fn clear_mask_next_tick(&self) -> bool {
-        self.critical(|c| c.clear_mask_next_tick())
+    pub fn is_mask_next_tick(&self) -> bool {
+        self.critical(|c| c.is_mask_next_tick())
     }
 
     pub fn switch_to(&self, tf: &mut TrapFrame) -> Id {
         loop {
-            let rtn = self.critical(|scheduler| scheduler.switch_to(tf));
+            let rtn = self.critical(|scheduler| {
+                let s = scheduler.switch_to(tf);
+
+                // if let Some(id) = &s {
+                //     let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) };
+                //     kprintln!("core {}: running {}", core_id, id);
+                //     pi::timer::spin_sleep(Duration::from_millis(1));
+                // }
+
+                s
+            });
             if let Some(id) = rtn {
                 return id;
             }
@@ -85,12 +100,11 @@ impl GlobalScheduler {
             //     aarch64::regs::CNTKCTL_EL1.set(v);
             // }
 
-            self.mask_next_tick();
-            unsafe { aarch64::sti() }
+            // self.mask_next_tick(true);
+            // unsafe { aarch64::sti() }
             aarch64::wfe();
-            unsafe { aarch64::cli() }
-            self.clear_mask_next_tick();
-
+            // unsafe { aarch64::cli() }
+            // self.mask_next_tick(false);
         }
     }
 
@@ -101,51 +115,54 @@ impl GlobalScheduler {
         self.critical(|scheduler| scheduler.kill(tf))
     }
 
-    /// Starts executing processes in user space using timer interrupt based
-    /// preemptive scheduling. This method should not return under normal conditions.
-    pub fn start(&self) -> ! {
-
-        let el = unsafe { aarch64::current_el() };
-        kprintln!("Current EL: {}", el);
-
-        IRQ.register(pi::interrupt::Interrupt::Timer1, Box::new(|tf| {
-            timer::tick_in(TICK);
-            if !SCHEDULER.clear_mask_next_tick() {
-                SCHEDULER.switch(State::Ready, tf);
-            }
-        }));
-
-        timer::tick_in(TICK);
-        interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
-
-
-        // Bootstrap the first process
-
+    pub fn bootstrap(&self) -> ! {
         let mut bootstrap_frame: TrapFrame = Default::default();
         self.switch_to(&mut bootstrap_frame);
 
         let st = (&mut bootstrap_frame) as *mut TrapFrame as u64;
-        let start = _start as u64;
+        // let start = bootstrap_frame.sp;
+        // let start = _start as u64;
+
+        // let old_sp = SP.get();
+
+        let old_sp = crate::smp::core_stack_top();
+        kprintln!("old_sp: {}", old_sp);
+
+        // unsafe {
+        //     asm!("  mov x0, $0
+        //             mov sp, x0"
+        //             :: "r"(st)
+        //             :: "volatile");
+        // }
+        //
+        // unsafe { context_restore(); }
 
         unsafe {
-            asm!("  mov x0, $0
-                    mov sp, x0"
-                    :: "r"(st)
+            asm!("  mov x28, $0
+                    mov x29, $1
+                    mov sp, x28
+                    bl context_restore
+                    mov sp, x29
+                    eret"
+                    :: "r"(st), "r"(old_sp)
                     :: "volatile");
         }
-
-        unsafe { context_restore(); }
-
-        unsafe {
-            asm!("  mov x0, $0
-                    mov sp, x0"
-                    :: "r"(start)
-                    :: "volatile");
-        }
-
-        aarch64::eret();
 
         loop {}
+    }
+
+    /// Starts executing processes in user space using timer interrupt based
+    /// preemptive scheduling. This method should not return under normal conditions.
+    pub fn start(&self) -> ! {
+        let el = unsafe { aarch64::current_el() };
+        kprintln!("Current EL: {}", el);
+
+        kprintln!("Enabling timer");
+        timer::tick_in(TICK);
+        interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
+
+        // Bootstrap the first process
+        self.bootstrap();
     }
 
     /// Initializes the scheduler and add userspace processes to the Scheduler
@@ -154,13 +171,27 @@ impl GlobalScheduler {
         if lock.is_none() {
             lock.replace(Scheduler::new());
         }
+
+        IRQ.register(pi::interrupt::Interrupt::Timer1, Box::new(|tf| {
+            timer::tick_in(TICK);
+            // aarch64::sev(); // tick other threads
+
+            let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+            kprint!("IRQ: {}", core_id);
+
+            if !SCHEDULER.is_mask_next_tick() {
+                kprint!("s");
+                SCHEDULER.switch(State::Ready, tf);
+            }
+        }));
+
     }
 
     // The following method may be useful for testing Phase 3:
     //
     // * A method to load a extern function to the user process's page table.
     //
-    pub fn test_phase_3(&self, proc: &mut Process){
+    pub fn test_phase_3(&self, proc: &mut Process) {
         use crate::vm::{VirtualAddr, PagePerm};
 
         let len = 50;
@@ -176,11 +207,10 @@ impl GlobalScheduler {
     }
 }
 
-#[derive(Debug)]
 pub struct Scheduler {
     processes: VecDeque<Process>,
     last_id: Option<Id>,
-    mask_next: bool,
+    mask_next: CoreLocal<bool>,
 }
 
 impl Scheduler {
@@ -189,7 +219,7 @@ impl Scheduler {
         Scheduler {
             processes: VecDeque::new(),
             last_id: Some(1),
-            mask_next: false,
+            mask_next: CoreLocal::new(false),
         }
     }
 
@@ -199,12 +229,14 @@ impl Scheduler {
         Some(next)
     }
 
-    pub fn mask_next_tick(&mut self) {
-        self.mask_next = true
+    pub fn mask_next_tick(&mut self, val: bool) {
+        // self.mask_next = val
+        self.mask_next.set(val);
     }
 
-    pub fn clear_mask_next_tick(&mut self) -> bool {
-        core::mem::replace(&mut self.mask_next, false)
+    pub fn is_mask_next_tick(&mut self) -> bool {
+        self.mask_next.get()
+        // core::mem::replace(&mut self.mask_next, false)
     }
 
     /// Adds a process to the scheduler's queue and returns that process's ID if
@@ -234,6 +266,11 @@ impl Scheduler {
         match proc {
             None => false,
             Some((idx, proc)) => {
+                if let State::Running(ctx) = &proc.state {
+                    let delta = pi::timer::current_time() - ctx.scheduled_at;
+                    proc.cpu_time += delta;
+                }
+
                 proc.state = new_state;
                 *(proc.context.borrow_mut()) = *tf;
 
@@ -266,10 +303,15 @@ impl Scheduler {
 
         let (idx, proc) = proc?;
 
-        proc.state = State::Running;
+        let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+        let now = pi::timer::current_time();
+
+        proc.state = State::Running(RunContext { core_id, scheduled_at: now });
         *tf = *proc.context.borrow();
 
         let id = proc.context.tpidr;
+
+        kprintln!("switching to: {}", id);
 
         // something is very bad if the entry we found is no longer here.
         let owned = self.processes.remove(idx).unwrap();
@@ -303,7 +345,6 @@ impl Scheduler {
             snaps.push(SnapProcess::from(proc));
         }
     }
-
 }
 
 pub extern "C" fn test_user_process() -> ! {

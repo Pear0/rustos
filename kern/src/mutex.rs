@@ -2,6 +2,7 @@ use core::cell::UnsafeCell;
 use core::fmt;
 use core::ops::{Deref, DerefMut, Drop};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use aarch64::{SCTLR_EL1, MPIDR_EL1};
 
 #[repr(align(32))]
 pub struct Mutex<T> {
@@ -31,16 +32,34 @@ impl<T> Mutex<T> {
 }
 
 impl<T> Mutex<T> {
+
+    fn has_mmu(&self) -> bool {
+        // possibly slightly wrong, not sure exactly what shareability settings
+        // enable advanced control
+        unsafe { SCTLR_EL1.get_value(SCTLR_EL1::M) != 0 }
+    }
+
     // Once MMU/cache is enabled, do the right thing here. For now, we don't
     // need any real synchronization.
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        let this = 0;
-        if !self.lock.load(Ordering::Relaxed) || self.owner.load(Ordering::Relaxed) == this {
-            self.lock.store(true, Ordering::Relaxed);
-            self.owner.store(this, Ordering::Relaxed);
-            Some(MutexGuard { lock: &self })
+        if self.has_mmu() {
+            if self.lock.compare_and_swap(false, true, Ordering::SeqCst) == false {
+                let this = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+                self.owner.store(this, Ordering::Relaxed);
+                Some(MutexGuard { lock: &self })
+            } else {
+                None
+            }
+
         } else {
-            None
+            let this = 0;
+            if !self.lock.load(Ordering::Relaxed) || self.owner.load(Ordering::Relaxed) == this {
+                self.lock.store(true, Ordering::Relaxed);
+                self.owner.store(this, Ordering::Relaxed);
+                Some(MutexGuard { lock: &self })
+            } else {
+                None
+            }
         }
     }
 
@@ -58,7 +77,12 @@ impl<T> Mutex<T> {
     }
 
     fn unlock(&self) {
-        self.lock.store(false, Ordering::Relaxed);
+        if self.has_mmu() {
+            self.owner.store(0, Ordering::SeqCst);
+            self.lock.store(false, Ordering::SeqCst);
+        } else {
+            self.lock.store(false, Ordering::Relaxed);
+        }
     }
 }
 

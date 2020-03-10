@@ -6,7 +6,7 @@ SDCARD ?= $(ROOT)/ext/fat32-imgs/mock1.fat32.img
 # SDCARD ?= $(ROOT)/user/fs.img
 OBJCPY := cargo objcopy -- --strip-all -O binary
 TTY_PATH ?= $(shell find /dev -name 'ttyUSB*' -or -name 'cu.usbserial-14*' -maxdepth 1 2>/dev/null | head -n 1)
-QEMU_ARGS ?=
+QEMU_ARGS ?= -smp 4
 
 .PHONY: all build qemu transmit objdump nm check clean install test
 
@@ -28,10 +28,10 @@ qemu: build
 	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS)
 
 qemu-gdb: build
-	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd -s -S
+	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS) -s -S
 
 qemu-asm: build
-	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd -d in_asm
+	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS) -d in_asm
 
 transmit: build
 	@echo "+ Transmitting build/$(KERN).bin to $(TTY_PATH)"

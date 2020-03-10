@@ -239,3 +239,19 @@ defreg!(CNTKCTL_EL1, [
     EL0PCTEN [0-0],
 ]);
 
+// (ref. D7.2.41 AArch64 Instruction Set Attribute Register 0)
+defreg!(ID_AA64ISAR0_EL1, [
+    RDM    [31-28],
+    ATOMIC [23-20], // always zero for ARMv8.0
+    CRC32  [19-16],
+    SHA2   [15-12],
+    SHA1   [11-8],
+    AES    [7-4],
+]);
+
+// (ref. D7.2.42 AArch64 Instruction Set Attribute Register 1)
+defreg!(ID_AA64ISAR1_EL1, [
+    DPB [3-0],
+]);
+
+

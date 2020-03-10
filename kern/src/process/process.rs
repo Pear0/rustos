@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use core::ops::Add;
+use alloc::string::String;
 
 use kernel_api::{OsError, OsResult};
 
@@ -7,17 +8,20 @@ use aarch64;
 use aarch64::SPSR_EL1;
 use shim::path::Path;
 
+use crate::console::kprintln;
 use crate::FILESYSTEM;
 use crate::param::*;
 use crate::process::{Stack, State};
 use crate::traps::TrapFrame;
 use crate::vm::*;
+use core::ops::Deref;
+use alloc::borrow::ToOwned;
+use core::time::Duration;
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
 
 /// A structure that represents the complete state of a process.
-#[derive(Debug)]
 pub struct Process {
     /// The saved trap frame of a process.
     pub context: Box<TrapFrame>,
@@ -27,7 +31,53 @@ pub struct Process {
     pub vmap: Box<UserPageTable>,
     /// The scheduling state of the process.
     pub state: State,
+
+    pub name: String,
+    
+    pub cpu_time: Duration,
+
+    pub kernel_thread_ctx: Option<Box<Box<dyn FnOnce() + Send>>>,
 }
+
+type FnTrampoline = extern "C" fn(*mut u8);
+
+// this function expects to be called once. It is the caller's job to
+// ensure that the trampoline is only ever called once and that the closure
+// outlives the execution of the trampoline.
+// unsafe fn kernel_trampoline<F>(closure: &F) -> (FnTrampoline, *mut u8)
+//     where
+//         F: FnMut(),
+// {
+//     extern "C" fn trampoline<F>(data: *mut u8)
+//         where
+//             F: FnMut(),
+//     {
+//         let closure: &mut F = unsafe { &mut *(data as *mut F) };
+//
+//         kprintln!("jumping to closure...");
+//
+//         (*closure)();
+//
+//         kprintln!("exiting");
+//         kernel_api::syscall::exit();
+//     }
+//
+//     (trampoline::<F>, closure as *const F as *mut u8)
+// }
+
+
+unsafe extern "C" fn trampoline(main: *mut u8)
+{
+    // let closure: &mut F = unsafe { &mut *(data as *mut F) };
+
+    kprintln!("jumping to closure...");
+
+    Box::from_raw(main as *mut Box<dyn FnOnce() + Send>)();
+
+    kprintln!("exiting");
+    kernel_api::syscall::exit();
+}
+
 
 impl Process {
     /// Creates a new process with a zeroed `TrapFrame` (the default), a zeroed
@@ -35,7 +85,7 @@ impl Process {
     ///
     /// If enough memory could not be allocated to start the process, returns
     /// `None`. Otherwise returns `Some` of the new `Process`.
-    pub fn new() -> OsResult<Process> {
+    pub fn new(name: String) -> OsResult<Process> {
         let vmap = Box::new(UserPageTable::new());
         let stack = Stack::new().ok_or(OsError::NoMemory)?;
         let context = Box::new(TrapFrame::default());
@@ -45,13 +95,46 @@ impl Process {
             stack,
             vmap,
             state: State::Ready,
+            name,
+            cpu_time: Duration::from_millis(0),
+            kernel_thread_ctx: None,
         })
     }
 
-    pub fn kernel_process(f: fn()) -> OsResult<Process> {
+    pub fn kernel_process(name: String, f: Box<dyn FnOnce() + Send>) -> OsResult<Process> {
         use crate::VMM;
 
-        let mut p = Process::new()?;
+        let ff = Box::new(f);
+
+        let mut p = Process::new(name)?;
+        // p.kernel_thread_ctx = Some(ff);
+
+        p.context.sp = p.stack.top().as_u64();
+
+        // let (trampoline, data) = unsafe { kernel_trampoline::<T>(p.kernel_thread_ctx.as_ref().unwrap().as_ref()) };
+
+        let data = ff;
+
+        // C calling conv, first arg in x0.
+        p.context.elr = trampoline as u64;
+        p.context.regs[0] = &*data as *const Box<dyn FnOnce() + Send> as u64;
+        // p.context.regs[1] = size as u64;
+
+        core::mem::forget(data);
+
+        p.context.spsr |= SPSR_EL1::M & 0b0100;
+
+        p.context.ttbr0 = VMM.get_baddr().as_u64();
+        // kernel thread still gets a vmap because it's easy
+        p.context.ttbr1 = p.vmap.get_baddr().as_u64();
+
+        Ok(p)
+    }
+
+    pub fn kernel_process_old(name: String, f: fn()) -> OsResult<Process> {
+        use crate::VMM;
+
+        let mut p = Process::new(name)?;
 
         p.context.sp = p.stack.top().as_u64();
         p.context.elr = f as u64;
@@ -94,7 +177,7 @@ impl Process {
     fn do_load<P: AsRef<Path>>(pn: P) -> OsResult<Process> {
         use fat32::traits::*;
         use shim::io::Read;
-        let mut proc = Process::new()?;
+        let mut proc = Process::new(pn.as_ref().to_str().ok_or(OsError::InvalidArgument)?.to_owned())?;
 
         proc.vmap.alloc(Process::get_stack_base(), PagePerm::RW);
 
@@ -113,7 +196,6 @@ impl Process {
             }
 
             base = base.add(VirtualAddr::from(PAGE_SIZE));
-
         }
 
         Ok(proc)
@@ -158,7 +240,6 @@ impl Process {
     /// Returns `false` in all other cases.
     pub fn is_ready(&mut self) -> bool {
         if let State::Waiting(h) = &mut self.state {
-
             let mut copy = core::mem::replace(h, Box::new(|_| false));
             if copy(self) {
                 self.state = State::Ready;

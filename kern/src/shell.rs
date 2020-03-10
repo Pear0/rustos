@@ -1,7 +1,11 @@
+use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::DerefMut;
 use core::time::Duration;
+
+use hashbrown::HashMap;
 
 use fat32::traits::{Dir, Entry, File, Metadata};
 use fat32::traits::FileSystem;
@@ -11,12 +15,12 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, SCHEDULER, timer, NET};
+use crate::{IRQ, NET, SCHEDULER, timer};
 use crate::FILESYSTEM;
-use crate::process::Process;
-use crate::io::{ConsoleSync, ReadWrapper, WriteWrapper, SyncRead, SyncWrite};
-use alloc::sync::Arc;
+use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
+use crate::process::Process;
+use aarch64::MPIDR_EL1;
 
 // use std::path::{Path, PathBuf, Component};
 
@@ -28,8 +32,8 @@ enum Error {
 }
 
 /// A structure representing a single shell command.
-struct Command<'a> {
-    args: StackVec<'a, &'a str>,
+pub struct Command<'a> {
+    pub args: StackVec<'a, &'a str>,
 }
 
 impl<'a> Command<'a> {
@@ -59,25 +63,61 @@ impl<'a> Command<'a> {
     }
 }
 
-pub struct Shell<R: io::Read, W: io::Write> {
-    prefix: &'static str,
-    cwd: PathBuf,
-    dead_shell: bool,
-    reader: R,
-    writer: W,
+pub struct Shell<'a, R: io::Read, W: io::Write> {
+    pub prefix: &'a str,
+    pub cwd: PathBuf,
+    pub dead_shell: bool,
+    pub reader: R,
+    pub writer: W,
+    pub commands: HashMap<&'a str, Option<Box<dyn FnMut(&mut Shell<R, W>, &Command) + 'a>>>,
 }
 
 type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
 
-impl<R: io::Read, W: io::Write> Shell<R, W> {
-    pub fn new(prefix: &'static str, reader: R, writer: W) -> Self {
-        Shell {
+impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
+    pub fn new(prefix: &'static str, reader: R, writer: W) -> Shell<'a, R, W> {
+        let mut shell = Shell {
             prefix,
             cwd: PathBuf::from("/"),
             dead_shell: false,
             reader,
             writer,
-        }
+            commands: HashMap::new(),
+        };
+
+        // shell.register("echo", Box)
+        shell.register_func("echo", |sh, cmd| {
+            for (i, arg) in cmd.args.iter().skip(1).enumerate() {
+                if i > 0 {
+                    write!(sh.writer, " ");
+                }
+                write!(sh.writer, "{}", arg);
+            }
+            writeln!(sh.writer, "");
+        });
+
+        shell.register_func("pwd", |sh, _cmd| {
+            use alloc::borrow::ToOwned;
+            let cwd = sh.cwd_str().to_owned();
+            writeln!(&mut sh.writer, "{}", cwd);
+        });
+
+        shell.register_func("help", |sh, _cmd| {
+            writeln!(&mut sh.writer, "Commands:");
+            for (k, _) in sh.commands.iter() {
+                writeln!(&mut sh.writer, "{}", *k);
+            }
+        });
+
+        shell
+    }
+
+    pub fn register(&mut self, s: &'a str, func: Box<dyn FnMut(&mut Shell<R, W>, &Command) + 'a>) {
+        self.commands.insert(s, Some(func));
+    }
+
+    pub fn register_func<T>(&mut self, s: &'a str, func: T) where T: FnMut(&mut Shell<R, W>, &Command) + 'a {
+        self.commands.insert(s, Some(Box::new(func)));
     }
 
     pub fn cwd_str(&self) -> &str {
@@ -104,7 +144,7 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
 
     fn describe_ls_entry(&mut self, entry: FEntry, show_all: bool) {
         if !show_all && (entry.metadata().hidden() || entry.name() == "." || entry.name() == "..") {
-            return
+            return;
         }
 
         let mut line = String::new();
@@ -133,25 +173,10 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
         };
 
         writeln!(self.writer, "{} {:>7} {} {}", line, size, entry.metadata().modified(), entry.name());
-
     }
 
     fn process_command(&mut self, command: &mut Command) -> io::Result<()> {
         match command.path() {
-            "echo" => {
-                for (i, arg) in command.args.iter().skip(1).enumerate() {
-                    if i > 0 {
-                        write!(self.writer, " ");
-                    }
-                    write!(self.writer, "{}", arg);
-                }
-                writeln!(self.writer, );
-            }
-            "pwd" => {
-                use alloc::borrow::ToOwned;
-                let cwd = self.cwd_str().to_owned();
-                writeln!(&mut self.writer, "{}", cwd);
-            }
             "cat" => {
                 if command.args.len() < 2 {
                     writeln!(self.writer, "expected: cat <path>");
@@ -159,7 +184,6 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                     for arg in command.args[1..].iter() {
                         match self.open_file(arg) {
                             Ok(e) => {
-
                                 if let Some(mut f) = e.into_file() {
                                     io::copy(&mut f, &mut self.writer)?;
                                 } else {
@@ -177,17 +201,16 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                 if command.args.len() < 2 {
                     writeln!(self.writer, "expected: cd <path>");
                 } else {
-
                     for component in Path::new(command.args[1]).components() {
                         match component {
                             Component::Prefix(_) => return ioerr!(InvalidInput, "bad path component"),
                             Component::RootDir => {
                                 self.cwd = PathBuf::from("/");
-                            },
-                            Component::CurDir => {},
+                            }
+                            Component::CurDir => {}
                             Component::ParentDir => {
                                 self.cwd.pop();
-                            },
+                            }
                             c @ Component::Normal(_) => {
                                 let new = self.cwd.join(c);
 
@@ -195,13 +218,11 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                                     self.cwd.push(d.name);
                                 } else {
                                     writeln!(self.writer, "error: invalid path");
-                                    return Ok(())
+                                    return Ok(());
                                 }
-
-                            },
+                            }
                         }
                     }
-
                 }
             }
             "ls" => {
@@ -219,7 +240,6 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                 match &entry {
                     fat32::vfat::Entry::File(_) => self.describe_ls_entry(entry, true),
                     fat32::vfat::Entry::Dir(f) => {
-
                         let entries = f.entries()?;
 
                         for entry in entries {
@@ -230,17 +250,19 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
             }
             "uptime" => {
                 writeln!(self.writer, "Uptime: {:?}", timer::current_time());
-
             }
             "reboot" => {
                 use pi::pm::reset;
 
                 writeln!(self.writer, "Resetting");
                 unsafe { reset(); }
-
             }
             "pi-info" => {
                 use crate::mbox::with_mbox;
+
+                use aarch64::SPSR_EL1;
+                writeln!(self.writer, "DAIF: {:04b}", unsafe { SPSR_EL1.get_value(SPSR_EL1::D | SPSR_EL1::A | SPSR_EL1::I | SPSR_EL1::F) });
+
 
                 with_mbox(|mbox| {
                     writeln!(self.writer, "Serial: {:?}", mbox.serial_number());
@@ -249,13 +271,14 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                     writeln!(self.writer, "Temp: {:?}", mbox.core_temperature());
                 });
 
+                let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
+                writeln!(self.writer, "cpu attrs: {:?}", attrs);
+
+
 
             }
             "arp" => {
-
-
                 if command.args.len() == 2 {
-
                     match command.args[1].parse() {
                         Ok(addr) => {
                             match NET.critical(|n| n.arp_request(addr)) {
@@ -271,7 +294,6 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                             writeln!(self.writer, "error: {}", e);
                         }
                     }
-
                 } else {
                     let arp_table = NET.critical(|n| n.arp.copy_table());
 
@@ -280,7 +302,6 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                         writeln!(self.writer, "{:04x} {} -> {}", (entry.0).0, (entry.0).1, entry.1);
                     }
                 }
-
             }
             "panic" => {
                 panic!("Oh no, panic!");
@@ -289,52 +310,40 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                 self.dead_shell = true;
             }
             "brk" => {
-
                 aarch64::brk!(7);
             }
             "sleep" => {
-
                 if command.args.len() == 2 {
-
                     let ms: u32 = match command.args[1].parse() {
                         Ok(ms) => ms,
                         Err(e) => {
                             writeln!(self.writer, "error: {}", e);
-                            return Ok(())
+                            return Ok(());
                         }
                     };
 
                     let res = kernel_api::syscall::sleep(Duration::from_millis(ms as u64));
                     writeln!(self.writer, "-> {:?}", res);
-
                 } else {
                     writeln!(self.writer, "usage: sleep <ms>");
                 }
-
             }
             "run" => {
-
                 if command.args.len() == 2 {
-
                     match self.load_process(command.args[1]) {
                         Ok(proc) => {
-
                             SCHEDULER.add(proc);
-
-                        },
+                        }
                         Err(e) => {
                             writeln!(self.writer, "error: {:?}", e);
-                            return Ok(())
+                            return Ok(());
                         }
                     }
-
                 } else {
                     writeln!(self.writer, "usage: run <program>");
                 }
-
             }
             "procs" => {
-
                 let mut snaps = Vec::new();
                 SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
 
@@ -347,15 +356,24 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
                 writeln!(self.writer, "Current EL: {}", el);
             }
             "irqs" => {
-
                 let stats = IRQ.get_stats();
                 for (i, stat) in stats.iter().enumerate() {
                     writeln!(self.writer, "{:?}: {:?}", Interrupt::from_index(i), stat);
                 }
-
             }
             path => {
-                writeln!(self.writer, "unknown command: {}", path);
+                if self.commands.contains_key(path) {
+                    let mut func = self.commands.get_mut(path).unwrap().take().expect("recursive command call?");
+
+                    func(self, command);
+
+                    // only add back function if new function not added and current function not removed.
+                    if let Some(None) = self.commands.get(path) {
+                        self.commands.get_mut(path).unwrap().replace(func);
+                    }
+                } else {
+                    writeln!(self.writer, "unknown command: {}", path);
+                }
             }
         }
 
@@ -365,7 +383,9 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
     pub fn shell_loop(&mut self) {
         writeln!(self.writer);
         while !self.dead_shell {
-            write!(self.writer, "{}", self.prefix);
+
+            let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) };
+            write!(self.writer, "{}{}", core_id, self.prefix);
             let mut raw_buf = [0u8; 512];
             let mut line_buf = StackVec::new(&mut raw_buf);
 
@@ -420,6 +440,15 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
     }
 
     fn read_byte(&mut self) -> u8 {
+
+        // let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) };
+        //
+        // if core_id != 1 {
+        //     loop{
+        //         aarch64::wfe();
+        //     }
+        // }
+
         loop {
             let mut b: u8 = 0;
             if let Ok(n) = self.reader.read(core::slice::from_mut(&mut b)) {
@@ -430,18 +459,22 @@ impl<R: io::Read, W: io::Write> Shell<R, W> {
             timer::spin_sleep(Duration::from_millis(1));
         }
     }
-
 }
-/// Starts a shell using `prefix` as the prefix for each line. This function
-/// never returns.
-pub fn shell(prefix: &'static str) {
 
+
+pub fn serial_shell(prefix: &'static str) -> Shell<ReadWrapper<Arc<dyn SyncRead>>, WriteWrapper<Arc<dyn SyncWrite>>> {
     let read: Arc<dyn SyncRead> = Arc::new(ConsoleSync::new());
     let write: Arc<dyn SyncWrite> = Arc::new(ConsoleSync::new());
 
     Shell::new(prefix,
                ReadWrapper::new(read),
-               WriteWrapper::new(write)
-    ).shell_loop();
+               WriteWrapper::new(write),
+    )
+}
+
+/// Starts a shell using `prefix` as the prefix for each line. This function
+/// never returns.
+pub fn shell(prefix: &'static str) {
+    serial_shell(prefix).shell_loop();
 }
 

@@ -24,4 +24,4 @@ const_assert_eq!(USER_IMG_BASE.wrapping_add(USER_MAX_VM_SIZE), 0);
 pub const KERN_STACK_BASE: usize = 0x80_000;
 
 /// The `tick` time.
-pub const TICK: Duration = Duration::from_micros(1000);
+pub const TICK: Duration = Duration::from_micros(10000);

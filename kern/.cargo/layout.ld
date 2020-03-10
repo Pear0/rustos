@@ -4,10 +4,14 @@ SECTIONS {
   /* start of the binary */
   __text_beg = .;
 
+  __code_beg = .;
+
   .text : {
       KEEP(*(.text.init)) /* from init.S */
       *(.text .text.* .gnu.linkonce.t*)
   }
+
+  __code_end = .;
 
   .rodata : {
     *(.rodata .rodata.* .gnu.linkonce.r*)

@@ -8,6 +8,7 @@ pub mod macros;
 
 pub mod sp;
 pub mod asm;
+pub mod attr;
 pub mod regs;
 pub mod vmsa;
 

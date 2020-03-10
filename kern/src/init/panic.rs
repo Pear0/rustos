@@ -42,16 +42,24 @@ fn panic(info: &PanicInfo) -> ! {
         writeln!(uart, "{}", payload).ok();
     }
 
-    spin_sleep(Duration::from_millis(1500));
+    // spin_sleep(Duration::from_millis(1500));
 
-    while uart.has_byte() {
-        uart.read_byte();
-    }
+    // while uart.has_byte() {
+    //     uart.read_byte();
+    // }
 
-    writeln!(uart, "Press any key to reset...").ok();
+    aarch64::brk!(8);
 
-    while !uart.has_byte() {}
+    writeln!(uart, "brk didn't kill us. requesting syscall exit").ok();
 
-    unsafe { reset(); }
+    kernel_api::syscall::exit();
+
+    loop {}
+
+    // writeln!(uart, "Press any key to reset...").ok();
+    //
+    // while !uart.has_byte() {}
+    //
+    // unsafe { reset(); }
 
 }

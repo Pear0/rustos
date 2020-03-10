@@ -6,12 +6,17 @@ use crate::console::kprintln;
 
 pub use self::address::{PhysicalAddr, VirtualAddr};
 pub use self::pagetable::*;
+use crate::smp;
+use core::sync::atomic::Ordering;
+use core::sync::atomic::AtomicU64;
 
 mod address;
 mod pagetable;
 
 /// Thread-safe (locking) wrapper around a kernel page table.
 pub struct VMManager(Mutex<Option<KernPageTable>>);
+
+static FOO: AtomicU64 = AtomicU64::new(0);
 
 impl VMManager {
     /// Returns an uninitialized `VMManager`.
@@ -22,11 +27,23 @@ impl VMManager {
         VMManager(Mutex::new(None))
     }
 
+    pub fn init_only(&self) {
+        let mut lock = self.0.lock();
+        if lock.is_none() {
+            lock.replace(KernPageTable::new());
+        }
+
+        let baddr = lock.as_ref().unwrap().get_baddr().as_u64();
+        FOO.store(baddr, Ordering::SeqCst);
+    }
+
     /// Initializes the virtual memory manager.
     /// The caller should assure that the method is invoked only once during the kernel
     /// initialization.
     pub fn initialize(&self) {
-        self.0.lock().replace(KernPageTable::new());
+        self.init_only();
+        kprintln!("setup()");
+
         self.setup();
     }
 
@@ -51,8 +68,13 @@ impl VMManager {
     ///
     /// Panics if the current system does not support 64KB memory translation granule size.
     pub fn setup(&self) {
-        let kern_page_table = self.0.lock();
-        let baddr = kern_page_table.as_ref().unwrap().get_baddr().as_u64();
+        // let baddr;
+        // {
+        //     let kern_page_table = self.0.lock();
+        //     baddr = kern_page_table.as_ref().unwrap().get_baddr().as_u64();
+        //     // FOO.store(baddr, Ordering::SeqCst);
+        //     // kprintln!("Writing: {:x}", baddr);
+        // }
 
         unsafe {
             assert_eq!(ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::TGran64), 0);
@@ -84,6 +106,8 @@ impl VMManager {
             );
             isb();
 
+            let baddr = FOO.load(Ordering::SeqCst);
+            // kprintln!("Reading: {:x}", baddr);
             TTBR0_EL1.set(baddr);
             TTBR1_EL1.set(baddr);
 
@@ -93,6 +117,7 @@ impl VMManager {
             SCTLR_EL1.set(SCTLR_EL1.get() | SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M);
             asm!("dsb sy");
             isb();
+
         }
     }
 

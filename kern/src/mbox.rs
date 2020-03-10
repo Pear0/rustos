@@ -6,7 +6,7 @@ use crate::param::{PAGE_SIZE, PAGE_ALIGN};
 use core::borrow::{Borrow, BorrowMut};
 use pi::mbox::MBox;
 
-const MBOX_PAGE: Mutex<Option<&mut MBox>> = Mutex::new(None);
+static MBOX_PAGE: Mutex<Option<&mut MBox>> = Mutex::new(None);
 
 pub fn with_mbox<F, R>(f: F) -> R
     where

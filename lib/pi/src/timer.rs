@@ -3,6 +3,7 @@ use core::time::Duration;
 
 use volatile::prelude::*;
 use volatile::{ReadVolatile, Volatile};
+use core::intrinsics::floorf32;
 
 /// The base address for the ARM system timer registers.
 const TIMER_REG_BASE: usize = IO_BASE + 0x3000;
@@ -30,7 +31,10 @@ impl Timer {
     }
 
     fn read_raw(&self) -> u64 {
-        ((self.registers.CHI.read() as u64) << 32) | (self.registers.CLO.read() as u64)
+        aarch64::dmb();
+        let t = ((self.registers.CHI.read() as u64) << 32) | (self.registers.CLO.read() as u64);
+        aarch64::dmb();
+        t
     }
 
     /// Reads the system timer's counter and returns Duration.
@@ -45,12 +49,13 @@ impl Timer {
     pub fn tick_in(&mut self, t: Duration) {
         let timer_id = 1;
 
+        aarch64::dmb();
         let current = self.registers.CLO.read();
         let target = current.wrapping_add(t.as_micros() as u32);
 
         self.registers.COMPARE[timer_id].write(target);
         self.registers.CS.write(0b1 << timer_id); // clear any detected match on timer
-
+        aarch64::dmb();
     }
 }
 
@@ -62,7 +67,7 @@ pub fn current_time() -> Duration {
 /// Spins until `t` duration have passed.
 pub fn spin_sleep(t: Duration) {
     let start = current_time();
-    while current_time() - start < t {}
+    while current_time() < start + t {}
 }
 
 /// Sets up a match in timer 1 to occur `t` duration from now. If

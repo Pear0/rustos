@@ -50,7 +50,8 @@ unsafe fn zeros_bss() {
 }
 
 #[no_mangle]
-unsafe fn switch_to_el2() {
+#[inline(never)]
+pub unsafe fn switch_to_el2() {
     if current_el() == 3 {
         // set up Secure Configuration Register (D13.2.10)
         SCR_EL3.set(SCR_EL3::NS | SCR_EL3::SMD | SCR_EL3::HCE | SCR_EL3::RW | SCR_EL3::RES1);
@@ -66,7 +67,8 @@ unsafe fn switch_to_el2() {
 }
 
 #[no_mangle]
-unsafe fn switch_to_el1() {
+#[inline(never)]
+pub unsafe fn switch_to_el1() {
     extern "C" {
         static mut vectors: u64;
     }
