@@ -3,7 +3,9 @@ use core::fmt;
 use pi::uart::MiniUart;
 use shim::io;
 
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
+use crate::smp;
+use crate::mutex::m_lock;
 
 /// A global singleton allowing read/write access to the console.
 pub struct Console {
@@ -75,7 +77,7 @@ impl fmt::Write for Console {
 }
 
 /// Global `Console` singleton.
-pub static CONSOLE: Mutex<Console> = Mutex::new(Console::new());
+pub static CONSOLE: Mutex<Console> = mutex_new!(Console::new());
 
 /// Internal function called by the `kprint[ln]!` macros.
 #[doc(hidden)]
@@ -84,8 +86,11 @@ pub fn _print(args: fmt::Arguments) {
     #[cfg(not(test))]
     {
         use core::fmt::Write;
-        let mut console = CONSOLE.lock();
-        console.write_fmt(args).unwrap();
+        smp::no_interrupt(|| {
+            let mut console = m_lock!(CONSOLE);
+            // let mut console = unsafe { CONSOLE.unsafe_leak() };
+            console.write_fmt(args).unwrap();
+        });
     }
 
     #[cfg(test)]

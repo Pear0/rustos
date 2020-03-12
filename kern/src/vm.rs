@@ -1,6 +1,6 @@
 use aarch64::*;
 
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
 use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS, PAGE_MASK, PAGE_SIZE};
 use crate::console::kprintln;
 
@@ -9,6 +9,7 @@ pub use self::pagetable::*;
 use crate::smp;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU64;
+use crate::mutex::m_lock;
 
 mod address;
 mod pagetable;
@@ -24,11 +25,11 @@ impl VMManager {
     /// The virtual memory manager must be initialized by calling `initialize()` and `setup()`
     /// before the first memory allocation. Failure to do will result in panics.
     pub const fn uninitialized() -> Self {
-        VMManager(Mutex::new(None))
+        VMManager(mutex_new!(None))
     }
 
     pub fn init_only(&self) {
-        let mut lock = self.0.lock();
+        let mut lock = m_lock!(self.0);
         if lock.is_none() {
             lock.replace(KernPageTable::new());
         }
@@ -52,7 +53,7 @@ impl VMManager {
 
         kprintln!("marking 0x{:x} as non cached", addr);
 
-        let mut lock = self.0.lock();
+        let mut lock = m_lock!(self.0);
         let kern_page_table = lock.as_mut().unwrap();
         kern_page_table.set_entry(VirtualAddr::from(addr),
                                   KernPageTable::create_l3_entry(addr, EntryAttr::Nc));
@@ -123,7 +124,7 @@ impl VMManager {
 
     /// Returns the base address of the kernel page table as `PhysicalAddr`.
     pub fn get_baddr(&self) -> PhysicalAddr {
-        let lock = self.0.lock();
+        let lock = m_lock!(self.0);
         lock.as_ref().unwrap().get_baddr()
     }
 }

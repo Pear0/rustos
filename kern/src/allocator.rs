@@ -3,7 +3,9 @@ use core::fmt;
 
 use pi::atags::Atags;
 
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
+use crate::smp;
+use crate::mutex::m_lock;
 
 mod linked_list;
 pub mod util;
@@ -32,7 +34,7 @@ impl Allocator {
     /// The allocator must be initialized by calling `initialize()` before the
     /// first memory allocation. Failure to do will result in panics.
     pub const fn uninitialized() -> Self {
-        Allocator(Mutex::new(None))
+        Allocator(mutex_new!(None))
     }
 
     /// Initializes the memory allocator.
@@ -44,25 +46,28 @@ impl Allocator {
     /// Panics if the system's memory map could not be retrieved.
     pub unsafe fn initialize(&self) {
         let (start, end) = memory_map().expect("failed to find memory map");
-        *self.0.lock() = Some(AllocatorImpl::new(start, end));
+        unsafe { self.0.set_led(29); }
+        *m_lock!(self.0) = Some(AllocatorImpl::new(start, end));
     }
 }
 
 unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        self.0
-            .lock()
-            .as_mut()
-            .expect("allocator uninitialized")
-            .alloc(layout)
+        smp::no_interrupt(|| {
+            m_lock!(self.0)
+                .as_mut()
+                .expect("allocator uninitialized")
+                .alloc(layout)
+        })
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.0
-            .lock()
-            .as_mut()
-            .expect("allocator uninitialized")
-            .dealloc(ptr, layout);
+        smp::no_interrupt(|| {
+            m_lock!(self.0)
+                .as_mut()
+                .expect("allocator uninitialized")
+                .dealloc(ptr, layout);
+        })
     }
 }
 
@@ -95,7 +100,7 @@ pub fn memory_map() -> Option<(usize, usize)> {
 
 impl fmt::Debug for Allocator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0.lock().as_mut() {
+        match m_lock!(self.0).as_mut() {
             Some(ref alloc) => write!(f, "{:?}", alloc)?,
             None => write!(f, "Not yet initialized")?,
         }

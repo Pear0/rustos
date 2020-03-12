@@ -6,13 +6,14 @@ use pi::mbox::MBox;
 use pi::usb::{self, Usb};
 
 use crate::console::kprintln;
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
 use crate::net::arp::{ArpPacket, ArpTable, ArpResolver};
 use crate::mbox::with_mbox;
 use crate::net::icmp::IcmpFrame;
 use crate::net::ipv4::IPv4Payload;
 use core::ops::DerefMut;
 use core::ops::Deref;
+use crate::mutex::m_lock;
 
 pub mod arp;
 pub mod buffer;
@@ -102,13 +103,13 @@ impl NetHandler {
         let mac = get_mac_address()?;
         let my_ip = ipv4::Address::from(&[169, 254, 78, 130]);
 
-        let eth = Arc::new(Mutex::new(ether::Interface::new(usb.clone(), mac)));
+        let eth = Arc::new(mutex_new!(ether::Interface::new(usb.clone(), mac)));
 
         let arp = Arc::new(ArpTable::new());
 
-        let ip = Arc::new(Mutex::new(ipv4::Interface::new(eth.clone(), my_ip, arp.clone())));
+        let ip = Arc::new(mutex_new!(ipv4::Interface::new(eth.clone(), my_ip, arp.clone())));
 
-        let tcp = Arc::new(Mutex::new(tcp::ConnectionManager::new(ip.clone())));
+        let tcp = Arc::new(mutex_new!(tcp::ConnectionManager::new(ip.clone())));
 
         let mut handler = NetHandler { usb, eth, arp, ip, tcp };
         // Eth
@@ -120,13 +121,13 @@ impl NetHandler {
 
 
         {
-            let mut tcp = handler.tcp.lock();
+            let mut tcp = m_lock!(handler.tcp);
             tcp.listening_ports.insert((my_ip, 100));
         }
 
         // gratuitous ARP so neighbors know about us sooner.
         {
-            let mut eth = handler.eth.lock();
+            let mut eth = m_lock!(handler.eth);
 
             let mut packet = ArpPacket::default();
             packet.hw_address_space.set(arp::HW_ADDR_ETHER);
@@ -147,7 +148,7 @@ impl NetHandler {
     }
 
     fn register_arp_responder(&mut self) {
-        let mut eth = self.eth.lock();
+        let mut eth = m_lock!(self.eth);
         let table = self.arp.clone();
 
         eth.register::<ArpPacket>(Box::new(move |eth, _header, arp_req, _| {
@@ -191,17 +192,17 @@ impl NetHandler {
     }
 
     fn register_ipv4_responder(&mut self) {
-        let mut eth = self.eth.lock();
+        let mut eth = m_lock!(self.eth);
         let ip = self.ip.clone();
 
         eth.register::<ipv4::IPv4Frame>(Box::new(move |eth, header, req, buf| {
-            let mut ip = ip.lock();
+            let mut ip = m_lock!(ip);
             ip.receive_dispatch(header, req);
         }));
     }
 
     fn register_ping_responder(&mut self) {
-        let mut _ip = self.ip.lock();
+        let mut _ip = m_lock!(self.ip);
         let ip = self.ip.clone();
 
         _ip.register::<icmp::IcmpFrame>(Box::new(move |eth, eth_header, ip_header, icmp| {
@@ -214,13 +215,12 @@ impl NetHandler {
 
                 copy.header.icmp_type = 0; // ping reply
 
-                let mut ip = ip.lock();
+                let mut ip = m_lock!(ip);
                 ip.send(ip_header.source, copy);
             }
 
         }));
 
-        let ip = self.ip.clone();
         let tcp = self.tcp.clone();
 
         _ip.register::<tcp::TcpFrame>(Box::new(move |eth, eth_header, ip_header, frame| {
@@ -228,7 +228,7 @@ impl NetHandler {
             // kprintln!("tcp: {:?}", frame);
             // frame.dump();
 
-            let mut tcp = tcp.lock();
+            let mut tcp = m_lock!(tcp);
             tcp.on_receive_packet(ip_header, frame);
 
             //
@@ -253,15 +253,15 @@ impl NetHandler {
     }
 
     pub fn arp_request(&mut self, addr: ipv4::Address) -> NetResult<ether::Mac> {
-        let me = self.ip.lock().address();
+        let me = m_lock!(self.ip).address();
 
         self.arp.resolve_or_request_address(arp::PROT_ADDR_IP, addr, me, self.eth.clone())
     }
 
     pub fn dispatch(&mut self) -> bool {
         let mut events = false;
-        events |= self.eth.lock().receive_dispatch().is_some();
-        events |= self.tcp.lock().process_events();
+        events |= m_lock!(self.eth).receive_dispatch().is_some();
+        events |= m_lock!(self.tcp).process_events();
 
         events
     }
@@ -272,7 +272,7 @@ pub struct GlobalNetHandler(Mutex<Option<NetHandler>>);
 
 impl GlobalNetHandler {
     pub const fn uninitialized() -> Self {
-        Self(Mutex::new(None))
+        Self(mutex_new!(None))
     }
 
     pub unsafe fn initialize(&self) {
@@ -284,18 +284,18 @@ impl GlobalNetHandler {
 
         kprintln!("created net");
 
-        self.0.lock().replace(net);
+        m_lock!(self.0).replace(net);
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.0.lock().is_some()
+        m_lock!(self.0).is_some()
     }
 
     pub fn critical<F, R>(&self, f: F) -> R
         where
             F: FnOnce(&mut NetHandler) -> R,
     {
-        let mut guard = self.0.lock();
+        let mut guard = m_lock!(self.0);
         f(guard.as_mut().expect("net uninitialized"))
     }
 

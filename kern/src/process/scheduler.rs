@@ -3,19 +3,22 @@ use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
 use core::borrow::{Borrow, BorrowMut};
 use core::time::Duration;
+use alloc::format;
 
-use aarch64::{MPIDR_EL1, SP, SPSR_EL1};
+use aarch64::{MPIDR_EL1, SP, SPSR_EL1, CNTP_CTL_EL0};
 use pi::{interrupt, timer};
 
-use crate::{IRQ, SCHEDULER};
+use crate::{IRQ, SCHEDULER, smp};
 use crate::cls::CoreLocal;
 use crate::console::{kprint, kprintln};
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State};
 use crate::process::snap::SnapProcess;
 use crate::traps::TrapFrame;
 use crate::process::state::RunContext;
+use pi::interrupt::CoreInterrupt;
+use crate::mutex::m_lock;
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler(Mutex<Option<Scheduler>>);
@@ -30,7 +33,7 @@ extern "C" {
 impl GlobalScheduler {
     /// Returns an uninitialized wrapper around a local scheduler.
     pub const fn uninitialized() -> GlobalScheduler {
-        GlobalScheduler(Mutex::new(None))
+        GlobalScheduler(mutex_new!(None))
     }
 
     /// Enter a critical region and execute the provided closure with the
@@ -39,10 +42,12 @@ impl GlobalScheduler {
         where
             F: FnOnce(&mut Scheduler) -> R,
     {
-        let mut guard = self.0.lock();
-        let r = f(guard.as_mut().expect("scheduler uninitialized"));
-        core::mem::drop(guard);
-        r
+        smp::no_interrupt(|| {
+            let mut guard = m_lock!(self.0);
+            let r = f(guard.as_mut().expect("scheduler uninitialized"));
+            core::mem::drop(guard);
+            r
+        })
     }
 
 
@@ -61,30 +66,20 @@ impl GlobalScheduler {
         self.switch_to(tf)
     }
 
-    pub fn mask_next_tick(&self, val: bool) {
-        self.critical(|c| c.mask_next_tick(val))
-    }
-
-    pub fn is_mask_next_tick(&self) -> bool {
-        self.critical(|c| c.is_mask_next_tick())
-    }
-
     pub fn switch_to(&self, tf: &mut TrapFrame) -> Id {
-        loop {
-            let rtn = self.critical(|scheduler| {
-                let s = scheduler.switch_to(tf);
-
-                // if let Some(id) = &s {
-                //     let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) };
-                //     kprintln!("core {}: running {}", core_id, id);
-                //     pi::timer::spin_sleep(Duration::from_millis(1));
-                // }
-
-                s
-            });
-            if let Some(id) = rtn {
-                return id;
+        self.critical(|scheduler| {
+            if let Some(id) = scheduler.switch_to(tf) {
+                id
+            } else {
+                scheduler.schedule_idle_task(tf)
             }
+        })
+
+        // loop {
+            // let rtn = self.critical(|scheduler| scheduler.switch_to(tf));
+            // if let Some(id) = rtn {
+            //     return id;
+            // }
 
             // FIXME lol??????? I don't want to DIE
             // unsafe {
@@ -100,12 +95,13 @@ impl GlobalScheduler {
             //     aarch64::regs::CNTKCTL_EL1.set(v);
             // }
 
+
             // self.mask_next_tick(true);
             // unsafe { aarch64::sti() }
-            aarch64::wfe();
+            // aarch64::wfe();
             // unsafe { aarch64::cli() }
             // self.mask_next_tick(false);
-        }
+        // }
     }
 
     /// Kills currently running process and returns that process's ID.
@@ -158,32 +154,60 @@ impl GlobalScheduler {
         kprintln!("Current EL: {}", el);
 
         kprintln!("Enabling timer");
-        timer::tick_in(TICK);
-        interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
+        // timer::tick_in(TICK);
+        // interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
+        
+        use aarch64::regs::*;
 
+        let core = smp::core();
+
+        unsafe { ((0x4000_0040 + 4 * core) as *mut u32).write_volatile(0b1010) };
+        aarch64::dsb();
+
+        // let v = unsafe { CNTVCT_EL0.get() };
+        unsafe { CNTV_TVAL_EL0.set(100000 * 10) };
+        unsafe { CNTV_CTL_EL0.set((CNTV_CTL_EL0.get() & !CNTV_CTL_EL0::IMASK ) | CNTV_CTL_EL0::ENABLE) } ;
+        
+        
         // Bootstrap the first process
         self.bootstrap();
     }
 
     /// Initializes the scheduler and add userspace processes to the Scheduler
     pub unsafe fn initialize(&self) {
-        let lock = &mut self.0.lock();
+        use aarch64::regs::*;
+        let lock = &mut m_lock!(self.0);
         if lock.is_none() {
             lock.replace(Scheduler::new());
         }
 
-        IRQ.register(pi::interrupt::Interrupt::Timer1, Box::new(|tf| {
-            timer::tick_in(TICK);
-            // aarch64::sev(); // tick other threads
+        let core = crate::smp::core();
+        IRQ.register_core(core, CoreInterrupt::CNTVIRQ, Box::new(|tf| {
 
-            let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-            kprint!("IRQ: {}", core_id);
+            SCHEDULER.switch(State::Ready, tf);
 
-            if !SCHEDULER.is_mask_next_tick() {
-                kprint!("s");
-                SCHEDULER.switch(State::Ready, tf);
-            }
+            // let v = unsafe { CNTVCT_EL0.get() };
+            unsafe { CNTV_TVAL_EL0.set(100000) };
+            
+            // kprintln!("foo");
+
         }));
+
+        // let v = unsafe { CNTPCT_EL0.get() };
+        // unsafe { CNTP_CVAL_EL0.set(v + 10000) };
+
+        // IRQ.register(pi::interrupt::Interrupt::Timer1, Box::new(|tf| {
+        //     timer::tick_in(TICK);
+        //     // aarch64::sev(); // tick other threads
+        //
+        //     // let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+        //     // kprint!("IRQ: {}", core_id);
+        //
+        //     if !SCHEDULER.is_mask_next_tick() {
+        //         // kprint!("s");
+        //         SCHEDULER.switch(State::Ready, tf);
+        //     }
+        // }));
 
     }
 
@@ -210,16 +234,28 @@ impl GlobalScheduler {
 pub struct Scheduler {
     processes: VecDeque<Process>,
     last_id: Option<Id>,
-    mask_next: CoreLocal<bool>,
+    idle_task: Vec<Process>,
 }
 
 impl Scheduler {
     /// Returns a new `Scheduler` with an empty queue.
     fn new() -> Scheduler {
+        let mut idle_tasks = Vec::new();
+        idle_tasks.reserve_exact(smp::MAX_CORES);
+        for i in 0..smp::MAX_CORES {
+            let name = format!("idle_task{}", i);
+            let proc = Process::kernel_process_old(name, || {
+                loop {
+                    aarch64::wfe();
+                }
+            }).expect("failed to create idle task");
+            idle_tasks.push(proc);
+        }
+
         Scheduler {
             processes: VecDeque::new(),
             last_id: Some(1),
-            mask_next: CoreLocal::new(false),
+            idle_task: idle_tasks,
         }
     }
 
@@ -229,14 +265,10 @@ impl Scheduler {
         Some(next)
     }
 
-    pub fn mask_next_tick(&mut self, val: bool) {
-        // self.mask_next = val
-        self.mask_next.set(val);
-    }
-
-    pub fn is_mask_next_tick(&mut self) -> bool {
-        self.mask_next.get()
-        // core::mem::replace(&mut self.mask_next, false)
+    fn schedule_idle_task(&mut self, tf: &mut TrapFrame) -> Id {
+        let core = smp::core();
+        let proc = &mut self.idle_task[core];
+        Scheduler::load_frame(tf, proc)
     }
 
     /// Adds a process to the scheduler's queue and returns that process's ID if
@@ -271,6 +303,7 @@ impl Scheduler {
                     proc.cpu_time += delta;
                 }
 
+                proc.task_switches += 1;
                 proc.state = new_state;
                 *(proc.context.borrow_mut()) = *tf;
 
@@ -283,6 +316,16 @@ impl Scheduler {
         }
     }
 
+    fn load_frame(tf: &mut TrapFrame, proc: &mut Process) -> Id {
+        let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+        let now = pi::timer::current_time();
+
+        proc.state = State::Running(RunContext { core_id, scheduled_at: now });
+        *tf = *proc.context.borrow();
+
+        proc.context.tpidr
+    }
+
     /// Finds the next process to switch to, brings the next process to the
     /// front of the `processes` queue, changes the next process's state to
     /// `Running`, and performs context switch by restoring the next process`s
@@ -291,11 +334,12 @@ impl Scheduler {
     /// If there is no process to switch to, returns `None`. Otherwise, returns
     /// `Some` of the next process`s process ID.
     fn switch_to(&mut self, tf: &mut TrapFrame) -> Option<Id> {
+        let core = smp::core();
 
         // is_ready() is &mut so it doesn't work with .find() 😡😡😡
         let mut proc: Option<(usize, &mut Process)> = None;
         for entry in self.processes.iter_mut().enumerate() {
-            if entry.1.is_ready() {
+            if entry.1.affinity.check(core) && entry.1.is_ready() {
                 proc = Some(entry);
                 break;
             }
@@ -303,15 +347,9 @@ impl Scheduler {
 
         let (idx, proc) = proc?;
 
-        let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-        let now = pi::timer::current_time();
+        let id = Scheduler::load_frame(tf, proc);
 
-        proc.state = State::Running(RunContext { core_id, scheduled_at: now });
-        *tf = *proc.context.borrow();
-
-        let id = proc.context.tpidr;
-
-        kprintln!("switching to: {}", id);
+        // kprintln!("switching to: {}", id);
 
         // something is very bad if the entry we found is no longer here.
         let owned = self.processes.remove(idx).unwrap();

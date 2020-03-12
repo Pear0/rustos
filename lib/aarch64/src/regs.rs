@@ -255,3 +255,34 @@ defreg!(ID_AA64ISAR1_EL1, [
 ]);
 
 
+// (ref. D7.5.10 Counter-timer Physical Timer Control register)
+defreg!(CNTP_CTL_EL0, [
+    ISTATUS [2-2], // has interrupt triggered
+    IMASK   [1-1], // mask interrupt
+    ENABLE  [0-0],
+]);
+
+// (ref. D7.5.11 Counter-timer Physical Timer CompareValue register)
+defreg!(CNTP_CVAL_EL0);
+
+// (ref. D7.5.12 Counter-timer Physical Timer TimerValue register)
+defreg!(CNTP_TVAL_EL0);
+
+defreg!(CNTPCT_EL0);
+
+
+defreg!(CNTV_CTL_EL0, [
+    ISTATUS [2-2], // has interrupt triggered
+    IMASK   [1-1], // mask interrupt
+    ENABLE  [0-0],
+]);
+
+defreg!(CNTV_CVAL_EL0);
+
+defreg!(CNTV_TVAL_EL0);
+
+defreg!(CNTVCT_EL0);
+
+
+
+

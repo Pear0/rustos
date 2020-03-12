@@ -5,16 +5,23 @@ use core::time::Duration;
 use pi::pm::reset;
 use pi::timer::spin_sleep;
 use pi::uart::MiniUart;
+use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::m_lock;
+
+static PANIC_LOCK: Mutex<bool> = mutex_new!(false);
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    let mut uart = MiniUart::new();
+    let mut uart: MiniUart;
+    {
+        let guard = m_lock!(PANIC_LOCK);
+        uart = MiniUart::new();
 
-    // EZ
-    writeln!(uart, "{}", info).ok();
+        // EZ
+        writeln!(uart, "{}", info).ok();
 
 
-    uart.write_str(r#"
+        uart.write_str(r#"
                 (
        (      )     )
          )   (    (
@@ -29,24 +36,25 @@ fn panic(info: &PanicInfo) -> ! {
 ---------- PANIC ----------
 "#).ok();
 
-    if let Some(location) = info.location() {
-        writeln!(uart, "FILE: {}", location.file()).ok();
-        writeln!(uart, "LINE: {}", location.line()).ok();
-        writeln!(uart, "COL: {}", location.column()).ok();
-        writeln!(uart, "").ok();
+        if let Some(location) = info.location() {
+            writeln!(uart, "FILE: {}", location.file()).ok();
+            writeln!(uart, "LINE: {}", location.line()).ok();
+            writeln!(uart, "COL: {}", location.column()).ok();
+            writeln!(uart, "").ok();
+        }
+
+        if let Some(message) = info.message() {
+            writeln!(uart, "{}", message).ok();
+        } else if let Some(payload) = info.payload().downcast_ref::<&'static str>() {
+            writeln!(uart, "{}", payload).ok();
+        }
+
+        // spin_sleep(Duration::from_millis(1500));
+
+        // while uart.has_byte() {
+        //     uart.read_byte();
+        // }
     }
-
-    if let Some(message) = info.message() {
-        writeln!(uart, "{}", message).ok();
-    } else if let Some(payload) = info.payload().downcast_ref::<&'static str>() {
-        writeln!(uart, "{}", payload).ok();
-    }
-
-    // spin_sleep(Duration::from_millis(1500));
-
-    // while uart.has_byte() {
-    //     uart.read_byte();
-    // }
 
     aarch64::brk!(8);
 

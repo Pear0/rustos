@@ -3,6 +3,7 @@ use core::alloc::Layout;
 use crate::allocator::LocalAlloc;
 use crate::allocator::util::*;
 use crate::console::kprintln;
+use core::cmp::max;
 
 /// A "bump" allocator: allocates memory by bumping a pointer; never frees.
 #[derive(Debug)]
@@ -48,7 +49,9 @@ impl LocalAlloc for Allocator {
     /// or `layout` does not meet this allocator's
     /// size or alignment constraints.
     unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        let aligned_current = align_up(self.current, layout.align());
+        let min_align = 8;
+
+        let aligned_current = align_up(self.current, max(layout.align(), min_align));
         if DEBUG {
             kprintln!("alloc: {:?} -> 0x{:x}", layout, aligned_current);
         }

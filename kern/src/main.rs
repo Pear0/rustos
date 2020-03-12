@@ -34,9 +34,10 @@ use alloc::sync::Arc;
 use crate::io::{SyncWrite, ConsoleSync, ReadWrapper, SyncRead, WriteWrapper};
 use crate::net::tcp::{SHELL_READ, SHELL_WRITE};
 use alloc::borrow::ToOwned;
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
 use alloc::vec::Vec;
-use aarch64::SP;
+use aarch64::{SP, CNTP_CTL_EL0};
+use pi::interrupt::CoreInterrupt;
 
 #[cfg(not(test))]
 mod init;
@@ -44,10 +45,13 @@ mod init;
 pub mod allocator;
 pub mod cls;
 mod compat;
+#[macro_use]
 pub mod console;
+pub mod debug;
 pub mod fs;
 pub mod io;
 pub mod mbox;
+#[macro_use]
 pub mod mutex;
 pub mod net;
 pub mod shell;
@@ -75,12 +79,12 @@ fn init_jtag() {
 
 fn network_thread() {
 
-    let serial = crate::mbox::with_mbox(|mbox| mbox.serial_number()).expect("could not get serial number");
-
-    if serial == 0 {
-        kprintln!("[net] skipping network thread init, qemu detected");
-        kernel_api::syscall::exit();
-    }
+    // let serial = crate::mbox::with_mbox(|mbox| mbox.serial_number()).expect("could not get serial number");
+    //
+    // if serial == 0 {
+    //     kprintln!("[net] skipping network thread init, qemu detected");
+    //     kernel_api::syscall::exit();
+    // }
 
     unsafe {
         NET.initialize();
@@ -91,9 +95,14 @@ fn network_thread() {
             kernel_api::syscall::sleep(Duration::from_micros(1000)).ok();
         }
     }
+
+    //
+    // loop {
+    //     kernel_api::syscall::sleep(Duration::from_micros(1000)).ok();
+    // }
 }
 
-static CORE_REGISTER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
+static CORE_REGISTER: Mutex<Option<Vec<u64>>> = mutex_new!(None);
 
 #[no_mangle]
 fn core_bootstrap() -> ! {
@@ -111,7 +120,7 @@ fn core_bootstrap_2() -> ! {
 fn my_thread() {
 
     kprintln!("initializing other threads");
-    CORE_REGISTER.lock().replace(Vec::new());
+    // CORE_REGISTER.lock().replace(Vec::new());
 
     kprintln!("all threads initialized");
 
@@ -129,12 +138,12 @@ fn my_net_thread() {
 }
 
 fn led_blink() {
-    let mut g = gpio::Gpio::new(29).into_output();
+    // let mut g = gpio::Gpio::new(29).into_output();
     loop {
-        g.set();
+        // g.set();
         kernel_api::syscall::sleep(Duration::from_millis(250)).ok();
         // timer::spin_sleep(Duration::from_millis(250));
-        g.clear();
+        // g.clear();
         kernel_api::syscall::sleep(Duration::from_millis(250)).ok();
         // timer::spin_sleep(Duration::from_millis(250));
     }
@@ -160,9 +169,36 @@ fn kmain() -> ! {
 
     IRQ.initialize();
 
+    mutex_new!(5);
+
+
+    // for core in 0..smp::MAX_CORES {
+    //     IRQ.register_core(core, CoreInterrupt::CNTPNSIRQ, Box::new(|tf| {
+    //
+    //         let v = unsafe { CNTPCT_EL0.get() };
+    //         unsafe { CNTP_CVAL_EL0.set(v + 10000) };
+    //
+    //         // kprintln!("foo");
+    //
+    //     }));
+    // }
+
+    unsafe { (0x4000_0008 as *mut u32).write_volatile(0x8000_0000) };
+
+    unsafe { (0x4000_0040 as *mut u32).write_volatile(0b1010) };
+    unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
+    unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
+    unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
+
+
+
     kprintln!("initing smp");
 
-    // unsafe { smp::initialize(2); }
+    if true {
+        let cores = 4;
+        unsafe { smp::initialize(cores); }
+        smp::wait_for_cores(cores);
+    }
 
     // aarch64::dsb();
     // aarch64::isb();
@@ -175,8 +211,6 @@ fn kmain() -> ! {
     // isb":::"memory");
     // }
 
-    // smp::wait_for_cores(2);
-
     // kprintln!("Cores: {}", smp::count_cores());
 
     // smp::run_on_secondary_cores(|| {
@@ -187,7 +221,7 @@ fn kmain() -> ! {
     //     kprintln!("Hello!");
     // });
 
-
+    kprintln!("foo {:?}", Syndrome::from(0x96000050));
 
     kprintln!("foo");
 
@@ -201,9 +235,19 @@ fn kmain() -> ! {
 
     kprintln!("Initing Scheduler");
 
+    use aarch64::regs::*;
+
     unsafe {
         SCHEDULER.initialize();
     };
+
+    smp::run_on_secondary_cores(|| {
+
+        unsafe {
+            SCHEDULER.initialize();
+        };
+
+    });
 
     {
         kprintln!("Creating first thread");
@@ -217,7 +261,8 @@ fn kmain() -> ! {
     }
 
     {
-        let proc = Process::kernel_process_old("net thread".to_owned(),network_thread).unwrap();
+        let mut proc = Process::kernel_process_old("net thread".to_owned(),network_thread).unwrap();
+        proc.affinity.set_only(0);
         SCHEDULER.add(proc);
     }
 
@@ -236,12 +281,15 @@ fn kmain() -> ! {
     // });
 
     smp::run_no_return(|| {
-        kprintln!("Luanching");
+        let core = smp::core();
+        pi::timer::spin_sleep(Duration::from_millis(4 * core as u64));
+        kprintln!("Luanching {}", core);
         SCHEDULER.start();
 
         kprintln!("RIP RIP");
     });
 
+    pi::timer::spin_sleep(Duration::from_millis(50));
     kprintln!("starting");
 
     SCHEDULER.start();

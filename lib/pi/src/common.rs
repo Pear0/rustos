@@ -1,6 +1,10 @@
 /// The address where I/O peripherals are mapped to.
-pub const IO_BASE: usize = 0x3F000000;
-pub const IO_BASE_END: usize = 0x40000000;
+pub const IO_BASE: usize = 0x3F00_0000;
+
+pub const IO_PERIPHERAL_BASE_END: usize = 0x4000_0000;
+
+// https://github.com/raspberrypi/documentation/blob/master/hardware/raspberrypi/bcm2836/QA7_rev3.4.pdf
+pub const IO_BASE_END: usize = 0x4004_0000;
 
 /// The base address of the `GPIO` registers
 pub const GPIO_BASE: usize = IO_BASE + 0x20_0000;

@@ -9,7 +9,7 @@ use aarch64::SPSR_EL1;
 use shim::path::Path;
 
 use crate::console::kprintln;
-use crate::FILESYSTEM;
+use crate::{FILESYSTEM, smp};
 use crate::param::*;
 use crate::process::{Stack, State};
 use crate::traps::TrapFrame;
@@ -20,6 +20,30 @@ use core::time::Duration;
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
+
+#[derive(Debug, Clone, Copy)]
+pub struct CoreAffinity([bool; smp::MAX_CORES]);
+
+impl CoreAffinity {
+    pub fn all() -> Self {
+        CoreAffinity([true; smp::MAX_CORES])
+    }
+
+    pub fn set_all(&mut self) {
+        self.0 = [true; smp::MAX_CORES];
+    }
+
+    pub fn set_only(&mut self, core: usize) {
+        self.0 = [false; smp::MAX_CORES];
+        if core < self.0.len() {
+            self.0[core] = true;
+        }
+    }
+
+    pub fn check(&self, core: usize) -> bool {
+        core < self.0.len() && self.0[core]
+    }
+}
 
 /// A structure that represents the complete state of a process.
 pub struct Process {
@@ -35,6 +59,10 @@ pub struct Process {
     pub name: String,
     
     pub cpu_time: Duration,
+
+    pub task_switches: usize,
+
+    pub affinity: CoreAffinity,
 
     pub kernel_thread_ctx: Option<Box<Box<dyn FnOnce() + Send>>>,
 }
@@ -98,6 +126,8 @@ impl Process {
             name,
             cpu_time: Duration::from_millis(0),
             kernel_thread_ctx: None,
+            affinity: CoreAffinity::all(),
+            task_switches: 0,
         })
     }
 

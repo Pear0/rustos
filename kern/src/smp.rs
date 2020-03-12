@@ -1,10 +1,12 @@
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::time::Duration;
 
 use aarch64::{MPIDR_EL1, SP};
 
-use crate::mutex::Mutex;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crate::init;
+use crate::mutex::Mutex;
+
+pub const MAX_CORES: usize = 4;
 
 // utilities to handle secondary cores initialization.
 
@@ -28,6 +30,10 @@ pub unsafe fn core_bootstrap() -> ! {
     SP.set(stack_top);
 
     core_bootstrap_stack();
+}
+
+pub fn core() -> usize {
+    unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize }
 }
 
 #[inline(never)]
@@ -112,14 +118,12 @@ pub fn wait_for_cores(cores: usize) {
 }
 
 pub fn run_no_return(func: fn()) {
-
     for (id, core) in PARKING.iter().enumerate() {
         if core.2.load(Ordering::SeqCst) {
             // let mut lock = core.0.lock();
             // lock.replace(func);
 
             core.0.store(func as u64, Ordering::SeqCst);
-
         }
     }
 
@@ -153,13 +157,11 @@ pub fn run_on_secondary_cores(func: fn()) {
         for (id, core) in PARKING.iter().enumerate() {
             unsafe { asm!("dsb sy" ::: "memory"); }
             if enables[id] {
-
                 if core.0.load(Ordering::SeqCst) != 0 {
                     unsafe { asm!("dsb sy" ::: "memory"); }
                     // kprintln!("waiting @ {}", id);
-                    continue 'wait
+                    continue 'wait;
                 }
-
             }
         }
 
@@ -198,18 +200,42 @@ pub fn run_on_all_cores(func: fn()) {
         for (id, core) in PARKING.iter().enumerate() {
             unsafe { asm!("dsb sy" ::: "memory"); }
             if enables[id] {
-
                 if core.0.load(Ordering::SeqCst) != 0 {
                     unsafe { asm!("dsb sy" ::: "memory"); }
                     // kprintln!("waiting @ {}", id);
-                    continue 'wait
+                    continue 'wait;
                 }
-
             }
         }
 
         break;
     }
 }
+
+pub fn no_interrupt<T, R>(func: T) -> R
+    where T: (FnOnce() -> R) {
+    use aarch64::regs::*;
+
+    let int = DAIF::F | DAIF::I | DAIF::D | DAIF::A;
+
+    unsafe {
+        let orig = DAIF.get_masked(int);
+        DAIF.set(DAIF.get() | int);
+        aarch64::dsb();
+        let r = func();
+        aarch64::dsb();
+        DAIF.set((DAIF.get() & !int) | orig);
+        r
+    }
+}
+
+
+
+
+
+
+
+
+
 
 

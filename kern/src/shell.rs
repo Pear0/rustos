@@ -9,7 +9,7 @@ use hashbrown::HashMap;
 
 use fat32::traits::{Dir, Entry, File, Metadata};
 use fat32::traits::FileSystem;
-use pi::interrupt::Interrupt;
+use pi::interrupt::{Interrupt, CoreInterrupt};
 use shim::io;
 use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
@@ -21,6 +21,7 @@ use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
 use crate::process::Process;
 use aarch64::MPIDR_EL1;
+use crate::smp;
 
 // use std::path::{Path, PathBuf, Component};
 
@@ -356,10 +357,26 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 writeln!(self.writer, "Current EL: {}", el);
             }
             "irqs" => {
-                let stats = IRQ.get_stats();
-                for (i, stat) in stats.iter().enumerate() {
-                    writeln!(self.writer, "{:?}: {:?}", Interrupt::from_index(i), stat);
+                writeln!(self.writer, "System:");
+                if let Some(stats) = IRQ.get_stats() {
+                    for (i, stat) in stats.iter().enumerate() {
+                        writeln!(self.writer, "{:?}: {:?}", Interrupt::from_index(i), stat);
+                    }
+                } else {
+                    writeln!(self.writer, "timed out getting stats");
                 }
+
+                for core in 0..smp::MAX_CORES {
+                    writeln!(self.writer, "Core {}:", core);
+                    if let Some(stats) = IRQ.get_stats_core(core) {
+                        for (i, stat) in stats.iter().enumerate() {
+                            writeln!(self.writer, "{:?}: {:?}", CoreInterrupt::from_index(i), stat);
+                        }
+                    } else {
+                        writeln!(self.writer, "timed out getting stats");
+                    }
+                }
+
             }
             path => {
                 if self.commands.contains_key(path) {
@@ -462,14 +479,8 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
 }
 
 
-pub fn serial_shell(prefix: &'static str) -> Shell<ReadWrapper<Arc<dyn SyncRead>>, WriteWrapper<Arc<dyn SyncWrite>>> {
-    let read: Arc<dyn SyncRead> = Arc::new(ConsoleSync::new());
-    let write: Arc<dyn SyncWrite> = Arc::new(ConsoleSync::new());
-
-    Shell::new(prefix,
-               ReadWrapper::new(read),
-               WriteWrapper::new(write),
-    )
+pub fn serial_shell(prefix: &'static str) -> Shell<ConsoleSync, ConsoleSync> {
+    Shell::new(prefix, ConsoleSync::new(), ConsoleSync::new())
 }
 
 /// Starts a shell using `prefix` as the prefix for each line. This function

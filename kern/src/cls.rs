@@ -6,6 +6,9 @@ const CORE_COUNT: usize = 4;
 
 pub struct CoreLocal<T>([Cell<T>; CORE_COUNT]);
 
+// nothing is actually shared
+unsafe impl<T> Sync for CoreLocal<T> {}
+
 impl<T> CoreLocal<T> {
     pub fn new_func<F: Fn() -> T>(init: F) -> Self {
         CoreLocal([Cell::new(init()), Cell::new(init()), Cell::new(init()), Cell::new(init())])
@@ -15,6 +18,12 @@ impl<T> CoreLocal<T> {
 impl<T: Clone> CoreLocal<T> {
     pub fn new(init: T) -> Self {
         Self::new_func(|| init.clone())
+    }
+}
+
+impl<T: Copy> CoreLocal<T> {
+    pub const fn new_copy(init: T) -> Self {
+        CoreLocal([Cell::new(init), Cell::new(init), Cell::new(init), Cell::new(init)])
     }
 }
 

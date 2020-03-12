@@ -30,6 +30,8 @@ impl Page {
     }
 }
 
+const l2_pages: usize = 3;
+
 #[repr(C)]
 #[repr(align(65536))]
 pub struct L2PageTable {
@@ -100,7 +102,7 @@ impl L3PageTable {
 #[repr(align(65536))]
 pub struct PageTable {
     pub l2: L2PageTable,
-    pub l3: [L3PageTable; 2],
+    pub l3: [Box<L3PageTable>; l2_pages],
 }
 
 impl PageTable {
@@ -109,7 +111,7 @@ impl PageTable {
     fn new(perm: u64) -> Box<PageTable> {
         let mut table = Box::new(PageTable {
             l2: L2PageTable::new(),
-            l3: [L3PageTable::new(), L3PageTable::new()],
+            l3: [Box::new(L3PageTable::new()), Box::new(L3PageTable::new()), Box::new(L3PageTable::new())],
         });
 
         for (i, l3) in table.l3.iter().enumerate() {
@@ -148,7 +150,7 @@ impl PageTable {
 
         let l2 = addr & (0b1_1111_1111_1111); // 13 bits
 
-        if l2 >= 2 {
+        if l2 >= l2_pages as u64 {
             panic!("Address: {:x} -> L2 invalid: {:x}", va.as_u64(), l2);
         }
 

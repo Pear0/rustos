@@ -2,9 +2,12 @@ use shim::io;
 use shim::io::Error;
 
 use crate::console::{CONSOLE, kprintln};
-use crate::mutex::{Mutex, MutexGuard};
+use crate::mutex::{mutex_new, Mutex, MutexGuard};
 use core::ops::DerefMut;
 use core::ops::Deref;
+use core::cell::UnsafeCell;
+use pi::uart::MiniUart;
+use crate::mutex::m_lock;
 
 pub trait SyncRead : Sync + Send {
 
@@ -18,29 +21,54 @@ pub trait SyncWrite : Sync + Send {
 
 }
 
-#[derive(Clone)]
-pub struct ConsoleSync();
+pub struct ConsoleSync(UnsafeCell<MiniUart>);
+
+unsafe impl Sync for ConsoleSync {}
 
 impl ConsoleSync {
     pub fn new() -> Self {
-        ConsoleSync()
+        ConsoleSync(UnsafeCell::new(MiniUart::new()))
     }
+
+    fn inner(&self) -> &mut MiniUart {
+        unsafe { &mut *self.0.get() }
+    }
+
 }
 
 impl SyncRead for ConsoleSync {
     fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut console = CONSOLE.lock();
-        console.read_nonblocking(buf)
+        self.inner().read_nonblocking(buf)
     }
 }
 
 impl SyncWrite for ConsoleSync {
     fn write(&self, buf: &[u8]) -> io::Result<usize> {
         use shim::io::Write;
-        let mut console = CONSOLE.lock();
-        console.write(buf)
+        for byte in buf.iter() {
+            if *byte == b'\n' {
+                self.inner().write_byte(b'\r');
+            }
+            self.inner().write_byte(*byte);
+        }
+        Ok(buf.len())
     }
 
+}
+
+impl io::Read for ConsoleSync {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        SyncRead::read(self, buf)
+    }
+}
+
+impl io::Write for ConsoleSync {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        SyncWrite::write(self, buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 enum GlobalState<T: Clone> {
@@ -52,11 +80,11 @@ pub struct Global<T: Clone>(Mutex<GlobalState<T>>);
 
 impl<T: Clone> Global<T> {
     pub const fn new(f: fn() -> T) -> Self {
-        Global(Mutex::new(GlobalState::Init(f)))
+        Global(mutex_new!(GlobalState::Init(f)))
     }
 
     pub fn get(&self) -> T {
-        let mut lock = self.0.lock();
+        let mut lock = m_lock!(self.0);
 
         match lock.deref() {
             GlobalState::Init(f) => {

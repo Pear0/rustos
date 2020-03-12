@@ -1,15 +1,18 @@
-use pi::interrupt::{Controller, Interrupt};
+use alloc::vec::Vec;
 
-use crate::{IRQ, shell, SCHEDULER};
+use aarch64::MPIDR_EL1;
+use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
+
+use crate::{debug, IRQ, SCHEDULER, shell, smp};
+use crate::cls::CoreLocal;
+use crate::console::kprint;
 use crate::console::kprintln;
 use crate::traps::Kind::Synchronous;
 
 pub use self::frame::TrapFrame;
-use self::syndrome::Syndrome;
 use self::syndrome::Fault;
+use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
-use alloc::vec::Vec;
-use aarch64::MPIDR_EL1;
 
 mod frame;
 pub mod syndrome;
@@ -24,6 +27,8 @@ pub enum Kind {
     Irq = 1,
     Fiq = 2,
     SError = 3,
+
+    None = 4,
 }
 
 #[repr(u16)]
@@ -42,25 +47,95 @@ pub struct Info {
     kind: Kind,
 }
 
+fn handle_irqs(tf: &mut TrapFrame) {
+    let ctl = Controller::new();
+    // Invoke any handlers
+
+    for _ in 0..20 {
+        let mut any_pending = false;
+        for int in Interrupt::iter() {
+            if ctl.is_pending(*int) {
+                any_pending = true;
+                IRQ.invoke(*int, tf);
+            }
+        }
+
+        let core = smp::core();
+        for _ in 0..CoreInterrupt::MAX {
+            if let Some(int) = CoreInterrupt::read(core) {
+                any_pending = true;
+                IRQ.invoke_core(core, int, tf);
+            } else {
+                break;
+            }
+        }
+
+        if !any_pending {
+            return;
+        }
+    }
+
+    kprintln!("irq stuck pending!");
+
+    debug_shell(tf);
+}
+
+static IRQ_RECURSION_DEPTH: CoreLocal<i32> = CoreLocal::new_copy(0);
+static IRQ_ESR: CoreLocal<u32> = CoreLocal::new_copy(0xFF_FF_FF_FF);
+static IRQ_EL: CoreLocal<u64> = CoreLocal::new_copy(0xFF_FF_FF_FF);
+static IRQ_INFO: CoreLocal<Info> = CoreLocal::new_copy(Info { kind: Kind::None, source: Source::CurrentSpEl0 });
+
+pub fn irq_depth() -> i32 {
+    IRQ_RECURSION_DEPTH.get()
+}
+
+pub fn irq_esr() -> Option<Syndrome> {
+    let esr = IRQ_ESR.get();
+    if esr != 0xFF_FF_FF_FF {
+        Some(Syndrome::from(esr))
+    } else {
+        None
+    }
+}
+
+pub fn irq_el() -> Option<u64> {
+    let esr = IRQ_EL.get();
+    if esr != 0xFF_FF_FF_FF {
+        Some(esr)
+    } else {
+        None
+    }
+}
+
+pub fn irq_info() -> Info {
+    IRQ_INFO.get()
+}
+
+
 /// This function is called when an exception occurs. The `info` parameter
 /// specifies the source and kind of exception that has occurred. The `esr` is
 /// the value of the exception syndrome register. Finally, `tf` is a pointer to
 /// the trap frame for the exception.
 #[no_mangle]
 pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
-    let ctl = Controller::new();
+    //
+    // let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+    // kprintln!("IRQ: {}", core_id);
 
-    let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-    kprintln!("IRQ: {}", core_id);
+    if IRQ_RECURSION_DEPTH.get() != 0 {
+        kprintln!("Recursive IRQ: {:?}", info);
+        shell::shell("#>");
+    }
+
+    IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
+    IRQ_ESR.set(esr);
+    IRQ_EL.set(tf.elr);
+    IRQ_INFO.set(info);
 
     match info.kind {
         Kind::Irq => {
-            for int in Interrupt::iter() {
-                if ctl.is_pending(*int) {
-                    IRQ.invoke(*int, tf);
-                }
-            }
-        },
+            handle_irqs(tf);
+        }
         Kind::Synchronous => {
             match Syndrome::from(esr) {
                 Syndrome::Svc(svc) => {
@@ -94,15 +169,7 @@ pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
         }
     }
 
-}
-
-extern "C" {
-    static __code_beg: u8;
-    static __code_end: u8;
-}
-
-fn address_maybe_code(num: u64) -> bool {
-    unsafe { num >= (&__code_beg as *const u8 as u64) && num <= (&__code_end as *const u8 as u64) }
+    IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
 }
 
 fn debug_shell(tf: &mut TrapFrame) {
@@ -114,7 +181,7 @@ fn debug_shell(tf: &mut TrapFrame) {
     match &snap {
         Some(snap) => {
             kprintln!("Debug Shell on: {:?}", snap);
-        },
+        }
         None => {
             kprintln!("Debug Shell, unknown process");
         }
@@ -157,11 +224,10 @@ fn debug_shell(tf: &mut TrapFrame) {
             writeln!(sh.writer, "==== scanning {} addresses ====", slice.len());
 
             for num in slice.iter().rev() {
-                if address_maybe_code(*num) {
+                if debug::address_maybe_code(*num) {
                     writeln!(sh.writer, "0x{:08x}", num);
                 }
             }
-
         } else {
             writeln!(sh.writer, "cannot dump stack for unknown process");
         }

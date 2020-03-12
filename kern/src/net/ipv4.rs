@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use core::fmt;
+use crate::mutex::m_lock;
 
 use pi::types::BigU16;
 use shim::const_assert_size;
@@ -285,7 +286,7 @@ impl Interface {
             payload: Box::from(payload_buffer.as_ref()),
         };
 
-        let mut lock = self.eth.lock();
+        let mut lock = m_lock!(self.eth);
         lock.send(mac, frame)
     }
 

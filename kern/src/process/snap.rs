@@ -1,6 +1,7 @@
 use crate::process::{Process, State};
 use alloc::string::String;
 use core::time::Duration;
+use crate::process::process::CoreAffinity;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SnapState {
@@ -33,6 +34,8 @@ pub struct SnapProcess {
     pub name: String,
     pub stack_top: u64,
     pub cpu_time: Duration,
+    pub task_switches: usize,
+    pub affinity: CoreAffinity,
 }
 
 impl From<&Process> for SnapProcess {
@@ -49,6 +52,8 @@ impl From<&Process> for SnapProcess {
             name: proc.name.clone(),
             stack_top: proc.stack.top().as_u64(),
             cpu_time,
+            task_switches: proc.task_switches,
+            affinity: proc.affinity,
         }
     }
 }

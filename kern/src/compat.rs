@@ -152,6 +152,7 @@ extern "C" fn LogWrite(source: *const u8, severity: u32, message: *const u8, arg
 
 #[no_mangle]
 extern "C" fn StartKernelTimer() {
+    kprintln!("StartKernelTimer()");
     unimplemented!();
 }
 #[no_mangle]

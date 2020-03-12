@@ -1,8 +1,9 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use shim::ioerr;
+use crate::mutex::m_lock;
 
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
 use crate::net::NetErrorKind::BufferFull;
 use core::ops::DerefMut;
 use crate::net::{NetResult, NetErrorKind};
@@ -21,7 +22,7 @@ pub struct BufferHandle(Arc<Mutex<Buffer>>);
 
 impl BufferHandle {
     pub fn new() -> Self {
-        BufferHandle(Arc::new(Mutex::new(Buffer {
+        BufferHandle(Arc::new(mutex_new!(Buffer {
             deque: VecDeque::new(),
             max_size: 1024,
         })))
@@ -31,7 +32,7 @@ impl BufferHandle {
         where
             F: FnOnce(&mut Buffer) -> R,
     {
-        let mut guard = self.0.lock();
+        let mut guard = m_lock!(self.0);
         f(guard.deref_mut())
     }
 

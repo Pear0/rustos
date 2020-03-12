@@ -6,7 +6,8 @@ use fat32::vfat::{VFat, VFatHandle};
 use shim::io;
 use shim::path::Path;
 
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::m_lock;
 
 pub mod sd;
 
@@ -29,11 +30,11 @@ impl Debug for PiVFatHandle {
 
 impl VFatHandle for PiVFatHandle {
     fn new(val: VFat<PiVFatHandle>) -> Self {
-        PiVFatHandle(Rc::new(Mutex::new(val)))
+        PiVFatHandle(Rc::new(mutex_new!(val)))
     }
 
     fn lock<R>(&self, f: impl FnOnce(&mut VFat<PiVFatHandle>) -> R) -> R {
-        f(&mut self.0.lock())
+        f(&mut m_lock!(self.0))
     }
 }
 pub struct FileSystem(pub Mutex<Option<PiVFatHandle>>);
@@ -44,7 +45,7 @@ impl FileSystem {
     /// The file system must be initialized by calling `initialize()` before the
     /// first memory allocation. Failure to do will result in panics.
     pub const fn uninitialized() -> Self {
-        FileSystem(Mutex::new(None))
+        FileSystem(mutex_new!(None))
     }
 
     /// Initializes the file system.
@@ -58,7 +59,7 @@ impl FileSystem {
         let sd = sd::Sd::new().expect("failed to init sd card");
         let vfat = VFat::<PiVFatHandle>::from(sd).expect("failed to init vfat");
 
-        self.0.lock().replace(vfat);
+        m_lock!(self.0).replace(vfat);
     }
 }
 
@@ -68,6 +69,6 @@ impl fat32::traits::FileSystem for &FileSystem {
     type Entry = fat32::vfat::Entry<PiVFatHandle>;
 
     fn open<P: AsRef<Path>>(self, path: P) -> io::Result<Self::Entry> {
-        self.0.lock().as_ref().unwrap().open(path)
+        m_lock!(self.0).as_ref().unwrap().open(path)
     }
 }

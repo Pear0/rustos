@@ -6,8 +6,9 @@ use hashbrown::HashMap;
 use pi::timer;
 use pi::types::BigU16;
 use shim::const_assert_size;
+use crate::mutex::m_lock;
 
-use crate::mutex::Mutex;
+use crate::mutex::{mutex_new, Mutex};
 use crate::net::{ether, ipv4, NetErrorKind, NetResult};
 use crate::net::ether::{EthPayload, Interface, Mac};
 use crate::net::ipv4::Address;
@@ -97,30 +98,30 @@ pub struct ArpTable {
 impl ArpTable {
     pub fn new() -> Self {
         ArpTable {
-            table: Mutex::new(HashMap::new()),
-            pending_requests: Mutex::new(HashMap::new()),
+            table: mutex_new!(HashMap::new()),
+            pending_requests: mutex_new!(HashMap::new()),
         }
     }
 
     pub fn insert(&self, protocol: u16, ip: ipv4::Address, mac: ether::Mac) {
         {
-            let mut lock = self.table.lock();
+            let mut lock = m_lock!(self.table);
             lock.insert((protocol, ip), mac);
         }
 
         {
-            let mut lock = self.pending_requests.lock();
+            let mut lock = m_lock!(self.pending_requests);
             lock.remove(&(protocol, ip));
         }
     }
 
     pub fn get(&self, protocol: u16, ip: ipv4::Address) -> Option<ether::Mac> {
-        let lock = self.table.lock();
+        let lock = m_lock!(self.table);
         lock.get(&(protocol, ip)).map(|x| x.clone())
     }
 
     pub fn copy_table(&self) -> HashMap<(u16, ipv4::Address), ether::Mac> {
-        let lock = self.table.lock();
+        let lock = m_lock!(self.table);
         lock.clone()
     }
 }
@@ -136,14 +137,14 @@ impl ArpResolver for ArpTable {
         }
 
         {
-            let mut requests = self.pending_requests.lock();
+            let mut requests = m_lock!(self.pending_requests);
             if !requests.contains_key(&(protocol, addr)) {
                 requests.insert((protocol, addr), ReqInfo { first_sent_at: None, send_count: 0 });
             }
         }
 
         {
-            let mut eth = eth.lock();
+            let mut eth = m_lock!(eth);
 
             let mut packet = ArpPacket::default();
             packet.hw_address_space.set(HW_ADDR_ETHER);
@@ -161,7 +162,7 @@ impl ArpResolver for ArpTable {
         }
 
         {
-            let mut requests = self.pending_requests.lock();
+            let mut requests = m_lock!(self.pending_requests);
             // we released the lock, so a remote ARP may have filled our table entry.
             if let Some(req) = requests.get_mut(&(protocol, addr)) {
                 if req.first_sent_at.is_none() {

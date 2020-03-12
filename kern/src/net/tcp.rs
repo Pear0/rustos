@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::slice::from_mut;
+use crate::mutex::m_lock;
 
 use hashbrown::{HashMap, HashSet};
 use modular_bitfield::prelude::*;
@@ -13,7 +14,7 @@ use crate::mutex::Mutex;
 use crate::net::{encode_struct, ipv4, NetErrorKind, NetResult, try_parse_struct};
 use crate::net::ipv4::IPv4Payload;
 use crate::net::util::ChecksumOnesComplement;
-use crate::{SCHEDULER, shell};
+use crate::shell;
 use crate::process::Process;
 use crate::net::buffer::BufferHandle;
 
@@ -224,7 +225,7 @@ impl TcpConnection {
 
         // resending? lol as if
         {
-            let mut ip = manager.ip.lock();
+            let mut ip = m_lock!(manager.ip);
             ip.send(dest, frame)?;
         }
 

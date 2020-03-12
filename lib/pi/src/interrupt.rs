@@ -74,6 +74,54 @@ impl From<usize> for Interrupt {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+#[repr(u8)]
+pub enum CoreInterrupt {
+    CNTPSIRQ = 0,
+    CNTPNSIRQ, //
+    CNTHPIRQ,
+    CNTVIRQ,
+    Mailbox0,
+    Mailbox1,
+    Mailbox2,
+    Mailbox3,
+    GPU,
+    PMU,
+    AXIOutstanding, // core 0
+    LocalTimer,
+    #[allow(non_camel_case_types)] __last,
+}
+
+impl CoreInterrupt {
+    pub const MAX: usize = 12;
+
+    pub fn from_index(i: usize) -> CoreInterrupt {
+        if i >= CoreInterrupt::__last as usize {
+            panic!("unknown interrupt");
+        }
+        unsafe { core::mem::transmute(i as u8) }
+    }
+
+    pub fn iter() -> impl Iterator<Item=CoreInterrupt> {
+        use CoreInterrupt::*;
+        [CNTPSIRQ, CNTPNSIRQ, CNTHPIRQ, CNTVIRQ, Mailbox0, Mailbox1, Mailbox2, Mailbox3, GPU, PMU, AXIOutstanding, LocalTimer].iter().map(|x| *x)
+    }
+
+    pub fn read(core: usize) -> Option<CoreInterrupt> {
+        let v = unsafe { ((0x4000_0060 + 4 * (core & 3)) as *const u32).read_volatile() };
+        if v == 0 {
+            return None;
+        }
+        let b = u32::trailing_zeros(v) as u8;
+        if b >= CoreInterrupt::__last as u8 {
+            return None
+        }
+
+        Some(unsafe { core::mem::transmute(b) })
+    }
+
+}
+
 #[repr(C)]
 #[allow(non_snake_case)]
 struct Registers {
