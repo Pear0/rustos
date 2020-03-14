@@ -5,15 +5,13 @@ use core::time::Duration;
 use pi::mbox::MBox;
 use pi::usb::{self, Usb};
 
-use crate::console::kprintln;
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 use crate::net::arp::{ArpPacket, ArpTable, ArpResolver};
 use crate::mbox::with_mbox;
 use crate::net::icmp::IcmpFrame;
 use crate::net::ipv4::IPv4Payload;
 use core::ops::DerefMut;
 use core::ops::Deref;
-use crate::mutex::m_lock;
 
 pub mod arp;
 pub mod buffer;

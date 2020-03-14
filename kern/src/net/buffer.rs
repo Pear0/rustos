@@ -1,16 +1,14 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use shim::ioerr;
-use crate::mutex::m_lock;
 
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 use crate::net::NetErrorKind::BufferFull;
 use core::ops::DerefMut;
 use crate::net::{NetResult, NetErrorKind};
 use crate::io::{SyncWrite, SyncRead};
 use shim::io;
 use shim::io::Error;
-use crate::console::kprintln;
 
 struct Buffer {
     deque: VecDeque<u8>,

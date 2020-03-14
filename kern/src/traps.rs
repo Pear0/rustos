@@ -5,8 +5,6 @@ use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
 use crate::{debug, IRQ, SCHEDULER, shell, smp};
 use crate::cls::CoreLocal;
-use crate::console::kprint;
-use crate::console::kprintln;
 use crate::traps::Kind::Synchronous;
 
 pub use self::frame::TrapFrame;

@@ -6,7 +6,6 @@ use aarch64::{SCTLR_EL1, MPIDR_EL1, SP};
 use core::time::Duration;
 use core::fmt::Alignment::Left;
 use core::sync::atomic::AtomicU64;
-use crate::console::kprintln;
 use crate::{smp, traps};
 
 #[repr(align(32))]
@@ -44,16 +43,19 @@ impl<T> Mutex<T> {
     }
 }
 
-pub macro mutex_new {
+#[macro_export]
+macro_rules! mutex_new {
     ($val:expr) => (Mutex::new(concat!(file!(), ":", line!()), $val))
 }
 
-pub macro m_lock {
-($mutex:expr) => (($mutex).lock(concat!(file!(), ":", line!())))
+#[macro_export]
+macro_rules! m_lock {
+    ($mutex:expr) => (($mutex).lock(concat!(file!(), ":", line!())))
 }
 
-pub macro m_lock_timeout {
-($mutex:expr, $time:expr) => (($mutex).lock_timeout(concat!(file!(), ":", line!()), $time))
+#[macro_export]
+macro_rules! m_lock_timeout {
+    ($mutex:expr, $time:expr) => (($mutex).lock_timeout(concat!(file!(), ":", line!()), $time))
 }
 
 

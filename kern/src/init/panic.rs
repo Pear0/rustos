@@ -5,8 +5,7 @@ use core::time::Duration;
 use pi::pm::reset;
 use pi::timer::spin_sleep;
 use pi::uart::MiniUart;
-use crate::mutex::{mutex_new, Mutex};
-use crate::mutex::m_lock;
+use crate::mutex::Mutex;
 
 static PANIC_LOCK: Mutex<bool> = mutex_new!(false);
 

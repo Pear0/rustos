@@ -3,9 +3,8 @@ use core::fmt;
 
 use pi::atags::Atags;
 
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 use crate::smp;
-use crate::mutex::m_lock;
 
 mod linked_list;
 pub mod util;

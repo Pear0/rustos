@@ -9,7 +9,6 @@ use pi::mbox::MBox;
 use pi::timer;
 
 use crate::{ALLOCATOR, IRQ};
-use crate::console::{kprint, kprintln};
 use crate::mbox::with_mbox;
 use core::sync::atomic::{AtomicBool, Ordering};
 

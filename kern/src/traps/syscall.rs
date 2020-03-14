@@ -7,7 +7,6 @@ use crate::console::CONSOLE;
 use crate::process::{EventPollFn, State};
 use crate::SCHEDULER;
 use crate::traps::TrapFrame;
-use crate::mutex::m_lock;
 
 fn set_result(tf: &mut TrapFrame, regs: &[u64]) {
     for (i, v) in regs.iter().enumerate() {
@@ -93,7 +92,6 @@ pub fn sys_getpid(tf: &mut TrapFrame) {
 }
 
 pub fn handle_syscall(num: u16, tf: &mut TrapFrame) {
-    use crate::console::kprintln;
 
     match num as usize {
         NR_SLEEP => {

@@ -13,7 +13,6 @@ use aarch64::SPSR_EL1;
 use shim::path::Path;
 
 use crate::{FILESYSTEM, smp};
-use crate::console::kprintln;
 use crate::param::*;
 use crate::process::{Stack, State};
 use crate::traps::TrapFrame;

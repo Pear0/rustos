@@ -13,7 +13,6 @@ use shim::const_assert_size;
 
 use crate::allocator;
 use crate::ALLOCATOR;
-use crate::console::kprintln;
 use crate::param::*;
 use crate::vm::{PhysicalAddr, VirtualAddr};
 

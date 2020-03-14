@@ -1,11 +1,9 @@
 use alloc::boxed::Box;
 use core::fmt;
-use crate::mutex::m_lock;
 
 use pi::types::BigU16;
 use shim::const_assert_size;
 
-use crate::console::kprintln;
 use crate::net::{encode_struct, try_parse_struct, ether, arp, NetResult, NetErrorKind};
 use crate::net::ether::{EthPayload, EthHeader};
 use crate::net::util::ChecksumOnesComplement;

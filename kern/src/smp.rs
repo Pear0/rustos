@@ -38,7 +38,6 @@ pub fn core() -> usize {
 
 #[inline(never)]
 unsafe fn core_bootstrap_stack() -> ! {
-    use crate::console::kprintln;
 
     init::switch_to_el2();
     init::switch_to_el1();
@@ -132,8 +131,6 @@ pub fn run_no_return(func: fn()) {
 }
 
 pub fn run_on_secondary_cores(func: fn()) {
-    use crate::console::kprintln;
-
     let mut enables = [false; 4];
 
     for (id, core) in PARKING.iter().enumerate() {
@@ -170,7 +167,6 @@ pub fn run_on_secondary_cores(func: fn()) {
 }
 
 pub fn run_on_all_cores(func: fn()) {
-    use crate::console::kprintln;
 
     let mut enables = [false; 4];
 

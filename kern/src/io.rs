@@ -1,13 +1,12 @@
 use shim::io;
 use shim::io::Error;
 
-use crate::console::{CONSOLE, kprintln};
-use crate::mutex::{mutex_new, Mutex, MutexGuard};
+use crate::console::CONSOLE;
+use crate::mutex::{Mutex, MutexGuard};
 use core::ops::DerefMut;
 use core::ops::Deref;
 use core::cell::UnsafeCell;
 use pi::uart::MiniUart;
-use crate::mutex::m_lock;
 
 pub trait SyncRead : Sync + Send {
 

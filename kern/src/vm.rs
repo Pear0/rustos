@@ -1,15 +1,13 @@
 use aarch64::*;
 
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS, PAGE_MASK, PAGE_SIZE};
-use crate::console::kprintln;
 
 pub use self::address::{PhysicalAddr, VirtualAddr};
 pub use self::pagetable::*;
 use crate::smp;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU64;
-use crate::mutex::m_lock;
 
 mod address;
 mod pagetable;

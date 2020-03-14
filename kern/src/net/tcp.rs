@@ -1,14 +1,12 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::slice::from_mut;
-use crate::mutex::m_lock;
 
 use hashbrown::{HashMap, HashSet};
 use modular_bitfield::prelude::*;
 
 use pi::types::{BigU16, BigU32};
 
-use crate::console::{kprint, kprintln};
 use crate::io::{ConsoleSync, SyncRead, SyncWrite, Global, ReadWrapper};
 use crate::mutex::Mutex;
 use crate::net::{encode_struct, ipv4, NetErrorKind, NetResult, try_parse_struct};

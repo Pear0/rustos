@@ -2,7 +2,6 @@ use pi::types::{BigU16, BigU32};
 use crate::net::ipv4::IPv4Payload;
 use crate::net::{try_parse_struct, encode_struct, ipv4, NetResult, NetErrorKind};
 use alloc::boxed::Box;
-use crate::console::kprintln;
 use crate::net::util::ChecksumOnesComplement;
 
 #[repr(C, packed)]

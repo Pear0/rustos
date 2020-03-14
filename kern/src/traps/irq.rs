@@ -2,11 +2,10 @@ use alloc::boxed::Box;
 
 use pi::interrupt::{Interrupt, CoreInterrupt};
 
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 use crate::traps::TrapFrame;
 use crate::smp;
 use core::time::Duration;
-use crate::mutex::{m_lock, m_lock_timeout};
 
 pub type IrqHandler = Box<dyn FnMut(&mut TrapFrame) + Send>;
 

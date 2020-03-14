@@ -1,11 +1,10 @@
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 
 use crate::{ALLOCATOR, VMM};
 use alloc::alloc::{GlobalAlloc, Layout};
 use crate::param::{PAGE_SIZE, PAGE_ALIGN};
 use core::borrow::{Borrow, BorrowMut};
 use pi::mbox::MBox;
-use crate::mutex::m_lock;
 
 static MBOX_PAGE: Mutex<Option<&mut MBox>> = mutex_new!(None);
 

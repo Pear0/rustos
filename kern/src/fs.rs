@@ -6,8 +6,7 @@ use fat32::vfat::{VFat, VFatHandle};
 use shim::io;
 use shim::path::Path;
 
-use crate::mutex::{mutex_new, Mutex};
-use crate::mutex::m_lock;
+use crate::mutex::Mutex;
 
 pub mod sd;
 

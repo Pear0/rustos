@@ -2,7 +2,6 @@ use core::alloc::Layout;
 
 use crate::allocator::LocalAlloc;
 use crate::allocator::util::*;
-use crate::console::kprintln;
 use core::cmp::max;
 
 /// A "bump" allocator: allocates memory by bumping a pointer; never frees.

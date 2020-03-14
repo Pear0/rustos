@@ -3,9 +3,8 @@ use core::fmt;
 use pi::uart::MiniUart;
 use shim::io;
 
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 use crate::smp;
-use crate::mutex::m_lock;
 
 /// A global singleton allowing read/write access to the console.
 pub struct Console {
@@ -77,7 +76,7 @@ impl fmt::Write for Console {
 }
 
 /// Global `Console` singleton.
-pub static CONSOLE: Mutex<Console> = mutex_new!(Console::new());
+pub static CONSOLE: Mutex<Console> = Mutex::new("CONSOLE", Console::new());
 
 /// Internal function called by the `kprint[ln]!` macros.
 #[doc(hidden)]
@@ -87,7 +86,7 @@ pub fn _print(args: fmt::Arguments) {
     {
         use core::fmt::Write;
         smp::no_interrupt(|| {
-            let mut console = m_lock!(CONSOLE);
+            let mut console = CONSOLE.lock("_print");
             // let mut console = unsafe { CONSOLE.unsafe_leak() };
             console.write_fmt(args).unwrap();
         });
@@ -100,13 +99,15 @@ pub fn _print(args: fmt::Arguments) {
 }
 
 /// Like `println!`, but for kernel-space.
-pub macro kprintln {
-    () => (kprint!("\n")),
-    ($fmt:expr) => (kprint!(concat!($fmt, "\n"))),
-    ($fmt:expr, $($arg:tt)*) => (kprint!(concat!($fmt, "\n"), $($arg)*))
+#[macro_export]
+macro_rules! kprintln {
+    () => (kprint!("\n"));
+    ($fmt:expr) => (kprint!(concat!($fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => (kprint!(concat!($fmt, "\n"), $($arg)*));
 }
 
 /// Like `print!`, but for kernel-space.
-pub macro kprint($($arg:tt)*) {
-    _print(format_args!($($arg)*))
+#[macro_export]
+macro_rules! kprint {
+    ($($arg:tt)*) => { $crate::console::_print(format_args!($($arg)*)) };
 }

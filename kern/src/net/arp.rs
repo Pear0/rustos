@@ -6,9 +6,8 @@ use hashbrown::HashMap;
 use pi::timer;
 use pi::types::BigU16;
 use shim::const_assert_size;
-use crate::mutex::m_lock;
 
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 use crate::net::{ether, ipv4, NetErrorKind, NetResult};
 use crate::net::ether::{EthPayload, Interface, Mac};
 use crate::net::ipv4::Address;

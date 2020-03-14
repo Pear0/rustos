@@ -23,7 +23,6 @@ use core::time::Duration;
 
 use aarch64::{CNTP_CTL_EL0, SP};
 use allocator::Allocator;
-use console::kprintln;
 use fs::FileSystem;
 use pi::{gpio, timer};
 use pi::interrupt::CoreInterrupt;
@@ -32,11 +31,16 @@ use traps::irq::Irq;
 use vm::VMManager;
 
 use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
-use crate::mutex::{Mutex, mutex_new};
+use crate::mutex::Mutex;
 use crate::net::GlobalNetHandler;
 use crate::net::tcp::{SHELL_READ, SHELL_WRITE};
 use crate::process::{Process, Stack};
 use crate::traps::syndrome::Syndrome;
+
+#[macro_use]
+pub mod console;
+#[macro_use]
+pub mod mutex;
 
 #[cfg(not(test))]
 mod init;
@@ -44,14 +48,10 @@ mod init;
 pub mod allocator;
 pub mod cls;
 mod compat;
-#[macro_use]
-pub mod console;
 pub mod debug;
 pub mod fs;
 pub mod io;
 pub mod mbox;
-#[macro_use]
-pub mod mutex;
 pub mod net;
 pub mod shell;
 pub mod smp;

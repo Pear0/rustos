@@ -8,8 +8,8 @@ use pi::types::BigU16;
 use pi::usb;
 use pi::usb::Usb;
 
-use crate::console::kprintln;
 use crate::net::{encode_struct, try_parse_struct, NetResult, NetErrorKind};
+use crate::mutex::Mutex;
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]

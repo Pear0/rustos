@@ -10,15 +10,13 @@ use pi::{interrupt, timer};
 
 use crate::{IRQ, SCHEDULER, smp};
 use crate::cls::CoreLocal;
-use crate::console::{kprint, kprintln};
-use crate::mutex::{mutex_new, Mutex};
+use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State};
 use crate::process::snap::SnapProcess;
 use crate::traps::TrapFrame;
 use crate::process::state::RunContext;
 use pi::interrupt::CoreInterrupt;
-use crate::mutex::m_lock;
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler(Mutex<Option<Scheduler>>);
