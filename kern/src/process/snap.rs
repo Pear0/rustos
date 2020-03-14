@@ -2,6 +2,7 @@ use crate::process::{Process, State};
 use alloc::string::String;
 use core::time::Duration;
 use crate::process::process::CoreAffinity;
+use core::fmt;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SnapState {
@@ -13,6 +14,8 @@ pub enum SnapState {
     Running(usize),
     /// The process is currently dead (ready to be reclaimed).
     Dead,
+
+    Suspended,
 }
 
 impl From<&State> for SnapState {
@@ -23,11 +26,12 @@ impl From<&State> for SnapState {
             State::Waiting(_) => Waiting,
             State::Running(ctx) => Running(ctx.core_id),
             State::Dead => Dead,
+            State::Suspended => Suspended
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SnapProcess {
     pub tpidr: u64,
     pub state: SnapState,
@@ -36,6 +40,7 @@ pub struct SnapProcess {
     pub cpu_time: Duration,
     pub task_switches: usize,
     pub affinity: CoreAffinity,
+    pub lr: u64,
 }
 
 impl From<&Process> for SnapProcess {
@@ -54,6 +59,22 @@ impl From<&Process> for SnapProcess {
             cpu_time,
             task_switches: proc.task_switches,
             affinity: proc.affinity,
+            lr: proc.context.elr,
         }
+    }
+}
+
+impl fmt::Debug for SnapProcess {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SnapProcess")
+            .field("tpidr", &self.tpidr)
+            .field("state", &self.state)
+            .field("name", &self.name)
+            .field("stack_top", &format_args!("0x{:x}", self.stack_top))
+            .field("cpu_time", &self.cpu_time)
+            .field("task_switches", &self.task_switches)
+            .field("affinity", &self.affinity)
+            .field("lr", &format_args!("0x{:x}", self.lr))
+            .finish()
     }
 }

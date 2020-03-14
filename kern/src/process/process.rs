@@ -1,6 +1,10 @@
+use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
-use core::ops::Add;
 use alloc::string::String;
+use core::fmt;
+use core::ops::Add;
+use core::ops::Deref;
+use core::time::Duration;
 
 use kernel_api::{OsError, OsResult};
 
@@ -8,20 +12,17 @@ use aarch64;
 use aarch64::SPSR_EL1;
 use shim::path::Path;
 
-use crate::console::kprintln;
 use crate::{FILESYSTEM, smp};
+use crate::console::kprintln;
 use crate::param::*;
 use crate::process::{Stack, State};
 use crate::traps::TrapFrame;
 use crate::vm::*;
-use core::ops::Deref;
-use alloc::borrow::ToOwned;
-use core::time::Duration;
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct CoreAffinity([bool; smp::MAX_CORES]);
 
 impl CoreAffinity {
@@ -45,6 +46,19 @@ impl CoreAffinity {
     }
 }
 
+impl fmt::Debug for CoreAffinity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut num: u32 = 0;
+        for e in &self.0 {
+            num <<= 1;
+            if *e {
+                num |= 1;
+            }
+        }
+        f.write_fmt(format_args!("CoreAffinity({:b})", num))
+    }
+}
+
 /// A structure that represents the complete state of a process.
 pub struct Process {
     /// The saved trap frame of a process.
@@ -57,55 +71,15 @@ pub struct Process {
     pub state: State,
 
     pub name: String,
-    
+
     pub cpu_time: Duration,
 
     pub task_switches: usize,
 
     pub affinity: CoreAffinity,
 
-    pub kernel_thread_ctx: Option<Box<Box<dyn FnOnce() + Send>>>,
+    pub request_suspend: bool,
 }
-
-type FnTrampoline = extern "C" fn(*mut u8);
-
-// this function expects to be called once. It is the caller's job to
-// ensure that the trampoline is only ever called once and that the closure
-// outlives the execution of the trampoline.
-// unsafe fn kernel_trampoline<F>(closure: &F) -> (FnTrampoline, *mut u8)
-//     where
-//         F: FnMut(),
-// {
-//     extern "C" fn trampoline<F>(data: *mut u8)
-//         where
-//             F: FnMut(),
-//     {
-//         let closure: &mut F = unsafe { &mut *(data as *mut F) };
-//
-//         kprintln!("jumping to closure...");
-//
-//         (*closure)();
-//
-//         kprintln!("exiting");
-//         kernel_api::syscall::exit();
-//     }
-//
-//     (trampoline::<F>, closure as *const F as *mut u8)
-// }
-
-
-unsafe extern "C" fn trampoline(main: *mut u8)
-{
-    // let closure: &mut F = unsafe { &mut *(data as *mut F) };
-
-    kprintln!("jumping to closure...");
-
-    Box::from_raw(main as *mut Box<dyn FnOnce() + Send>)();
-
-    kprintln!("exiting");
-    kernel_api::syscall::exit();
-}
-
 
 impl Process {
     /// Creates a new process with a zeroed `TrapFrame` (the default), a zeroed
@@ -125,40 +99,10 @@ impl Process {
             state: State::Ready,
             name,
             cpu_time: Duration::from_millis(0),
-            kernel_thread_ctx: None,
             affinity: CoreAffinity::all(),
             task_switches: 0,
+            request_suspend: false,
         })
-    }
-
-    pub fn kernel_process(name: String, f: Box<dyn FnOnce() + Send>) -> OsResult<Process> {
-        use crate::VMM;
-
-        let ff = Box::new(f);
-
-        let mut p = Process::new(name)?;
-        // p.kernel_thread_ctx = Some(ff);
-
-        p.context.sp = p.stack.top().as_u64();
-
-        // let (trampoline, data) = unsafe { kernel_trampoline::<T>(p.kernel_thread_ctx.as_ref().unwrap().as_ref()) };
-
-        let data = ff;
-
-        // C calling conv, first arg in x0.
-        p.context.elr = trampoline as u64;
-        p.context.regs[0] = &*data as *const Box<dyn FnOnce() + Send> as u64;
-        // p.context.regs[1] = size as u64;
-
-        core::mem::forget(data);
-
-        p.context.spsr |= SPSR_EL1::M & 0b0100;
-
-        p.context.ttbr0 = VMM.get_baddr().as_u64();
-        // kernel thread still gets a vmap because it's easy
-        p.context.ttbr1 = p.vmap.get_baddr().as_u64();
-
-        Ok(p)
     }
 
     pub fn kernel_process_old(name: String, f: fn()) -> OsResult<Process> {
@@ -280,6 +224,17 @@ impl Process {
                 if let State::Waiting(h) = &mut self.state {
                     core::mem::replace(h, copy);
                 }
+            }
+        }
+        if let State::Suspended = &self.state {
+            if !self.request_suspend {
+                self.state = State::Ready;
+            }
+        }
+
+        if let State::Ready = &self.state {
+            if self.request_suspend {
+                self.state = State::Suspended;
             }
         }
 

@@ -46,7 +46,6 @@ impl Allocator {
     /// Panics if the system's memory map could not be retrieved.
     pub unsafe fn initialize(&self) {
         let (start, end) = memory_map().expect("failed to find memory map");
-        unsafe { self.0.set_led(29); }
         *m_lock!(self.0) = Some(AllocatorImpl::new(start, end));
     }
 }

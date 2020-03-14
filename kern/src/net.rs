@@ -202,7 +202,7 @@ impl NetHandler {
     }
 
     fn register_ping_responder(&mut self) {
-        let mut _ip = m_lock!(self.ip);
+        let mut _ip = self.ip.lock("register_ping_responder()._ip");
         let ip = self.ip.clone();
 
         _ip.register::<icmp::IcmpFrame>(Box::new(move |eth, eth_header, ip_header, icmp| {

@@ -50,6 +50,22 @@ impl GlobalScheduler {
         })
     }
 
+    pub fn crit_process<F, R>(&self, id: Id, f: F) -> R
+        where
+            F: FnOnce(Option<&mut Process>) -> R,
+    {
+        self.critical(|scheduler| {
+            let mut process: Option<&mut Process> = None;
+            for proc in scheduler.processes.iter_mut() {
+                if proc.context.tpidr == (id as u64) {
+                    process = Some(proc);
+                    break;
+                }
+            }
+            f(process)
+        })
+    }
+
 
     /// Adds a process to the scheduler's queue and returns that process's ID.
     /// For more details, see the documentation on `Scheduler::add()`.
@@ -292,7 +308,7 @@ impl Scheduler {
     ///
     /// If the `processes` queue is empty or there is no current process,
     /// returns `false`. Otherwise, returns `true`.
-    fn schedule_out(&mut self, new_state: State, tf: &mut TrapFrame) -> bool {
+    fn schedule_out(&mut self, mut new_state: State, tf: &mut TrapFrame) -> bool {
         let proc = self.processes.iter_mut().enumerate()
             .find(|(_, p)| p.context.tpidr == tf.tpidr);
         match proc {

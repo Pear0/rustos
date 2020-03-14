@@ -27,6 +27,9 @@ pub enum State {
     Running(RunContext),
     /// The process is currently dead (ready to be reclaimed).
     Dead,
+
+    /// The process is suspended.
+    Suspended,
 }
 
 impl fmt::Debug for State {
@@ -36,6 +39,7 @@ impl fmt::Debug for State {
             State::Running(_) => write!(f, "State::Running"),
             State::Waiting(_) => write!(f, "State::Waiting"),
             State::Dead => write!(f, "State::Dead"),
+            State::Suspended => write!(f, "State::Suspended"),
         }
     }
 }

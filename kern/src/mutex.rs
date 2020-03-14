@@ -9,15 +9,12 @@ use core::sync::atomic::AtomicU64;
 use crate::console::kprintln;
 use crate::{smp, traps};
 
-const LOCK_LED: u8 = 29;
-
 #[repr(align(32))]
 pub struct Mutex<T> {
     data: UnsafeCell<T>,
     lock: AtomicBool,
     owner: AtomicUsize,
     name: &'static str,
-    led: UnsafeCell<Option<pi::gpio::Gpio<pi::gpio::Output>>>,
     locked_at: AtomicU64,
     lock_name: UnsafeCell<&'static str>,
     lock_trace: UnsafeCell<[u64; 50]>,
@@ -40,18 +37,11 @@ impl<T> Mutex<T> {
             owner: AtomicUsize::new(usize::max_value()),
             data: UnsafeCell::new(val),
             name,
-            led: UnsafeCell::new(None),
             locked_at: AtomicU64::new(0),
             lock_name: UnsafeCell::new(""),
             lock_trace: UnsafeCell::new([0; 50]),
         }
     }
-
-    pub unsafe fn set_led(&self, led: u8) {
-        let gpio = pi::gpio::Gpio::new(led).into_output();
-        (&mut *self.led.get()).replace(gpio);
-    }
-
 }
 
 pub macro mutex_new {
@@ -84,16 +74,6 @@ impl<T> Mutex<T> {
 
     pub unsafe fn unsafe_leak(&self) -> &mut T {
         &mut *self.data.get()
-    }
-
-    fn update_led(&self, val: bool) {
-        if let Some(g) = unsafe { &mut *self.led.get() } {
-            if val {
-                g.set();
-            } else {
-                g.clear();
-            }
-        }
     }
 
     // Once MMU/cache is enabled, do the right thing here. For now, we don't
@@ -198,7 +178,6 @@ impl<T> Mutex<T> {
     }
 
     fn unlock(&self) {
-        self.update_led(false);
         if self.has_mmu() {
             self.owner.store(0, Ordering::SeqCst);
             self.lock.store(false, Ordering::SeqCst);

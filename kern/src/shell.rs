@@ -110,6 +110,38 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
             }
         });
 
+        for (name, val) in [("suspend", true), ("resume", false)].iter() {
+            let name = *name;
+            let val = *val;
+            shell.register_func(name,  move |sh, cmd| {
+                if cmd.args.len() == 2 {
+                    match cmd.args[1].parse() {
+                        Ok(addr) => {
+                            let addr: u64 = addr;
+                            let resp = SCHEDULER.crit_process(addr, |p| {
+                                match p {
+                                    Some(p) => {
+                                        p.request_suspend = val;
+                                        Some(())
+                                    }
+                                    None => None
+                                }
+                            });
+
+                            if resp.is_none() {
+                                writeln!(sh.writer, "error: could not find process");
+                            }
+                        }
+                        Err(e) => {
+                            writeln!(sh.writer, "error: {}", e);
+                        }
+                    }
+                } else {
+                    writeln!(sh.writer, "ARP Table:");
+                }
+            });
+        }
+
         shell
     }
 
@@ -360,7 +392,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 writeln!(self.writer, "System:");
                 if let Some(stats) = IRQ.get_stats() {
                     for (i, stat) in stats.iter().enumerate() {
-                        writeln!(self.writer, "{:?}: {:?}", Interrupt::from_index(i), stat);
+                        writeln!(self.writer, "{:>6?}: {:?}", Interrupt::from_index(i), stat);
                     }
                 } else {
                     writeln!(self.writer, "timed out getting stats");
@@ -370,7 +402,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                     writeln!(self.writer, "Core {}:", core);
                     if let Some(stats) = IRQ.get_stats_core(core) {
                         for (i, stat) in stats.iter().enumerate() {
-                            writeln!(self.writer, "{:?}: {:?}", CoreInterrupt::from_index(i), stat);
+                            writeln!(self.writer, "{:>14?}: {:?}", CoreInterrupt::from_index(i), stat);
                         }
                     } else {
                         writeln!(self.writer, "timed out getting stats");

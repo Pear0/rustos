@@ -11,6 +11,7 @@ use pi::timer;
 use crate::{ALLOCATOR, IRQ};
 use crate::console::{kprint, kprintln};
 use crate::mbox::with_mbox;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Function implementations for linked C libraries
 
@@ -159,6 +160,7 @@ extern "C" fn StartKernelTimer() {
 extern "C" fn SetPowerStateOn() {
 
     with_mbox(|mbox| mbox.set_power_state(0x00000003, true));
+    pi::timer::spin_sleep(Duration::from_millis(5));
 
 }
 
@@ -172,11 +174,14 @@ type TInterruptHandler = extern "C" fn (*mut u8);
 #[no_mangle]
 extern "C" fn ConnectInterrupt(_irq: u32, func: TInterruptHandler, data: *mut u8) {
     let data = data as usize;
+    kprintln!("[net] Connecting USB interrupt");
 
     Controller::new().enable(Interrupt::Usb);
 
     IRQ.register(Interrupt::Usb, Box::new(move |_| {
+        aarch64::dmb();
         func(data as *mut u8);
+        aarch64::dsb();
     }));
 
 }

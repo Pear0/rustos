@@ -12,32 +12,31 @@
 #![cfg_attr(not(test), no_main)]
 
 extern crate alloc;
-
 #[macro_use]
 extern crate modular_bitfield;
 
+use alloc::borrow::ToOwned;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::time::Duration;
 
+use aarch64::{CNTP_CTL_EL0, SP};
 use allocator::Allocator;
 use console::kprintln;
 use fs::FileSystem;
 use pi::{gpio, timer};
+use pi::interrupt::CoreInterrupt;
 use process::GlobalScheduler;
 use traps::irq::Irq;
 use vm::VMManager;
-use alloc::boxed::Box;
-use crate::traps::syndrome::Syndrome;
 
+use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
+use crate::mutex::{Mutex, mutex_new};
 use crate::net::GlobalNetHandler;
-use crate::process::{Process, Stack};
-use alloc::sync::Arc;
-use crate::io::{SyncWrite, ConsoleSync, ReadWrapper, SyncRead, WriteWrapper};
 use crate::net::tcp::{SHELL_READ, SHELL_WRITE};
-use alloc::borrow::ToOwned;
-use crate::mutex::{mutex_new, Mutex};
-use alloc::vec::Vec;
-use aarch64::{SP, CNTP_CTL_EL0};
-use pi::interrupt::CoreInterrupt;
+use crate::process::{Process, Stack};
+use crate::traps::syndrome::Syndrome;
 
 #[cfg(not(test))]
 mod init;
@@ -86,6 +85,10 @@ fn network_thread() {
     //     kernel_api::syscall::exit();
     // }
 
+    pi::timer::spin_sleep(Duration::from_millis(100));
+    crate::mbox::with_mbox(|mbox| mbox.set_power_state(0x00000003, true));
+    pi::timer::spin_sleep(Duration::from_millis(5));
+
     unsafe {
         NET.initialize();
     }
@@ -111,14 +114,12 @@ fn core_bootstrap() -> ! {
 
 #[inline(never)]
 fn core_bootstrap_2() -> ! {
-
     kprintln!("Hello!");
 
     loop {}
 }
 
 fn my_thread() {
-
     kprintln!("initializing other threads");
     // CORE_REGISTER.lock().replace(Vec::new());
 
@@ -129,21 +130,19 @@ fn my_thread() {
 }
 
 fn my_net_thread() {
-
     let write: Arc<dyn SyncWrite> = Arc::new(SHELL_WRITE.get());
     let read: Arc<dyn SyncRead> = Arc::new(SHELL_READ.get());
 
     shell::Shell::new("$ ", ReadWrapper::new(read), WriteWrapper::new(write)).shell_loop();
-
 }
 
 fn led_blink() {
-    // let mut g = gpio::Gpio::new(29).into_output();
+    let mut g = gpio::Gpio::new(29).into_output();
     loop {
-        // g.set();
+        g.set();
         kernel_api::syscall::sleep(Duration::from_millis(250)).ok();
         // timer::spin_sleep(Duration::from_millis(250));
-        // g.clear();
+        g.clear();
         kernel_api::syscall::sleep(Duration::from_millis(250)).ok();
         // timer::spin_sleep(Duration::from_millis(250));
     }
@@ -189,7 +188,6 @@ fn kmain() -> ! {
     unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
     unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
     unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
-
 
 
     kprintln!("initing smp");
@@ -242,11 +240,9 @@ fn kmain() -> ! {
     };
 
     smp::run_on_secondary_cores(|| {
-
         unsafe {
             SCHEDULER.initialize();
         };
-
     });
 
     {
@@ -261,13 +257,13 @@ fn kmain() -> ! {
     }
 
     {
-        let mut proc = Process::kernel_process_old("net thread".to_owned(),network_thread).unwrap();
+        let mut proc = Process::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
         proc.affinity.set_only(0);
         SCHEDULER.add(proc);
     }
 
     {
-        let proc = Process::kernel_process_old("led".to_owned(),led_blink).unwrap();
+        let proc = Process::kernel_process_old("led".to_owned(), led_blink).unwrap();
         SCHEDULER.add(proc);
     }
 
