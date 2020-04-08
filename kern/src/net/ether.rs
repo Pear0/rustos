@@ -72,36 +72,42 @@ pub struct EthFrame<T: EthPayload> {
     pub payload: T,
 }
 
-pub type EthHandler<T> = Box<dyn FnMut(&mut Interface, &EthHeader, &mut T, &[u8]) + Send>;
+pub type EthHandler<T> = Box<dyn FnMut(&Interface, &EthHeader, &mut T, &[u8]) + Send>;
 
-type RawEthHandler = Box<dyn FnMut(&mut Interface, &EthHeader, &[u8]) + Send>;
+type RawEthHandler = Box<dyn FnMut(&Interface, &EthHeader, &[u8]) + Send>;
 
-pub struct Interface {
+struct InterfaceImpl {
     usb: Arc<Usb>,
     handlers: HashMap<u16, Option<RawEthHandler>>,
     address: Mac,
 }
 
+pub struct Interface {
+    inner: Mutex<InterfaceImpl>
+}
+
 impl Interface {
     pub fn new(usb: Arc<Usb>, address: Mac) -> Interface {
         Interface {
-            usb,
-            handlers: HashMap::new(),
-            address,
+            inner: Mutex::new("Interface::new()", InterfaceImpl {
+                usb,
+                handlers: HashMap::new(),
+                address,
+            })
         }
     }
 
     pub fn address(&self) -> Mac {
-        self.address
+        m_lock!(self.inner).address
     }
 
-    pub fn send<T: EthPayload>(&mut self, to: Mac, payload: T) -> NetResult<()> {
+    pub fn send<T: EthPayload>(&self, to: Mac, payload: T) -> NetResult<()> {
         let mut full_buf = usb::new_frame_buffer();
         let full_buf_len = full_buf.len();
         let mut buf: &mut [u8] = &mut full_buf;
 
         let header = EthHeader {
-            mac_sender: self.address,
+            mac_sender: self.address(),
             mac_receiver: to,
             protocol_type: BigU16::new(T::ETHER_TYPE),
         };
@@ -113,11 +119,11 @@ impl Interface {
         let buf_len = full_buf_len - buf.len();
         let buf = &mut full_buf[0..buf_len];
 
-        unsafe { self.usb.send_frame(buf) }.ok_or(NetErrorKind::EthSendFail)
+        unsafe { m_lock!(self.inner).usb.send_frame(buf) }.ok_or(NetErrorKind::EthSendFail)
     }
 
-    pub fn register<T: EthPayload + 'static>(&mut self, mut handler: EthHandler<T>) {
-        self.handlers.insert(T::ETHER_TYPE, Some(Box::new(move |eth, header, buf| {
+    pub fn register<T: EthPayload + 'static>(&self, mut handler: EthHandler<T>) {
+        m_lock!(self.inner).handlers.insert(T::ETHER_TYPE, Some(Box::new(move |eth, header, buf| {
             match T::try_parse(buf) {
                 Some((mut t, rest)) => {
                     handler(eth, header, &mut t, rest);
@@ -128,9 +134,9 @@ impl Interface {
         })));
     }
 
-    pub fn receive_dispatch(&mut self) -> Option<()> {
+    pub fn receive_dispatch(&self) -> Option<()> {
         let mut frame_buf = usb::new_frame_buffer();
-        let frame = unsafe { self.usb.receive_frame(&mut frame_buf) }?;
+        let frame = unsafe { m_lock!(self.inner).usb.receive_frame(&mut frame_buf) }?;
 
         let (eth, frame) = try_parse_struct::<EthHeader>(frame)?;
         let protocol = eth.protocol_type.get();
@@ -139,14 +145,16 @@ impl Interface {
 
         // we pass a mutable reference to self but also have a FnMut so we have to move
         // the FnMut out of &mut self while this happens.
-        if self.handlers.contains_key(&protocol) {
-            let handler = self.handlers.insert(protocol, None).unwrap();
-            let mut handler = handler.expect("recursion???");
 
-            handler(self, &eth, frame);
+        // this code side-effects by inserting a None into the handlers for unknown protocols
+        let handler = m_lock!(self.inner).handlers.insert(protocol, None)?;
+        let mut handler = handler?;
 
-            if let Some(None) = self.handlers.get(&protocol) {
-                self.handlers.insert(protocol, Some(handler));
+        handler(self, &eth, frame);
+
+        if let Some(f) = m_lock!(self.inner).handlers.get_mut(&protocol) {
+            if f.is_none() {
+                f.replace(handler);
             }
         }
 

@@ -138,21 +138,14 @@ impl GlobalScheduler {
         let old_sp = crate::smp::core_stack_top();
         kprintln!("old_sp: {}", old_sp);
 
-        // unsafe {
-        //     asm!("  mov x0, $0
-        //             mov sp, x0"
-        //             :: "r"(st)
-        //             :: "volatile");
-        // }
-        //
-        // unsafe { context_restore(); }
-
         unsafe {
             asm!("  mov x28, $0
                     mov x29, $1
                     mov sp, x28
                     bl context_restore
                     mov sp, x29
+                    mov x28, 0
+                    mov x29, 0
                     eret"
                     :: "r"(st), "r"(old_sp)
                     :: "volatile");
@@ -383,6 +376,10 @@ impl Scheduler {
             Some((idx, proc)) => {
                 proc.state = State::Dead;
                 *(proc.context.borrow_mut()) = *tf;
+
+                for comp in proc.dead_completions.drain(..) {
+                    comp.complete(proc.context.tpidr);
+                }
 
                 // something is very bad if the entry we found is no longer here.
                 let proc = self.processes.remove(idx).unwrap();

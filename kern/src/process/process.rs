@@ -1,10 +1,12 @@
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 use core::ops::Add;
 use core::ops::Deref;
 use core::time::Duration;
+use alloc::sync::Arc;
 
 use kernel_api::{OsError, OsResult};
 
@@ -17,6 +19,7 @@ use crate::param::*;
 use crate::process::{Stack, State};
 use crate::traps::TrapFrame;
 use crate::vm::*;
+use crate::sync::Completion;
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
@@ -78,6 +81,9 @@ pub struct Process {
     pub affinity: CoreAffinity,
 
     pub request_suspend: bool,
+
+    pub dead_completions: Vec<Arc<Completion<Id>>>,
+
 }
 
 impl Process {
@@ -101,6 +107,7 @@ impl Process {
             affinity: CoreAffinity::all(),
             task_switches: 0,
             request_suspend: false,
+            dead_completions: Vec::new(),
         })
     }
 

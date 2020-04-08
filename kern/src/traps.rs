@@ -188,48 +188,58 @@ fn debug_shell(tf: &mut TrapFrame) {
     use shim::io::Write;
     let mut sh = shell::serial_shell("#>");
 
-    sh.register_func("elev", |sh, cmd| {
-        writeln!(sh.writer, "elevated prompt");
-    });
+    sh.command()
+        .name("elev")
+        .func(|sh, cmd| {
+            writeln!(sh.writer, "elevated prompt");
+        })
+        .build();
 
-    sh.register_func("regs", |sh, cmd| {
-        if cmd.args.len() == 2 && cmd.args[1] == "full" {
-            tf.dump(&mut sh.writer, true);
-        } else {
-            tf.dump(&mut sh.writer, false);
-        }
-    });
-
-    sh.register_func("bt", |sh, cmd| {
-        if let Some(snap) = &snap {
-            writeln!(sh.writer, "sp_top: 0x{:08x}", snap.stack_top);
-            writeln!(sh.writer, "sp: 0x{:08x}", tf.sp);
-            if snap.stack_top % 8 != 0 {
-                writeln!(sh.writer, "dude stack_top is not aligned. I'm out");
-                return;
+    sh.command()
+        .name("regs")
+        .func(|sh, cmd| {
+            if cmd.args.len() == 2 && cmd.args[1] == "full" {
+                tf.dump(&mut sh.writer, true);
+            } else {
+                tf.dump(&mut sh.writer, false);
             }
+        })
+        .build();
 
-            let mut sp = tf.sp;
-            if sp % 8 != 0 {
-                writeln!(sh.writer, "stack not aligned! aligning up...");
-                sp = sp.wrapping_add(8).wrapping_sub(sp % 8);
-                return;
-            }
-
-            // alignment already handled
-            let slice = unsafe { core::slice::from_raw_parts(sp as *const u64, ((snap.stack_top - sp) / 8) as usize) };
-
-            writeln!(sh.writer, "==== scanning {} addresses ====", slice.len());
-
-            for num in slice.iter().rev() {
-                if debug::address_maybe_code(*num) {
-                    writeln!(sh.writer, "0x{:08x}", num);
+    sh.command()
+        .name("bt")
+        .func(|sh, cmd| {
+            if let Some(snap) = &snap {
+                writeln!(sh.writer, "sp_top: 0x{:08x}", snap.stack_top);
+                writeln!(sh.writer, "sp: 0x{:08x}", tf.sp);
+                if snap.stack_top % 8 != 0 {
+                    writeln!(sh.writer, "dude stack_top is not aligned. I'm out");
+                    return;
                 }
+
+                let mut sp = tf.sp;
+                if sp % 8 != 0 {
+                    writeln!(sh.writer, "stack not aligned! aligning up...");
+                    sp = sp.wrapping_add(8).wrapping_sub(sp % 8);
+                    return;
+                }
+
+                // alignment already handled
+                let slice = unsafe { core::slice::from_raw_parts(sp as *const u64, ((snap.stack_top - sp) / 8) as usize) };
+
+                writeln!(sh.writer, "==== scanning {} addresses ====", slice.len());
+
+                for num in slice.iter().rev() {
+                    if debug::address_maybe_code(*num) {
+                        writeln!(sh.writer, "0x{:08x}", num);
+                    }
+                }
+            } else {
+                writeln!(sh.writer, "cannot dump stack for unknown process");
             }
-        } else {
-            writeln!(sh.writer, "cannot dump stack for unknown process");
-        }
-    });
+        })
+        .build();
+
 
     sh.shell_loop();
 }

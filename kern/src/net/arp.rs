@@ -80,11 +80,12 @@ impl EthPayload for ArpPacket {
 pub trait ArpResolver: Send + Sync {
     fn resolve_address(&self, protocol: u16, addr: ipv4::Address) -> NetResult<ether::Mac>;
 
-    fn resolve_or_request_address(&self, protocol: u16, addr: ipv4::Address, my_addr: ipv4::Address, eth: Arc<Mutex<ether::Interface>>) -> NetResult<ether::Mac>;
+    fn resolve_or_request_address(&self, protocol: u16, addr: ipv4::Address, my_addr: ipv4::Address, eth: Arc<ether::Interface>) -> NetResult<ether::Mac>;
 }
 
 struct ReqInfo {
     first_sent_at: Option<Duration>,
+    last_sent_at: Option<Duration>,
     send_count: u32,
 }
 
@@ -130,20 +131,25 @@ impl ArpResolver for ArpTable {
         self.get(protocol, addr).ok_or(NetErrorKind::ArpMiss)
     }
 
-    fn resolve_or_request_address(&self, protocol: u16, addr: Address, my_addr: ipv4::Address, eth: Arc<Mutex<Interface>>) -> NetResult<Mac> {
+    fn resolve_or_request_address(&self, protocol: u16, addr: Address, my_addr: ipv4::Address, eth: Arc<ether::Interface>) -> NetResult<Mac> {
         if let Ok(mac) = self.resolve_address(protocol, addr) {
             return Ok(mac);
         }
 
+        let mut make_request = true;
         {
             let mut requests = m_lock!(self.pending_requests);
-            if !requests.contains_key(&(protocol, addr)) {
-                requests.insert((protocol, addr), ReqInfo { first_sent_at: None, send_count: 0 });
+
+            if let Some(t) = requests.get(&(protocol, addr)) {
+                if t.last_sent_at.is_some() && t.last_sent_at.unwrap() + Duration::from_millis(200) > timer::current_time() {
+                    make_request = false;
+                }
+            } else {
+                requests.insert((protocol, addr), ReqInfo { first_sent_at: None, last_sent_at: None, send_count: 0 });
             }
         }
 
-        {
-            let mut eth = m_lock!(eth);
+        if make_request {
 
             let mut packet = ArpPacket::default();
             packet.hw_address_space.set(HW_ADDR_ETHER);
@@ -160,13 +166,15 @@ impl ArpResolver for ArpTable {
             eth.send(Mac::broadcast(), packet)?;
         }
 
-        {
+        if make_request {
             let mut requests = m_lock!(self.pending_requests);
             // we released the lock, so a remote ARP may have filled our table entry.
             if let Some(req) = requests.get_mut(&(protocol, addr)) {
+                let now = timer::current_time();
                 if req.first_sent_at.is_none() {
-                    req.first_sent_at.replace(timer::current_time());
+                    req.first_sent_at.replace(now);
                 }
+                req.last_sent_at.replace(now);
                 req.send_count += 1;
             }
         }

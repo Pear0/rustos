@@ -1,20 +1,26 @@
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::slice::from_mut;
+use core::time::Duration;
 
 use hashbrown::{HashMap, HashSet};
 use modular_bitfield::prelude::*;
 
+use pi::timer;
 use pi::types::{BigU16, BigU32};
 
-use crate::io::{ConsoleSync, SyncRead, SyncWrite, Global, ReadWrapper};
+use crate::io::{ConsoleSync, Global, ReadWrapper, SyncRead, SyncWrite};
 use crate::mutex::Mutex;
 use crate::net::{encode_struct, ipv4, NetErrorKind, NetResult, try_parse_struct};
+use crate::net::buffer::BufferHandle;
 use crate::net::ipv4::IPv4Payload;
 use crate::net::util::ChecksumOnesComplement;
-use crate::shell;
 use crate::process::Process;
-use crate::net::buffer::BufferHandle;
+use crate::shell;
+use core::ops::AddAssign;
+use core::fmt;
 
 // Works with aliases - just for the showcase.
 type Vitamin = B12;
@@ -165,6 +171,16 @@ enum State {
 
     Established,
 
+    // Close initiator
+    FinWait1(Duration),
+    // sent at
+    FinWait2,
+    TimeWait(Duration),
+
+    // Close receiver
+    CloseWait,
+    LastAck,
+
     Broken,
     // custom lol
     Killed, // signal to the manager to remove this connection.
@@ -176,16 +192,88 @@ fn empty_payload() -> Box<[u8]> {
     Box::from(empty)
 }
 
+struct PendingPacket {
+    queued: Duration,
+    latest_attempt: Option<Duration>,
+    // for unsent, last failed send. for unacked, last send
+    dest: ipv4::Address,
+    frame: TcpFrame,
+}
+
+impl PendingPacket {
+    pub fn new(dest: ipv4::Address, frame: TcpFrame) -> Self {
+        Self {
+            queued: timer::current_time(),
+            latest_attempt: None,
+            dest,
+            frame,
+        }
+    }
+    pub fn update_attempt(mut self) -> Self {
+        self.latest_attempt = Some(timer::current_time());
+        self
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+struct SeqRing {
+    value: u32,
+}
+
+impl fmt::Display for SeqRing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl SeqRing {
+    pub fn new(value: u32) -> Self {
+        Self {
+            value,
+        }
+    }
+
+    pub fn get(&self) -> u32 {
+        self.value
+    }
+
+    pub fn add(&self, val: u32) -> Self {
+        Self::new(self.value.wrapping_add(val))
+    }
+
+    pub fn is_recent(&self, val: u32) -> bool {
+        self.value.wrapping_add(val) < 120_000
+    }
+
+}
+
+impl AddAssign for SeqRing {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = self.add(rhs.get());
+    }
+}
+
+
+
+
 struct TcpConnection {
     pub local: Socket,
     pub remote: Socket,
     state: State,
-    seq_number: u32,
-    acked_number: u32, // the next sequence number we expect from remote
+    seq_number: SeqRing,
+    acked_number: SeqRing,
+    // what we've acknowledged. the next sequence number we expect from remote
+    remote_acked_number: u32, // the last ack number we know remote has
 
     recv: Arc<dyn SyncWrite>,
     send: Arc<dyn SyncRead>,
 
+    // packets that failed to send for whatever reason. link down, whatever
+    unsent_packets: VecDeque<PendingPacket>,
+
+    // packets that have not yet been acknowledged and may need to be
+    // resent.
+    unacked_packets: Vec<PendingPacket>,
 }
 
 pub static SHELL_READ: Global<BufferHandle> = Global::new(|| BufferHandle::new());
@@ -197,10 +285,13 @@ impl TcpConnection {
             local,
             remote,
             state,
-            seq_number: 0,
-            acked_number: 0,
+            seq_number: SeqRing::new(0),
+            acked_number: SeqRing::new(0),
+            remote_acked_number: 0,
             recv: Arc::new(SHELL_READ.get()),
             send: Arc::new(SHELL_WRITE.get()),
+            unsent_packets: VecDeque::new(),
+            unacked_packets: Vec::new(),
         }
     }
 
@@ -213,8 +304,8 @@ impl TcpConnection {
 
         header.destination_port.set(self.remote.1);
         header.source_port.set(self.local.1);
-        header.ack_number.set(self.acked_number);
-        header.sequence_number.set(self.seq_number);
+        header.ack_number.set(self.acked_number.get());
+        header.sequence_number.set(self.seq_number.get());
 
         header.window_size.set(0xFF_FF);
 
@@ -223,15 +314,26 @@ impl TcpConnection {
 
         // resending? lol as if
         {
-            let mut ip = m_lock!(manager.ip);
-            ip.send(dest, frame)?;
+            let m = m_lock!(manager.inner);
+            if let Err(e) = m.ip.send(dest, &frame) {
+                if !e.is_spurious() {
+                    return Err(e);
+                }
+
+                kprintln!("failed to send packet, putting in queue: {:?}", e);
+                self.unsent_packets.push_back(PendingPacket::new(dest, frame).update_attempt());
+                // no return here
+            } else {
+                // Ok
+                self.unacked_packets.push(PendingPacket::new(dest, frame).update_attempt());
+            }
         }
 
         // we sent successfully
         if flags.get_syn() {
-            self.seq_number = self.seq_number.wrapping_add(1);
+            self.seq_number = self.seq_number.add(1);
         } else {
-            self.seq_number = self.seq_number.wrapping_add(payload_len as u32);
+            self.seq_number = self.seq_number.add(payload_len as u32);
         }
 
         Ok(())
@@ -250,13 +352,13 @@ impl TcpConnection {
         Ok(buf.len())
     }
 
-    fn handle_packet(&mut self, manager: &mut ConnectionManager, ip_header: &ipv4::IPv4Header, frame: &TcpFrame) {
+    fn handle_packet(&mut self, manager: &ConnectionManager, ip_header: &ipv4::IPv4Header, frame: &TcpFrame) {
         // kprintln!("TCP State: {:?}", self.state);
         match self.state {
             State::Listen => {
                 // TODO we assume this is a SYN lol
 
-                self.acked_number = frame.header.sequence_number.get().wrapping_add(1);
+                self.acked_number = SeqRing::new(frame.header.sequence_number.get()).add(1);
                 self.state = State::S_SynReceived;
 
                 let mut flags = Flags::default();
@@ -267,7 +369,7 @@ impl TcpConnection {
             }
             State::C_SynSent => {}
             State::S_SynReceived => {
-                if frame.header.sequence_number.get() != self.acked_number {
+                if frame.header.sequence_number.get() != self.acked_number.get() {
                     kprintln!("Got packet with seq mismatch: {} != {}", frame.header.sequence_number.get(), self.acked_number);
                     return;
                 }
@@ -276,25 +378,28 @@ impl TcpConnection {
 
                 if frame.header.flags.get_ack() {
                     self.state = State::Established;
+                    self.remote_acked_number = frame.header.ack_number.get();
                 }
             }
-            State::Established => {
+            state @ State::Established | state @ State::FinWait1(_) | state @ State::FinWait2 | state @ State::CloseWait => {
 
                 // TODO not a proper connection close.
-                if frame.header.flags.get_rst() || frame.header.flags.get_fin() {
-                    kprintln!("got RST or FIN");
+                if frame.header.flags.get_rst() {
+                    kprintln!("got RST");
                     self.state = State::Killed;
 
                     let mut flags = Flags::default();
                     flags.set_ack(true);
-                    flags.set_fin(true);
+                    flags.set_rst(true);
                     self.send_packet(manager, flags, empty_payload());
 
                     return;
                 }
 
-                if frame.header.sequence_number.get() != self.acked_number {
-                    kprintln!("Got packet with seq mismatch: {} != {}", frame.header.sequence_number.get(), self.acked_number);
+                self.remote_acked_number = frame.header.ack_number.get();
+
+                if frame.header.sequence_number.get() != self.acked_number.get() {
+                    kprintln!("Got packet with seq mismatch: {} != {:?}", frame.header.sequence_number.get(), self.acked_number);
                     return;
                 }
 
@@ -304,7 +409,7 @@ impl TcpConnection {
 
                 if frame.payload.len() != 0 {
                     // Ack the bytes.
-                    self.acked_number = self.acked_number.wrapping_add(frame.payload.len() as u32);
+                    self.acked_number = self.acked_number.add(frame.payload.len() as u32);
                     let mut flags = Flags::default();
                     flags.set_ack(true);
                     self.send_packet(manager, flags, empty_payload());
@@ -323,36 +428,118 @@ impl TcpConnection {
                         }
                         _ => {}
                     };
+                }
 
+                if frame.header.flags.get_fin() {
+                    let now = timer::current_time();
+                    self.state = match state {
+                        State::Established => State::CloseWait,
+                        State::FinWait1(_) if frame.header.flags.get_ack() => State::TimeWait(now),
+                        State::FinWait1(_) => state, // we need an ack for the FIN we sent.
+                        State::FinWait2 => State::TimeWait(now),
+                        State::CloseWait => state,
+                        _ => panic!("invalid state"),
+                    };
+
+                    let mut flags = Flags::default();
+                    flags.set_ack(true);
+                    self.send_packet(manager, flags, empty_payload());
+                } else if (match state {
+                    State::FinWait1(_) => true,
+                    _ => false
+                }) && frame.header.flags.get_ack() {
+                    self.state = State::FinWait2;
                 }
             }
-            State::Closed | State::Broken | State::Killed => {}
+            State::LastAck => {
+                if frame.header.flags.get_ack() {
+                    self.state = State::Closed;
+                    return;
+                }
+            }
+            State::TimeWait(_) | State::Closed | State::Broken | State::Killed => {}
         }
     }
 
-    pub fn process_events(&mut self, manager: &mut ConnectionManager) -> bool {
+    fn send_some_data(&mut self, manager: &ConnectionManager) -> bool {
+        use crate::io::SyncRead;
+        let mut buf = [0u8; 500];
+
+        match self.send.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                self.raw_send_bytes(manager, &buf[0..n]);
+                true
+            }
+            Err(e) => {
+                kprintln!("failed to read source: {}", e);
+                false
+            }
+            _ => {
+                false
+            }
+        }
+    }
+
+    fn resend_packets(&mut self, manager: &ConnectionManager) -> bool {
+        'resend_loop: for _ in 0..self.unsent_packets.len() {
+            match self.unsent_packets.pop_front() {
+                Some(pending) => {
+                    kprintln!("resending packet");
+                    match m_lock!(manager.inner).ip.send(pending.dest, &pending.frame) {
+                        Ok(_) => {
+                            kprintln!("successfully resent packet");
+                            self.unacked_packets.push(PendingPacket::new(pending.dest, pending.frame).update_attempt());
+                        }
+                        Err(e) => {
+                            if e.is_spurious() {
+                                kprintln!("failed to resend packet, error: {:?}", e);
+                                self.unsent_packets.push_back(pending.update_attempt());
+                                break 'resend_loop;
+                            } else {
+                                kprintln!("failed to send packet: {:?}", e);
+                            }
+                        }
+                    }
+                }
+                None => break 'resend_loop,
+            }
+        }
+        //
+        // self.unacked_packets.swap_remove()
+        //
+        // for (dest, frame) in self.unsent_packets.iter() {}
+
+
+        return false;
+    }
+
+    pub fn process_events(&mut self, manager: &ConnectionManager) -> bool {
         // TODO resend packets, handle time outs, etc
 
-        if self.state == State::Established {
-            use crate::io::SyncRead;
-            let mut buf = [0u8; 500];
+        self.resend_packets(manager);
 
-            match self.send.read(&mut buf) {
-                Ok(n) if n > 0 => {
-                    self.raw_send_bytes(manager, &buf[0..n]);
-                    true
-                }
-                Err(e) => {
-                    kprintln!("failed to read source: {}", e);
-                    false
-                }
-                _ => {
-                    false
-                }
-            }
-        } else {
-            false
+        if self.state == State::Established {
+            return self.send_some_data(manager);
         }
+
+        if self.state == State::CloseWait {
+            self.send_some_data(manager);
+
+            // wait longer for our data to be acknowledge before closing
+            if self.remote_acked_number != self.seq_number.get() {
+                return false;
+            }
+
+            let mut flags = Flags::default();
+            flags.set_fin(true);
+            self.send_packet(manager, flags, empty_payload());
+
+            self.state = State::LastAck;
+            return true;
+        }
+
+
+        false
     }
 
     pub fn key(&self) -> ConnectionKey {
@@ -360,54 +547,67 @@ impl TcpConnection {
     }
 }
 
-pub struct ConnectionManager {
-    pub ip: Arc<Mutex<ipv4::Interface>>,
+struct ConnectionManagerImpl {
+    pub ip: Arc<ipv4::Interface>,
     connections: Option<HashMap<ConnectionKey, TcpConnection>>,
     pub listening_ports: HashSet<Socket>,
 }
 
+pub struct ConnectionManager {
+    inner: Mutex<ConnectionManagerImpl>
+}
+
 impl ConnectionManager {
-    pub fn new(ip: Arc<Mutex<ipv4::Interface>>) -> Self {
+    pub fn new(ip: Arc<ipv4::Interface>) -> Self {
         Self {
-            ip,
-            connections: Some(HashMap::new()),
-            listening_ports: HashSet::new(),
+            inner: mutex_new!(ConnectionManagerImpl {
+                ip,
+                connections: Some(HashMap::new()),
+                listening_ports: HashSet::new(),
+            })
         }
     }
 
-    pub fn process_events(&mut self) -> bool {
+    pub fn process_events(&self) -> bool {
         let mut events = false;
 
-        let mut connections = self.connections.take().unwrap();
+        let mut connections = m_lock!(self.inner).connections.take().unwrap();
 
         for (_, conn) in connections.iter_mut() {
             events |= conn.process_events(self);
         }
 
-        self.connections.replace(connections);
+        m_lock!(self.inner).connections.replace(connections);
 
         events
     }
 
-    pub fn on_receive_packet(&mut self, ip_header: &ipv4::IPv4Header, frame: &TcpFrame) {
+    pub fn add_listening_port(&self, socket: Socket) {
+        m_lock!(self.inner).listening_ports.insert(socket);
+    }
+
+    pub fn on_receive_packet(&self, ip_header: &ipv4::IPv4Header, frame: &TcpFrame) {
         let remote_sock: Socket = (ip_header.source, frame.header.source_port.get());
         let local_sock: Socket = (ip_header.destination, frame.header.destination_port.get());
         let key = ConnectionKey { local: local_sock, remote: remote_sock };
 
-        if !self.connections.as_mut().unwrap().contains_key(&key) {
-            if !self.listening_ports.contains(&local_sock) {
-                kprintln!("Dropping unknown packet to {:?}", local_sock);
-                return;
-            }
+        {
+            let mut lock = m_lock!(self.inner);
+            if !lock.connections.as_mut().unwrap().contains_key(&key) {
+                if !lock.listening_ports.contains(&local_sock) {
+                    kprintln!("Dropping unknown packet to {:?}", local_sock);
+                    return;
+                }
 
-            self.connections.as_mut().unwrap().insert(key.clone(), TcpConnection::new(local_sock, remote_sock, State::Listen));
+                lock.connections.as_mut().unwrap().insert(key.clone(), TcpConnection::new(local_sock, remote_sock, State::Listen));
+            }
         }
 
-        let mut conn = self.connections.as_mut().unwrap().remove(&key).unwrap();
+        let mut conn = m_lock!(self.inner).connections.as_mut().unwrap().remove(&key).unwrap();
         conn.handle_packet(self, ip_header, frame);
 
         if conn.state != State::Killed {
-            self.connections.as_mut().unwrap().insert(key.clone(), conn);
+            m_lock!(self.inner).connections.as_mut().unwrap().insert(key.clone(), conn);
         } else {
             kprintln!("Connection {:?} killed", key);
         }

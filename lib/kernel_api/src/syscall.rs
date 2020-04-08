@@ -98,6 +98,24 @@ pub fn getpid() -> u64 {
     pid
 }
 
+pub fn waitpid(pid: u64) -> OsResult<Duration> {
+    let mut ecode: u64;
+    let mut elapsed_ms: u64;
+
+    unsafe {
+        asm!("mov x0, $2
+              svc $3
+              mov $0, x0
+              mov $1, x7"
+             : "=r"(elapsed_ms), "=r"(ecode)
+             : "r"(pid), "i"(NR_WAITPID)
+             : "x0", "x7"
+             : "volatile");
+    }
+
+    err_or!(ecode, Duration::from_millis(elapsed_ms))
+}
+
 
 struct Console;
 

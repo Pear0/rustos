@@ -12,6 +12,7 @@ use crate::net::icmp::IcmpFrame;
 use crate::net::ipv4::IPv4Payload;
 use core::ops::DerefMut;
 use core::ops::Deref;
+use shim::{io, newioerr};
 
 pub mod arp;
 pub mod buffer;
@@ -34,6 +35,16 @@ impl NetErrorKind {
     pub fn is_spurious(&self) -> bool {
         use NetErrorKind::*;
         [ArpMiss, EthSendFail, BufferFull].contains(self)
+    }
+
+    pub fn into_io_err(self) -> io::Error {
+        match self {
+            NetErrorKind::ArpMiss => newioerr!(AddrNotAvailable, "ArpMiss"),
+            NetErrorKind::IpPacketTooLarge => newioerr!(InvalidInput, "IpPacketTooLarge"),
+            NetErrorKind::EthSendFail => newioerr!(Interrupted, "EthSendFail"),
+            NetErrorKind::EncodeFail => newioerr!(InvalidInput, "EncodeFail"),
+            NetErrorKind::BufferFull => newioerr!(WouldBlock, "BufferFull"),
+        }
     }
 }
 
@@ -76,10 +87,10 @@ fn get_mac_address() -> Option<ether::Mac> {
 
 pub struct NetHandler {
     pub usb: Arc<usb::Usb>,
-    pub eth: Arc<Mutex<ether::Interface>>,
+    pub eth: Arc<ether::Interface>,
     pub arp: Arc<ArpTable>,
-    pub ip: Arc<Mutex<ipv4::Interface>>,
-    pub tcp: Arc<Mutex<tcp::ConnectionManager>>,
+    pub ip: Arc<ipv4::Interface>,
+    pub tcp: Arc<tcp::ConnectionManager>,
 }
 
 impl NetHandler {
@@ -87,27 +98,27 @@ impl NetHandler {
         let usb = Arc::new(usb);
 
         if !usb.ethernet_available() {
-            kprintln!("ethernet not available");
+            info!("ethernet not available");
             return None;
         }
 
         while !usb.ethernet_link_up() {
-            kprintln!("eth DOWN");
+            debug!("eth DOWN");
             pi::timer::spin_sleep(Duration::from_millis(500));
         }
 
-        kprintln!("eth UP");
+        debug!("eth UP");
 
         let mac = get_mac_address()?;
         let my_ip = ipv4::Address::from(&[169, 254, 78, 130]);
 
-        let eth = Arc::new(mutex_new!(ether::Interface::new(usb.clone(), mac)));
+        let eth = Arc::new(ether::Interface::new(usb.clone(), mac));
 
         let arp = Arc::new(ArpTable::new());
 
-        let ip = Arc::new(mutex_new!(ipv4::Interface::new(eth.clone(), my_ip, arp.clone())));
+        let ip = Arc::new(ipv4::Interface::new(eth.clone(), my_ip, arp.clone()));
 
-        let tcp = Arc::new(mutex_new!(tcp::ConnectionManager::new(ip.clone())));
+        let tcp = Arc::new(tcp::ConnectionManager::new(ip.clone()));
 
         let mut handler = NetHandler { usb, eth, arp, ip, tcp };
         // Eth
@@ -119,13 +130,12 @@ impl NetHandler {
 
 
         {
-            let mut tcp = m_lock!(handler.tcp);
-            tcp.listening_ports.insert((my_ip, 100));
+            handler.tcp.add_listening_port((my_ip, 100));
         }
 
         // gratuitous ARP so neighbors know about us sooner.
         {
-            let mut eth = m_lock!(handler.eth);
+            let mut eth = &handler.eth;
 
             let mut packet = ArpPacket::default();
             packet.hw_address_space.set(arp::HW_ADDR_ETHER);
@@ -138,7 +148,7 @@ impl NetHandler {
             packet.protocol_address_sender = my_ip;
 
             if let Err(e) = eth.send(ether::Mac::broadcast(), packet) {
-                kprintln!("gratuitous arp failure: {:?}", e);
+                debug!("gratuitous arp failure: {:?}", e);
             }
         }
 
@@ -146,10 +156,9 @@ impl NetHandler {
     }
 
     fn register_arp_responder(&mut self) {
-        let mut eth = m_lock!(self.eth);
         let table = self.arp.clone();
 
-        eth.register::<ArpPacket>(Box::new(move |eth, _header, arp_req, _| {
+        self.eth.register::<ArpPacket>(Box::new(move |eth, _header, arp_req, _| {
 
             let my_ip = ipv4::Address::from(&[169, 254, 78, 130]);
 
@@ -190,20 +199,17 @@ impl NetHandler {
     }
 
     fn register_ipv4_responder(&mut self) {
-        let mut eth = m_lock!(self.eth);
         let ip = self.ip.clone();
 
-        eth.register::<ipv4::IPv4Frame>(Box::new(move |eth, header, req, buf| {
-            let mut ip = m_lock!(ip);
+        self.eth.register::<ipv4::IPv4Frame>(Box::new(move |eth, header, req, buf| {
             ip.receive_dispatch(header, req);
         }));
     }
 
     fn register_ping_responder(&mut self) {
-        let mut _ip = self.ip.lock("register_ping_responder()._ip");
         let ip = self.ip.clone();
 
-        _ip.register::<icmp::IcmpFrame>(Box::new(move |eth, eth_header, ip_header, icmp| {
+        self.ip.register::<icmp::IcmpFrame>(Box::new(move |eth, eth_header, ip_header, icmp| {
 
             // kprintln!("icmp: {:?}", icmp);
             // kprintln!("id: {}, seq: {}", icmp.identifier(), icmp.sequence_number());
@@ -213,53 +219,29 @@ impl NetHandler {
 
                 copy.header.icmp_type = 0; // ping reply
 
-                let mut ip = m_lock!(ip);
-                ip.send(ip_header.source, copy);
+                ip.send(ip_header.source, &copy);
             }
 
         }));
 
         let tcp = self.tcp.clone();
 
-        _ip.register::<tcp::TcpFrame>(Box::new(move |eth, eth_header, ip_header, frame| {
-
-            // kprintln!("tcp: {:?}", frame);
-            // frame.dump();
-
-            let mut tcp = m_lock!(tcp);
+        self.ip.register::<tcp::TcpFrame>(Box::new(move |eth, eth_header, ip_header, frame| {
             tcp.on_receive_packet(ip_header, frame);
-
-            //
-            // let mut ip = ip.lock();
-            //
-            // let mut tcp = tcp.clone();
-            //
-            // core::mem::swap(&mut tcp.header.source_port, &mut tcp.header.destination_port);
-            //
-            // tcp.header.flags.set_ack(true);
-            // tcp.header.ack_number.set(tcp.header.sequence_number.get() + 1);
-            // tcp.header.sequence_number.set(0);
-            //
-            // ip.send(ip_header.source, tcp);
-            //
-
-
-            // kprintln!("id: {}, seq: {}", icmp.identifier(), icmp.sequence_number());
-
         }));
 
     }
 
-    pub fn arp_request(&mut self, addr: ipv4::Address) -> NetResult<ether::Mac> {
-        let me = m_lock!(self.ip).address();
+    pub fn arp_request(&self, addr: ipv4::Address) -> NetResult<ether::Mac> {
+        let me = self.ip.address();
 
         self.arp.resolve_or_request_address(arp::PROT_ADDR_IP, addr, me, self.eth.clone())
     }
 
-    pub fn dispatch(&mut self) -> bool {
+    pub fn dispatch(&self) -> bool {
         let mut events = false;
-        events |= m_lock!(self.eth).receive_dispatch().is_some();
-        events |= m_lock!(self.tcp).process_events();
+        events |= self.eth.receive_dispatch().is_some();
+        events |= self.tcp.process_events();
 
         events
     }
@@ -276,11 +258,11 @@ impl GlobalNetHandler {
     pub unsafe fn initialize(&self) {
         let usb = Usb::new().expect("failed to init usb");
 
-        kprintln!("created usb");
+        debug!("created usb");
 
         let net = NetHandler::new(usb).expect("create net handler");
 
-        kprintln!("created net");
+        debug!("created net");
 
         m_lock!(self.0).replace(net);
     }

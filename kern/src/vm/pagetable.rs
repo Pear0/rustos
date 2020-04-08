@@ -317,7 +317,6 @@ impl UserPageTable {
         entry.set_value(EntrySh::ISh, RawL3Entry::SH);
         entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
 
-        // FIXME why do i need to set AF???
         entry.set_value(1, RawL3Entry::AF);
         entry.set_value(1, RawL3Entry::NS);
 

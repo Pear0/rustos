@@ -1,9 +1,10 @@
 use core::alloc::Layout;
 
 use crate::allocator::linked_list::LinkedList;
-use crate::allocator::LocalAlloc;
+use crate::allocator::{LocalAlloc, AllocStats};
 
 use super::util::align_up;
+use shim::io;
 
 /// A simple allocator that allocates based on size classes.
 ///   bin 0 (2^3 bytes)    : handles allocations in (0, 2^3]
@@ -17,6 +18,9 @@ use super::util::align_up;
 /// I hope you like fastbins.
 #[derive(Debug)]
 pub struct Allocator {
+    start: usize,
+    end: usize,
+    used: usize,
     wilderness: usize,
     wilderness_end: usize,
     bins: [LinkedList; 30],
@@ -32,6 +36,9 @@ impl Allocator {
     pub fn new(start: usize, end: usize) -> Allocator {
         // println!("BinAlloc::new(0x{:x}, 0x{:x})", start, end);
         Allocator {
+            start: align_up(start, 8),
+            end,
+            used: 0,
             wilderness: align_up(start, 8),
             wilderness_end: end,
             bins: [LinkedList::new(); 30],
@@ -164,6 +171,7 @@ impl Allocator {
 
         if let Some(p) = self.bins[bin].pop() {
             // println!("[alloc] served with fastbin:{}", bin);
+            self.used += self.bin_size(bin);
             return Some(p as *mut u8);
         }
 
@@ -172,11 +180,13 @@ impl Allocator {
             return None;
         }
 
+        self.used += self.bin_size(bin);
         Some(self.bins[bin].pop().unwrap() as *mut u8)
     }
 
     fn do_dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         let bin = self.layout_to_bin(layout);
+        self.used -= self.bin_size(bin);
 
         // cast is safe because we only ever give out 8 byte aligned pointers
         // anyway.
@@ -233,4 +243,23 @@ impl LocalAlloc for Allocator {
         // self.dump("alloc");
     }
 }
+
+impl AllocStats for Allocator {
+    fn total_allocation(&self) -> (usize, usize) {
+        (self.used, self.end - self.start)
+    }
+
+    fn dump(&self, w: &mut io::Write) -> io::Result<()> {
+        writeln!(w, "Allocator")?;
+
+        let (allocated, total) = self.total_allocation();
+
+        writeln!(w, "allocated: {}", allocated)?;
+        writeln!(w, "total: {}", total)?;
+        writeln!(w, "percent: {}", 100.0 * (allocated as f64) / (total as f64))?;
+
+        Ok(())
+    }
+}
+
 

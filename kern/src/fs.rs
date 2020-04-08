@@ -8,6 +8,7 @@ use shim::path::Path;
 
 use crate::mutex::Mutex;
 
+pub mod handle;
 pub mod sd;
 
 #[derive(Clone)]

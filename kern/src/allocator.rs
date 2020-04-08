@@ -5,6 +5,7 @@ use pi::atags::Atags;
 
 use crate::mutex::Mutex;
 use crate::smp;
+use shim::io;
 
 mod linked_list;
 pub mod util;
@@ -22,6 +23,12 @@ mod tests;
 pub trait LocalAlloc {
     unsafe fn alloc(&mut self, layout: Layout) -> *mut u8;
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout);
+}
+
+pub trait AllocStats {
+    fn total_allocation(&self) -> (usize, usize);
+
+    fn dump(&self, w: &mut io::Write) -> io::Result<()>;
 }
 
 /// Thread-safe (locking) wrapper around a particular memory allocator.
@@ -47,6 +54,17 @@ impl Allocator {
         let (start, end) = memory_map().expect("failed to find memory map");
         *m_lock!(self.0) = Some(AllocatorImpl::new(start, end));
     }
+
+    pub fn with_internal<F, R>(&self, f: F) -> R
+        where
+            F: FnOnce(&AllocatorImpl) -> R,
+    {
+        smp::no_interrupt(|| {
+            let lock = m_lock!(self.0);
+            f(lock.as_ref().expect("allocator uninitialized"))
+        })
+    }
+
 }
 
 unsafe impl GlobalAlloc for Allocator {

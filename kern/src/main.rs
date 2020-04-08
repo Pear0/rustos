@@ -13,6 +13,8 @@
 
 extern crate alloc;
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate modular_bitfield;
 
 use alloc::borrow::ToOwned;
@@ -51,10 +53,12 @@ mod compat;
 pub mod debug;
 pub mod fs;
 pub mod io;
+mod logger;
 pub mod mbox;
 pub mod net;
 pub mod shell;
 pub mod smp;
+pub mod sync;
 pub mod param;
 pub mod process;
 pub mod traps;
@@ -156,41 +160,33 @@ fn kmain() -> ! {
     timer::spin_sleep(Duration::from_millis(500));
 
     kprintln!("early boot");
+    logger::register_global_logger();
 
     // for atag in pi::atags::Atags::get() {
     //     kprintln!("{:?}", atag);
     // }
 
+    info!("hello");
+
     unsafe {
+        debug!("init allocator");
         ALLOCATOR.initialize();
+        debug!("init filesystem");
         FILESYSTEM.initialize();
     }
 
+    debug!("init irq");
     IRQ.initialize();
 
-    mutex_new!(5);
-
-
-    // for core in 0..smp::MAX_CORES {
-    //     IRQ.register_core(core, CoreInterrupt::CNTPNSIRQ, Box::new(|tf| {
-    //
-    //         let v = unsafe { CNTPCT_EL0.get() };
-    //         unsafe { CNTP_CVAL_EL0.set(v + 10000) };
-    //
-    //         // kprintln!("foo");
-    //
-    //     }));
-    // }
-
+    // initialize local timers for all cores
     unsafe { (0x4000_0008 as *mut u32).write_volatile(0x8000_0000) };
-
     unsafe { (0x4000_0040 as *mut u32).write_volatile(0b1010) };
     unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
     unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
     unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
 
 
-    kprintln!("initing smp");
+    debug!("initing smp");
 
     if true {
         let cores = 4;
@@ -219,34 +215,28 @@ fn kmain() -> ! {
     //     kprintln!("Hello!");
     // });
 
-    kprintln!("foo {:?}", Syndrome::from(0x96000050));
-
-    kprintln!("foo");
-
     // VMM.initialize();
 
+    debug!("init VMM data structures");
     VMM.init_only();
 
+    info!("enabling VMM on all cores!");
     smp::run_on_all_cores(|| {
         VMM.setup();
     });
 
-    kprintln!("Initing Scheduler");
+    info!("init Scheduler");
 
     use aarch64::regs::*;
-
-    unsafe {
-        SCHEDULER.initialize();
-    };
-
-    smp::run_on_secondary_cores(|| {
+    smp::run_on_all_cores(|| {
         unsafe {
             SCHEDULER.initialize();
         };
     });
 
+    debug!("start some processes");
+
     {
-        kprintln!("Creating first thread");
         let proc = Process::kernel_process_old("shell".to_owned(), my_thread).unwrap();
         SCHEDULER.add(proc);
     }
@@ -279,14 +269,14 @@ fn kmain() -> ! {
     smp::run_no_return(|| {
         let core = smp::core();
         pi::timer::spin_sleep(Duration::from_millis(4 * core as u64));
-        kprintln!("Luanching {}", core);
+        debug!("Core {} starting scheduler", core);
         SCHEDULER.start();
 
-        kprintln!("RIP RIP");
+        error!("RIP RIP");
     });
 
     pi::timer::spin_sleep(Duration::from_millis(50));
-    kprintln!("starting");
+    kprintln!("Core 0 starting scheduler");
 
     SCHEDULER.start();
 }

@@ -229,44 +229,51 @@ impl EthPayload for IPv4Frame {
 }
 
 
-pub type IpHandler<T> = Box<dyn FnMut(&mut Interface, &EthHeader, &IPv4Header, &mut T) + Send>;
+pub type IpHandler<T> = Box<dyn FnMut(&Interface, &EthHeader, &IPv4Header, &mut T) + Send>;
 
-type RawIpHandler = Box<dyn FnMut(&mut Interface, &EthHeader, &IPv4Header, &[u8]) + Send>;
+type RawIpHandler = Box<dyn FnMut(&Interface, &EthHeader, &IPv4Header, &[u8]) + Send>;
 
-pub struct Interface {
-    eth: Arc<Mutex<ether::Interface>>,
+struct InterfaceImpl {
+    eth: Arc<ether::Interface>,
     handlers: HashMap<u8, Option<RawIpHandler>>,
     address: Address,
     arp_resolver: Arc<dyn arp::ArpResolver>,
+}
 
-
+pub struct Interface {
+    inner: Mutex<InterfaceImpl>
 }
 
 impl Interface {
-    pub fn new(eth: Arc<Mutex<ether::Interface>>, address: Address, arp: Arc<dyn arp::ArpResolver>) -> Interface {
+    pub fn new(eth: Arc<ether::Interface>, address: Address, arp: Arc<dyn arp::ArpResolver>) -> Interface {
         Interface {
-            eth,
-            handlers: HashMap::new(),
-            address,
-            arp_resolver: arp,
+            inner: mutex_new!(InterfaceImpl {
+                eth,
+                handlers: HashMap::new(),
+                address,
+                arp_resolver: arp,
+            })
         }
     }
 
     pub fn address(&self) -> Address {
-        self.address
+        m_lock!(self.inner).address
     }
 
     pub fn maximum_packet_size(&self) -> usize {
         576 - 20 // maximum size minus 20 byte ip header. we never send larger ip headers
     }
 
-    pub fn send<T: IPv4Payload>(&mut self, to: Address, payload: T) -> NetResult<()> {
+    pub fn send<T: IPv4Payload>(&self, to: Address, payload: &T) -> NetResult<()> {
         // this is significantly oversized to catch packet issues in a friendlier way.
         // we do not support IP fragmentation.
         let mut payload_buffer = [0u8; 1200];
         let full_buffer_len = payload_buffer.len();
 
-        let mac = self.arp_resolver.resolve_or_request_address(arp::PROT_ADDR_IP, to, self.address(), self.eth.clone())?;
+        let eth_clone = m_lock!(self.inner).eth.clone();
+        let address = self.address();
+
+        let mac = m_lock!(self.inner).arp_resolver.resolve_or_request_address(arp::PROT_ADDR_IP, to, address, eth_clone)?;
 
         let header = IPv4Header::new(T::PROTOCOL_NUMBER, self.address(), to, 0);
 
@@ -284,18 +291,18 @@ impl Interface {
             payload: Box::from(payload_buffer.as_ref()),
         };
 
-        let mut lock = m_lock!(self.eth);
-        lock.send(mac, frame)
+        let lock = m_lock!(self.inner);
+        lock.eth.send(mac, frame)
     }
 
-    pub fn register<T: IPv4Payload + 'static>(&mut self, mut handler: IpHandler<T>) {
-        self.handlers.insert(T::PROTOCOL_NUMBER, Some(Box::new(move |eth, eth_header, ip_header, buf| {
+    pub fn register<T: IPv4Payload + 'static>(&self, mut handler: IpHandler<T>) {
+        m_lock!(self.inner).handlers.insert(T::PROTOCOL_NUMBER, Some(Box::new(move |ip, eth_header, ip_header, buf| {
             match T::try_parse(buf) {
                 Some((mut t, rest)) => {
                     if rest.len() != 0 {
                         kprintln!("packet protocol 0x{:x} left {} bytes unconsumed", T::PROTOCOL_NUMBER, rest.len());
                     }
-                    handler(eth, eth_header, ip_header, &mut t);
+                    handler(ip, eth_header, ip_header, &mut t);
                 }
                 None => kprintln!("malformed packet for protocol: 0x{:x} has size {} < {}",
                     T::PROTOCOL_NUMBER, buf.len(), core::mem::size_of::<T>()),
@@ -303,21 +310,22 @@ impl Interface {
         })));
     }
 
-    pub fn receive_dispatch(&mut self, eth_header: &ether::EthHeader, frame: &IPv4Frame) -> Option<()> {
+    pub fn receive_dispatch(&self, eth_header: &ether::EthHeader, frame: &IPv4Frame) -> Option<()> {
         let protocol = frame.header.protocol;
 
         // kprintln!("[ip] frame: protocol=0x{:x}", protocol);
 
         // we pass a mutable reference to self but also have a FnMut so we have to move
         // the FnMut out of &mut self while this happens.
-        if self.handlers.contains_key(&protocol) {
-            let handler = self.handlers.insert(protocol, None).unwrap();
-            let mut handler = handler.expect("recursion???");
 
-            handler(self, eth_header, &frame.header, frame.payload.as_ref());
+        let handler = m_lock!(self.inner).handlers.insert(protocol, None)?;
+        let mut handler = handler?;
 
-            if let Some(None) = self.handlers.get(&protocol) {
-                self.handlers.insert(protocol, Some(handler));
+        handler(self, eth_header, &frame.header, frame.payload.as_ref());
+
+        if let Some(g) = m_lock!(self.inner).handlers.get_mut(&protocol) {
+            if g.is_none() {
+                g.replace(handler);
             }
         }
 

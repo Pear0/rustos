@@ -1,12 +1,15 @@
 use alloc::boxed::Box;
 use core::time::Duration;
+use alloc::sync::Arc;
 
 use kernel_api::*;
 
 use crate::console::CONSOLE;
 use crate::process::{EventPollFn, State};
-use crate::SCHEDULER;
+use crate::{SCHEDULER, process};
 use crate::traps::TrapFrame;
+use crate::sync::Completion;
+
 
 fn set_result(tf: &mut TrapFrame, regs: &[u64]) {
     for (i, v) in regs.iter().enumerate() {
@@ -75,6 +78,9 @@ pub fn sys_exit(tf: &mut TrapFrame) {
 /// It only returns the usual status value.
 pub fn sys_write(b: u8, _tf: &mut TrapFrame) {
 
+    if b == b'\n' {
+        m_lock!(CONSOLE).write_byte(b'\r');
+    }
     m_lock!(CONSOLE).write_byte(b);
 
 }
@@ -90,6 +96,37 @@ pub fn sys_getpid(tf: &mut TrapFrame) {
     tf.regs[0] = tf.tpidr;
 
 }
+
+pub fn sys_waitpid(pid: u64, tf: &mut TrapFrame) {
+    let start = pi::timer::current_time();
+
+    let comp = Arc::new(Completion::<process::Id>::new());
+
+    let comp_clone = comp.clone();
+    let did_register = SCHEDULER.crit_process(pid, move |proc| {
+        if let Some(proc) = proc {
+            proc.dead_completions.push(comp_clone);
+            true
+        } else {
+            comp_clone.complete(pid);
+            false
+        }
+    });
+
+    let time_fn: EventPollFn = Box::new(move |tf| {
+        let now = pi::timer::current_time();
+        if comp.get().is_some() {
+            let d = (now - start).as_millis() as u64;
+            set_result(&mut tf.context, &[d]);
+            set_err(&mut tf.context, if did_register { OsError::Ok } else { OsError::InvalidArgument });
+            true
+        } else {
+            false
+        }
+    });
+    SCHEDULER.switch(State::Waiting(time_fn), tf);
+}
+
 
 pub fn handle_syscall(num: u16, tf: &mut TrapFrame) {
 
@@ -110,6 +147,10 @@ pub fn handle_syscall(num: u16, tf: &mut TrapFrame) {
         }
         NR_GETPID => {
             sys_getpid(tf);
+        }
+        NR_WAITPID => {
+            let pid = tf.regs[0];
+            sys_waitpid(pid, tf);
         }
         _ => kprintln!("Unknown syscall: {}", num),
     }

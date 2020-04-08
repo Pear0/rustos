@@ -80,6 +80,12 @@ context_restore:
     msr     TTBR0_EL1, x0
     msr     TTBR1_EL1, x1
 
+    // reload page tables
+    dsb     ishst
+    tlbi    vmalle1
+    dsb     ish
+    isb
+
     ldp     q0, q1, [SP], #32
     ldp     q2, q3, [SP], #32
     ldp     q4, q5, [SP], #32

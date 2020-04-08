@@ -5,6 +5,7 @@ pub use self::scheduler::GlobalScheduler;
 pub use self::stack::Stack;
 pub use self::state::{EventPollFn, State};
 
+mod mailbox;
 mod process;
 mod scheduler;
 mod snap;

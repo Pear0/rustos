@@ -79,3 +79,4 @@ pub const NR_TIME: usize = 2;
 pub const NR_EXIT: usize = 3;
 pub const NR_WRITE: usize = 4;
 pub const NR_GETPID: usize = 5;
+pub const NR_WAITPID: usize = 6;
