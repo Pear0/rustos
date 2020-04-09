@@ -11,7 +11,9 @@ authors = [
 edition = "2018"
 
 [dependencies]
+common = { path = "../common", features = ["no_std"] }
 shim = { path = "../shim", features = ["alloc"] }
+mountfs = { path = "../mountfs", features = ["no_std"] }
 hashbrown = "0.6.3"
 
 [dev-dependencies]

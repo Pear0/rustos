@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -8,8 +9,11 @@ use shim::ioerr;
 
 use crate::traits;
 use crate::util::{VecExt, SliceExt};
-use crate::vfat::{Attributes, Date, Metadata, Time, Timestamp, VFat};
+use crate::vfat::{Attributes, Date, Metadata, Time, Timestamp, VFat, mnt};
 use crate::vfat::{Cluster, Entry, File, VFatHandle};
+use mountfs::mount::mfs;
+use mountfs::mount;
+use crate::vfat::mnt::DynVFatHandle;
 
 #[derive(Debug)]
 pub struct Dir<HANDLE: VFatHandle> {
@@ -276,5 +280,53 @@ impl<HANDLE: VFatHandle> traits::Dir for Dir<HANDLE> {
             buf: unsafe { buf.cast() },
             index: 0,
         })
+    }
+}
+
+pub(crate) fn convert_ts(t: Timestamp) -> mount::Timestamp {
+    use traits::Timestamp;
+    mount::Timestamp::new_from_fields(t.year() as u32, t.month(), t.day(), t.hour(), t.minute(), t.second())
+}
+
+impl mfs::FileInfo for Dir<DynVFatHandle> {
+    fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn metadata(&self) -> mount::Metadata {
+        use traits::Metadata;
+        mount::Metadata {
+            read_only: Some(self.metadata.read_only()),
+            hidden: Some(self.metadata.hidden()),
+            created: Some(convert_ts(self.metadata.created())),
+            accessed: Some(convert_ts(self.metadata.accessed())),
+            modified: Some(convert_ts(self.metadata.modified())),
+        }
+    }
+
+    fn size(&self) -> u64 {
+        0
+    }
+
+    fn is_directory(&self) -> bool {
+        true
+    }
+}
+
+fn convert_entry(entry: Entry<DynVFatHandle>) -> mfs::DirEntry {
+    match &entry {
+        Entry::File(f) => {
+            mfs::DirEntry::new(f.name.clone(), mfs::FileInfo::metadata(f), f.size as u64, false)
+        },
+        Entry::Dir(f) => {
+            mfs::DirEntry::new(f.name.clone(), mfs::FileInfo::metadata(f), 0, true)
+        },
+    }
+}
+
+impl mfs::Dir for Dir<DynVFatHandle> {
+    fn entries(&self) -> io::Result<Box<dyn Iterator<Item=mfs::DirEntry>>> {
+        let entries = traits::Dir::entries(self)?;
+        Ok(Box::new(entries.map(convert_entry)))
     }
 }

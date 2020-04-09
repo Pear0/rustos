@@ -172,7 +172,9 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 }
             }
             "ls" => {
+                // debug!("A");
                 let mut dir: &str = self.cwd_str();
+                // debug!("B");
                 let mut all = false;
                 for arg in command.args[1..].iter() {
                     match *arg {
@@ -181,12 +183,17 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                     }
                 }
 
+                // debug!("C");
+
                 let entry = FILESYSTEM.open(dir)?;
+
+                // debug!("D");
 
                 match &entry {
                     fat32::vfat::Entry::File(_) => self.describe_ls_entry(entry, true),
                     fat32::vfat::Entry::Dir(f) => {
                         let entries = f.entries()?;
+                        // debug!("E");
 
                         for entry in entries {
                             self.describe_ls_entry(entry, all);

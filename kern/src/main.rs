@@ -17,6 +17,10 @@ extern crate log;
 #[macro_use]
 extern crate modular_bitfield;
 
+#[macro_use]
+extern crate serde;
+extern crate serde_cbor;
+
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -226,9 +230,12 @@ fn kmain() -> ! {
     });
 
     info!("init Scheduler");
+    unsafe {
+        SCHEDULER.initialize();
+    };
 
     use aarch64::regs::*;
-    smp::run_on_all_cores(|| {
+    smp::run_on_secondary_cores(|| {
         unsafe {
             SCHEDULER.initialize();
         };

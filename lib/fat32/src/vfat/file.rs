@@ -6,6 +6,10 @@ use shim::io::{self, SeekFrom};
 use crate::traits;
 use crate::vfat::{Cluster, Metadata, VFatHandle};
 use crate::vfat::vfat::SeekHandle;
+use mountfs::mount::mfs;
+use mountfs::mount;
+use crate::vfat::mnt::DynVFatHandle;
+use crate::vfat::dir::convert_ts;
 
 #[derive(Debug)]
 pub struct File<HANDLE: VFatHandle> {
@@ -102,5 +106,40 @@ impl<HANDLE: VFatHandle> io::Seek for File<HANDLE> {
 
         self.pointer = cloff;
         Ok(cloff.total_offset as u64)
+    }
+}
+
+impl mfs::FileInfo for File<DynVFatHandle> {
+    fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn metadata(&self) -> mount::Metadata {
+        use traits::Metadata;
+        mount::Metadata {
+            read_only: Some(self.metadata.read_only()),
+            hidden: Some(self.metadata.hidden()),
+            created: Some(convert_ts(self.metadata.created())),
+            accessed: Some(convert_ts(self.metadata.accessed())),
+            modified: Some(convert_ts(self.metadata.modified())),
+        }
+    }
+
+    fn size(&self) -> u64 {
+        self.size as u64
+    }
+
+    fn is_directory(&self) -> bool {
+        false
+    }
+}
+
+impl mfs::File for File<DynVFatHandle> {
+    fn sync(&mut self) -> io::Result<()> {
+        unimplemented!()
+    }
+
+    fn size(&self) -> u64 {
+        self.size as u64
     }
 }

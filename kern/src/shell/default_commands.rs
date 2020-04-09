@@ -26,8 +26,82 @@ use crate::smp;
 
 use super::shell::Shell;
 use crate::allocator::AllocStats;
+use crate::fs::sd;
+use fat32::vfat::{VFat, DynVFatHandle, DynWrapper};
+use mountfs::mount::mfs;
+use mountfs::MetaFileSystem;
+
+fn describe_ls_entry<W: io::Write, T: mfs::FileInfo>(writer: &mut W, entry: T, show_all: bool) {
+    if !show_all && (entry.metadata().hidden == Some(true) || entry.name() == "." || entry.name() == "..") {
+        return;
+    }
+
+    let mut line = String::new();
+    if entry.is_directory() {
+        line.push('d');
+    } else {
+        line.push('-');
+    }
+
+    if let Some(true) = entry.metadata().hidden {
+        line.push('h');
+    } else {
+        line.push('-');
+    }
+    if let Some(true) = entry.metadata().read_only {
+        line.push('r');
+    } else {
+        line.push('-');
+    }
+
+    let size = entry.size();
+
+    writeln!(writer, "{} {:>7} {} {}", line, size, entry.metadata().modified.unwrap_or(Default::default()), entry.name());
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Mascot {
+    name: String,
+    species: String,
+    year_of_birth: u32,
+}
 
 pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
+
+    sh.command()
+        .name("serde")
+        .help("")
+        .func(|sh, cmd| {
+            let ferris = Mascot {
+                name: String::from("Ferris"),
+                species: String::from("crab"),
+                year_of_birth: 2015,
+            };
+
+            let serialized = serde_cbor::ser::to_vec(&ferris);
+            match serialized {
+                Ok(serialized) => {
+
+                    let tux: Result<Mascot, _> = serde_cbor::de::from_slice(serialized.as_ref());
+
+                    match tux {
+                        Ok(tux) => {
+                            info!("Decoded: {:?}", tux);
+                        },
+                        Err(e) => {
+                            writeln!(sh.writer, "error: {}", e);
+                        }
+                    }
+
+
+                },
+                Err(e) => {
+                    writeln!(sh.writer, "error: {}", e);
+                }
+            }
+
+        })
+        .build();
 
     sh.command()
         .name("echo")
@@ -63,6 +137,55 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             // use alloc::borrow::ToOwned;
             // let cwd = sh.cwd_str().to_owned();
             // writeln!(&mut sh.writer, "{}", cwd);
+        })
+        .build();
+
+    sh.command()
+        .name("lsd")
+        .help("")
+        .func(|sh, cmd| {
+            let sd = unsafe { sd::Sd::new() }.expect("failed to init sd card2");
+            let vfat = VFat::<DynVFatHandle>::from(sd).expect("failed to init vfat2");
+
+            let mut f = mountfs::fs::FileSystem::new();
+            f.mount(PathBuf::from("/"), Box::new(MetaFileSystem::new()));
+            f.mount(PathBuf::from("/fat"), Box::new(DynWrapper(vfat)));
+
+
+            let mut dir: &str = sh.cwd_str();
+            let mut all = false;
+            for arg in cmd.args[1..].iter() {
+                match *arg {
+                    "-a" => all = true,
+                    other => dir = other,
+                }
+            }
+
+            match f.open(dir) {
+                Ok(entry) => {
+                    match &entry {
+                        mfs::Entry::File(_) => describe_ls_entry(&mut sh.writer, entry, true),
+                        mfs::Entry::Dir(f) => {
+
+                            match f.entries() {
+                                Ok(entries) => {
+                                    for entry in entries {
+                                        describe_ls_entry(&mut sh.writer, entry, all);
+                                    }
+                                }
+                                Err(e) => {
+                                    writeln!(sh.writer, "error: {}", e);
+                                }
+                            }
+
+                        }
+                    }
+                }
+                Err(e) => {
+                    writeln!(sh.writer, "error: {}", e);
+                }
+            }
+
         })
         .build();
 

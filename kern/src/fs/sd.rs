@@ -33,7 +33,7 @@ extern "C" {
     fn sd_readsector(n: i32, buffer: *mut u8) -> i32;
 }
 
-const SLEEP_MULTIPLIER: u64 = 1;
+const SLEEP_MULTIPLIER: u64 = 20;
 const DEBUG: bool = false;
 
 #[no_mangle]

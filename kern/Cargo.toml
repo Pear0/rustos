@@ -18,10 +18,12 @@ pi = { path = "../lib/pi" }
 shim = { path = "../lib/shim", features = ["no_std", "alloc"] }
 stack-vec = { path = "../lib/stack-vec/" }
 fat32 = { path = "../lib/fat32/", features = ["no_std"] }
+mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
 aarch64 = { path = "../lib/aarch64/" }
 kernel_api = { path = "../lib/kernel_api" }
 log = { version = "0.4.8", features = [] }
-#serde = { version = "1.0.106", default-features = false, features = ["alloc", "derive"] }
+serde = { version = "1.0.106", default-features = false, features = ["alloc", "derive"] }
+serde_cbor = { version = "0.11.1", default-features = false, features = ["alloc"] }
 hashbrown = "0.6.3"
 modular-bitfield = "0.6.0"
 

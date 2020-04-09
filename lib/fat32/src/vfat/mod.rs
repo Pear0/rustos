@@ -7,6 +7,7 @@ pub(crate) mod error;
 pub(crate) mod fat;
 pub(crate) mod file;
 pub(crate) mod metadata;
+pub(crate) mod mnt;
 pub(crate) mod vfat;
 
 pub use self::dir::Dir;
@@ -15,6 +16,7 @@ pub use self::entry::Entry;
 pub use self::error::Error;
 pub use self::file::File;
 pub use self::metadata::{Attributes, Date, Metadata, Time, Timestamp};
+pub use self::mnt::{DynWrapper, DynVFatHandle};
 pub use self::vfat::{VFat, VFatHandle};
 
 pub(crate) use self::cache::{CachedPartition, Partition};
