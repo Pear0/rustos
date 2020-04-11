@@ -129,9 +129,13 @@ impl NetHandler {
         handler.register_ping_responder();
 
 
-        {
-            handler.tcp.add_listening_port((my_ip, 100));
-        }
+        // {
+        //     handler.tcp.add_listening_port((my_ip, 100), Box::new(|sink, source| {
+        //        
+        //        
+        //        
+        //     }));
+        // }
 
         // gratuitous ARP so neighbors know about us sooner.
         {

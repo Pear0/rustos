@@ -38,7 +38,7 @@ unsafe fn jump_to(addr: *mut u8) -> ! {
 
 fn kmain() -> ! {
 
-    let mut uart = MiniUart::new_options(false);
+    let mut uart = MiniUart::new();
     uart.set_read_timeout(Duration::from_millis(750));
 
     loop {

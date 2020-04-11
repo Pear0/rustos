@@ -18,7 +18,7 @@ use stack_vec::StackVec;
 
 use crate::{IRQ, NET, SCHEDULER, timer};
 use crate::FILESYSTEM;
-use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
+use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
 use crate::process::{Process, Id};
 use crate::shell::command::{Command, CommandBuilder};

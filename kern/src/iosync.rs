@@ -7,6 +7,7 @@ use core::ops::DerefMut;
 use core::ops::Deref;
 use core::cell::UnsafeCell;
 use pi::uart::MiniUart;
+use crate::sync::Waitable;
 
 pub trait SyncRead : Sync + Send {
 
@@ -26,7 +27,7 @@ unsafe impl Sync for ConsoleSync {}
 
 impl ConsoleSync {
     pub fn new() -> Self {
-        ConsoleSync(UnsafeCell::new(MiniUart::new()))
+        ConsoleSync(UnsafeCell::new(MiniUart::new_opt_init(false)))
     }
 
     fn inner(&self) -> &mut MiniUart {

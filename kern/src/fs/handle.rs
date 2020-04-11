@@ -1,7 +1,7 @@
 use crate::net::buffer;
-use crate::io::{SyncWrite, SyncRead};
+use crate::iosync::{SyncWrite, SyncRead};
 use shim::io;
-use crate::smp;
+use crate::{smp, sync};
 use crate::console::CONSOLE;
 
 pub enum Source {
@@ -26,6 +26,26 @@ impl SyncRead for Source {
     }
 }
 
+impl sync::Waitable for Source {
+    fn done_waiting(&self) -> bool {
+        match self {
+            Source::KernSerial => true, // TODO
+            Source::Buffer(b) => {
+                use sync::Waitable;
+                buffer::ReadWaitable(b.clone()).done_waiting()
+            },
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            Source::KernSerial => "Source::KernSerial",
+            Source::Buffer(_) => "Source::Buffer",
+        }
+    }
+}
+
+
 pub enum Sink {
     KernSerial,
     Buffer(buffer::BufferHandle),
@@ -47,4 +67,58 @@ impl SyncWrite for Sink {
         }
     }
 }
+
+impl sync::Waitable for Sink {
+    fn done_waiting(&self) -> bool {
+        match self {
+            Sink::KernSerial => true, // TODO
+            Sink::Buffer(b) => {
+                use sync::Waitable;
+                buffer::WriteWaitable(b.clone()).done_waiting()
+            },
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            Sink::KernSerial => "Sink::KernSerial",
+            Sink::Buffer(_) => "Sink::Buffer",
+        }
+    }
+}
+
+
+pub struct SourceWrapper<T: AsRef<Source>>(T);
+
+impl<T: AsRef<Source>> SourceWrapper<T> {
+    pub fn new(t: T) -> Self {
+        Self(t)
+    }
+}
+
+impl<T: AsRef<Source>> io::Read for SourceWrapper<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.as_ref().read(buf)
+    }
+}
+
+pub struct SinkWrapper<T: AsRef<Sink>>(T);
+
+impl<T: AsRef<Sink>> SinkWrapper<T> {
+    pub fn new(t: T) -> Self {
+        Self(t)
+    }
+}
+
+impl<T: AsRef<Sink>> io::Write for SinkWrapper<T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.as_ref().write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+
 

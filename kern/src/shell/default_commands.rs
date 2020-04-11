@@ -23,7 +23,7 @@ use crate::{ALLOCATOR, IRQ, NET, SCHEDULER, timer};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
 use crate::fs::sd;
-use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
+use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
 use crate::process::Process;
 use crate::shell::command::{Command, CommandBuilder};

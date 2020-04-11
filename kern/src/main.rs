@@ -23,6 +23,7 @@ extern crate serde_cbor;
 
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::time::Duration;
@@ -30,18 +31,22 @@ use core::time::Duration;
 use aarch64::{CNTP_CTL_EL0, SP};
 use allocator::Allocator;
 use fs::FileSystem;
+use net::ipv4;
 use pi::{gpio, timer};
 use pi::interrupt::CoreInterrupt;
 use process::GlobalScheduler;
 use traps::irq::Irq;
 use vm::VMManager;
+use shim::{io, ioerr};
 
-use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::mutex::Mutex;
 use crate::net::GlobalNetHandler;
 use crate::net::tcp::{SHELL_READ, SHELL_WRITE};
-use crate::process::{Process, Stack};
+use crate::process::{Process, Stack, Id};
 use crate::traps::syndrome::Syndrome;
+use crate::process::fd::FileDescriptor;
+use crate::fs::handle::{SourceWrapper, SinkWrapper};
+use crate::iosync::{SyncWrite, SyncRead, ReadWrapper, WriteWrapper};
 
 #[macro_use]
 pub mod console;
@@ -56,7 +61,7 @@ pub mod cls;
 mod compat;
 pub mod debug;
 pub mod fs;
-pub mod io;
+pub mod iosync;
 mod logger;
 pub mod mbox;
 pub mod net;
@@ -102,16 +107,41 @@ fn network_thread() {
         NET.initialize();
     }
 
+    NET.critical(|net| {
+
+        let my_ip = ipv4::Address::from(&[169, 254, 78, 130]);
+
+        net.tcp.add_listening_port((my_ip, 100), Box::new(|sink, source| {
+
+            let mut proc = Process::kernel_process_old(String::from("net thread2"), my_net_thread2)
+                .or(ioerr!(Other, "foo"))?;
+
+            proc.file_descriptors.push(FileDescriptor::read(Arc::new(source)));
+            proc.file_descriptors.push(FileDescriptor::write(Arc::new(sink)));
+
+            SCHEDULER.add(proc);
+
+            Ok(())
+        }));
+
+    });
+
     loop {
         if !NET.critical(|n| n.dispatch()) {
             kernel_api::syscall::sleep(Duration::from_micros(1000)).ok();
         }
     }
+}
 
-    //
-    // loop {
-    //     kernel_api::syscall::sleep(Duration::from_micros(1000)).ok();
-    // }
+fn my_net_thread2() {
+    let pid: Id = kernel_api::syscall::getpid();
+
+    let (source, sink) = SCHEDULER.crit_process(pid, |f| {
+        let f = f.unwrap();
+        (f.file_descriptors[0].read.as_ref().unwrap().clone(), f.file_descriptors[1].write.as_ref().unwrap().clone())
+    });
+
+    shell::Shell::new("% ", SourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
 }
 
 static CORE_REGISTER: Mutex<Option<Vec<u64>>> = mutex_new!(None);

@@ -6,7 +6,7 @@ use crate::mutex::Mutex;
 use crate::net::NetErrorKind::BufferFull;
 use core::ops::DerefMut;
 use crate::net::{NetResult, NetErrorKind};
-use crate::io::{SyncWrite, SyncRead};
+use crate::iosync::{SyncWrite, SyncRead};
 use shim::io;
 use shim::io::Error;
 use crate::sync;
@@ -24,7 +24,7 @@ impl BufferHandle {
     pub fn new() -> Self {
         BufferHandle(Arc::new(mutex_new!(Buffer {
             deque: VecDeque::new(),
-            max_size: 1024,
+            max_size: 4096,
         })))
     }
 
@@ -85,17 +85,37 @@ impl SyncWrite for BufferHandle {
     }
 }
 
-impl sync::Waitable for BufferHandle {
+#[derive(Clone)]
+pub struct ReadWaitable(pub BufferHandle);
+
+impl sync::Waitable for ReadWaitable {
 
     fn done_waiting(&self) -> bool {
-        if let Some(b) = self.0.lock_timeout("BufferHandle::done_waiting", Duration::from_micros(1)) {
+        if let Some(b) = (self.0).0.lock_timeout("ReadWaitable::done_waiting", Duration::from_micros(1)) {
             return !b.deque.is_empty();
         }
         return false;
     }
 
     fn name(&self) -> &'static str {
-        "[sync::Waitable]"
+        "[buffer::ReadWaitable]"
+    }
+}
+
+#[derive(Clone)]
+pub struct WriteWaitable(pub BufferHandle);
+
+impl sync::Waitable for WriteWaitable {
+
+    fn done_waiting(&self) -> bool {
+        if let Some(b) = (self.0).0.lock_timeout("WriteWaitable::done_waiting", Duration::from_micros(1)) {
+            return b.deque.len() < b.max_size;
+        }
+        return false;
+    }
+
+    fn name(&self) -> &'static str {
+        "[buffer::WriteWaitable]"
     }
 }
 

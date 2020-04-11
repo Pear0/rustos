@@ -68,33 +68,33 @@ impl MiniUart {
     ///
     /// By default, reads will never time out. To set a read timeout, use
     /// `set_read_timeout()`.
-    pub fn new_options(high_baud: bool) -> MiniUart {
+    pub fn new_opt_init(do_init: bool) -> MiniUart {
         let registers = unsafe {
             // Enable the mini UART as an auxiliary device.
-            (*AUX_ENABLES).or_mask(1);
             &mut *(MU_REG_BASE as *mut Registers)
         };
 
-        // interrupt::Controller::new().enable(Interrupt::Uart);
+        if do_init {
+            unsafe { (*AUX_ENABLES).or_mask(1); }
 
-        // ref: https://github.com/bztsrc/raspi3-tutorial/blob/master/03_uart1/uart.c
+            // interrupt::Controller::new().enable(Interrupt::Uart);
 
-        registers.CNTL_REG.write(0);
-        registers.LCR_REG.write(0b11); // 8 bit mode
+            // ref: https://github.com/bztsrc/raspi3-tutorial/blob/master/03_uart1/uart.c
+
+            registers.CNTL_REG.write(0);
+            registers.LCR_REG.write(0b11); // 8 bit mode
 //        registers.MCR_REG.write(0);
 //         registers.IER_REG.write(0b1111_1111); // receive interrupts / no transmit
 
 //        registers.IIR_REG.write(0xc6); // disable interrupts
-        if high_baud {
-            registers.BAUD_REG.write(33); // 921600 baud
-        } else {
+
             registers.BAUD_REG.write(270); // 151200 baud
+
+            Gpio::new(14).into_alt(Function::Alt5);
+            Gpio::new(15).into_alt(Function::Alt5);
+
+            registers.CNTL_REG.write(0b11); //enable receiver / transmitter
         }
-
-        Gpio::new(14).into_alt(Function::Alt5);
-        Gpio::new(15).into_alt(Function::Alt5);
-
-        registers.CNTL_REG.write(0b11); //enable receiver / transmitter
 
         MiniUart {
             registers,
@@ -103,7 +103,7 @@ impl MiniUart {
     }
 
     pub fn new() -> Self {
-        Self::new_options(false)
+        Self::new_opt_init(true)
     }
 
     /// Set the read timeout to `t` duration.

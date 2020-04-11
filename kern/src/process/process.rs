@@ -22,6 +22,7 @@ use crate::vm::*;
 use crate::sync::Completion;
 use shim::{io, ioerr};
 use crate::pigrate::bundle::{ProcessBundle, MemoryBundle};
+use crate::process::fd::FileDescriptor;
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
@@ -84,6 +85,8 @@ pub struct Process {
 
     pub request_suspend: bool,
 
+    pub file_descriptors: Vec<FileDescriptor>,
+
     pub dead_completions: Vec<Arc<Completion<Id>>>,
 
 }
@@ -109,6 +112,7 @@ impl Process {
             affinity: CoreAffinity::all(),
             task_switches: 0,
             request_suspend: false,
+            file_descriptors: Vec::new(),
             dead_completions: Vec::new(),
         })
     }

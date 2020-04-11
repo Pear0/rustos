@@ -11,7 +11,7 @@ use modular_bitfield::prelude::*;
 use pi::timer;
 use pi::types::{BigU16, BigU32};
 
-use crate::io::{ConsoleSync, Global, ReadWrapper, SyncRead, SyncWrite};
+use crate::iosync::{ConsoleSync, Global, ReadWrapper, SyncRead, SyncWrite};
 use crate::mutex::Mutex;
 use crate::net::{encode_struct, ipv4, NetErrorKind, NetResult, try_parse_struct};
 use crate::net::buffer::BufferHandle;
@@ -21,6 +21,8 @@ use crate::process::Process;
 use crate::shell;
 use core::ops::AddAssign;
 use core::fmt;
+use crate::fs::handle::{Source, Sink};
+use shim::io;
 
 // Works with aliases - just for the showcase.
 type Vitamin = B12;
@@ -265,8 +267,8 @@ struct TcpConnection {
     // what we've acknowledged. the next sequence number we expect from remote
     remote_acked_number: u32, // the last ack number we know remote has
 
-    recv: Arc<dyn SyncWrite>,
-    send: Arc<dyn SyncRead>,
+    recv: Sink,
+    send: Source,
 
     // packets that failed to send for whatever reason. link down, whatever
     unsent_packets: VecDeque<PendingPacket>,
@@ -280,7 +282,7 @@ pub static SHELL_READ: Global<BufferHandle> = Global::new(|| BufferHandle::new()
 pub static SHELL_WRITE: Global<BufferHandle> = Global::new(|| BufferHandle::new());
 
 impl TcpConnection {
-    pub fn new(local: Socket, remote: Socket, state: State) -> Self {
+    pub fn new(local: Socket, remote: Socket, state: State, recv: Sink, send: Source) -> Self {
         Self {
             local,
             remote,
@@ -288,8 +290,8 @@ impl TcpConnection {
             seq_number: SeqRing::new(0),
             acked_number: SeqRing::new(0),
             remote_acked_number: 0,
-            recv: Arc::new(SHELL_READ.get()),
-            send: Arc::new(SHELL_WRITE.get()),
+            recv,
+            send,
             unsent_packets: VecDeque::new(),
             unacked_packets: Vec::new(),
         }
@@ -409,7 +411,7 @@ impl TcpConnection {
 
                 if frame.payload.len() != 0 {
 
-                    use crate::io::SyncWrite;
+                    use crate::iosync::SyncWrite;
                     match self.recv.write(frame.payload.as_ref()) {
                         Err(e) => {
                             // ack no bytes
@@ -471,7 +473,7 @@ impl TcpConnection {
     }
 
     fn send_some_data(&mut self, manager: &ConnectionManager) -> bool {
-        use crate::io::SyncRead;
+        use crate::iosync::SyncRead;
         let mut buf = [0u8; 500];
 
         match self.send.read(&mut buf) {
@@ -556,10 +558,12 @@ impl TcpConnection {
     }
 }
 
+type ConnectionAcceptor = Box<dyn FnMut(Sink, Source) -> io::Result<()> + Send>;
+
 struct ConnectionManagerImpl {
     pub ip: Arc<ipv4::Interface>,
     connections: Option<HashMap<ConnectionKey, TcpConnection>>,
-    pub listening_ports: HashSet<Socket>,
+    pub listening_ports: HashMap<Socket, ConnectionAcceptor>,
 }
 
 pub struct ConnectionManager {
@@ -572,7 +576,7 @@ impl ConnectionManager {
             inner: mutex_new!(ConnectionManagerImpl {
                 ip,
                 connections: Some(HashMap::new()),
-                listening_ports: HashSet::new(),
+                listening_ports: HashMap::new(),
             })
         }
     }
@@ -591,8 +595,8 @@ impl ConnectionManager {
         events
     }
 
-    pub fn add_listening_port(&self, socket: Socket) {
-        m_lock!(self.inner).listening_ports.insert(socket);
+    pub fn add_listening_port(&self, socket: Socket, func: ConnectionAcceptor) {
+        m_lock!(self.inner).listening_ports.insert(socket, func);
     }
 
     pub fn on_receive_packet(&self, ip_header: &ipv4::IPv4Header, frame: &TcpFrame) {
@@ -603,12 +607,28 @@ impl ConnectionManager {
         {
             let mut lock = m_lock!(self.inner);
             if !lock.connections.as_mut().unwrap().contains_key(&key) {
-                if !lock.listening_ports.contains(&local_sock) {
-                    kprintln!("Dropping unknown packet to {:?}", local_sock);
-                    return;
-                }
+                match lock.listening_ports.get_mut(&local_sock) {
+                    Some(func) => {
 
-                lock.connections.as_mut().unwrap().insert(key.clone(), TcpConnection::new(local_sock, remote_sock, State::Listen));
+                        let outgoing = BufferHandle::new();
+                        let incoming = BufferHandle::new();
+
+                        if let Err(e) = func(Sink::Buffer(outgoing.clone()), Source::Buffer(incoming.clone())) {
+                            kprintln!("::accept() error: {:?} for socket: {:?}", e, local_sock);
+                            return;
+                        }
+
+                        let conn = TcpConnection::new(
+                            local_sock, remote_sock, State::Listen,
+                            Sink::Buffer(incoming), Source::Buffer(outgoing));
+
+                        lock.connections.as_mut().unwrap().insert(key.clone(), conn);
+                    }
+                    None => {
+                        kprintln!("Dropping unknown packet to {:?}", local_sock);
+                        return;
+                    }
+                }
             }
         }
 
