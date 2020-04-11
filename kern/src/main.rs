@@ -21,6 +21,8 @@ extern crate modular_bitfield;
 extern crate serde;
 extern crate serde_cbor;
 
+extern crate pigrate_core as pigrate;
+
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -65,7 +67,6 @@ pub mod iosync;
 mod logger;
 pub mod mbox;
 pub mod net;
-pub mod pigrate;
 pub mod shell;
 pub mod smp;
 pub mod sync;
@@ -90,7 +91,7 @@ fn init_jtag() {
     }
 }
 
-fn network_thread() {
+fn network_thread() -> ! {
 
     // let serial = crate::mbox::with_mbox(|mbox| mbox.serial_number()).expect("could not get serial number");
     //
@@ -133,7 +134,7 @@ fn network_thread() {
     }
 }
 
-fn my_net_thread2() {
+fn my_net_thread2() -> ! {
     let pid: Id = kernel_api::syscall::getpid();
 
     let (source, sink) = SCHEDULER.crit_process(pid, |f| {
@@ -142,6 +143,8 @@ fn my_net_thread2() {
     });
 
     shell::Shell::new("% ", SourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
+
+    kernel_api::syscall::exit();
 }
 
 static CORE_REGISTER: Mutex<Option<Vec<u64>>> = mutex_new!(None);
@@ -158,7 +161,7 @@ fn core_bootstrap_2() -> ! {
     loop {}
 }
 
-fn my_thread() {
+fn my_thread() -> ! {
     kprintln!("initializing other threads");
     // CORE_REGISTER.lock().replace(Vec::new());
 
@@ -166,16 +169,20 @@ fn my_thread() {
 
 
     shell::shell("$ ");
+
+    kernel_api::syscall::exit();
 }
 
-fn my_net_thread() {
+fn my_net_thread() -> ! {
     let write: Arc<dyn SyncWrite> = Arc::new(SHELL_WRITE.get());
     let read: Arc<dyn SyncRead> = Arc::new(SHELL_READ.get());
 
     shell::Shell::new("$ ", ReadWrapper::new(read), WriteWrapper::new(write)).shell_loop();
+
+    kernel_api::syscall::exit();
 }
 
-fn led_blink() {
+fn led_blink() -> ! {
     let mut g = gpio::Gpio::new(29).into_output();
     loop {
         g.set();

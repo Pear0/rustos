@@ -1,7 +1,6 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::traps::TrapFrame;
 use hashbrown::HashMap;
 
 #[derive(Clone, Default, Serialize, Deserialize)]

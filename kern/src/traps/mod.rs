@@ -11,6 +11,7 @@ pub use self::frame::TrapFrame;
 use self::syndrome::Fault;
 use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
+use crate::process::State;
 
 mod frame;
 pub mod syndrome;
@@ -149,7 +150,15 @@ pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
                     debug_shell(tf);
                 }
                 s => {
-                    kprintln!("{:?} {:?} @ {:x}", info, s, tf.elr);
+                    kprintln!("{:?} {:?} (raw=0x{:x}) @ {:x}", info, s, esr, tf.elr);
+
+                    SCHEDULER.crit_process(tf.tpidr, |proc| {
+                        if let Some(proc) = proc {
+                            proc.request_suspend = true;
+                        }
+                    });
+
+                    SCHEDULER.switch(State::Suspended, tf);
                 }
             }
         }

@@ -136,6 +136,7 @@ dependencies = [
  "modular-bitfield 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mountfs 0.1.0",
  "pi 0.1.0",
+ "pigrate-core 0.1.0",
  "serde 1.0.106 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_cbor 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "shim 0.1.0",
@@ -213,6 +214,15 @@ dependencies = [
  "aarch64 0.1.0",
  "shim 0.1.0",
  "volatile 0.1.0",
+]
+
+[[package]]
+name = "pigrate-core"
+version = "0.1.0"
+dependencies = [
+ "fat32 0.1.0",
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.106 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

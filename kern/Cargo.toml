@@ -21,6 +21,7 @@ fat32 = { path = "../lib/fat32/", features = ["no_std"] }
 mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
 aarch64 = { path = "../lib/aarch64/" }
 kernel_api = { path = "../lib/kernel_api" }
+pigrate-core = { path = "../lib/pigrate-core" }
 compression = { version = "0.1", default-features = false, features = ["gzip", "bzip2", "deflate", "lzss"] }
 hex = { version = "0.4.2", default-features = false }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }

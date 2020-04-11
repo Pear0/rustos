@@ -117,7 +117,7 @@ impl Process {
         })
     }
 
-    pub fn kernel_process_old(name: String, f: fn()) -> OsResult<Process> {
+    pub fn kernel_process_old(name: String, f: fn() -> !) -> OsResult<Process> {
         use crate::VMM;
 
         let mut p = Process::new(name)?;
