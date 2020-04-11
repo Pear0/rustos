@@ -10,14 +10,19 @@ use hashbrown::HashMap;
 use aarch64::MPIDR_EL1;
 use fat32::traits::{Dir, Entry, File, Metadata};
 use fat32::traits::FileSystem;
+use fat32::vfat::{DynVFatHandle, DynWrapper, VFat};
+use mountfs::MetaFileSystem;
+use mountfs::mount::mfs;
 use pi::interrupt::{CoreInterrupt, Interrupt};
 use shim::io;
 use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, NET, SCHEDULER, timer, ALLOCATOR};
+use crate::{ALLOCATOR, IRQ, NET, SCHEDULER, timer};
+use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
+use crate::fs::sd;
 use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
 use crate::process::Process;
@@ -25,11 +30,7 @@ use crate::shell::command::{Command, CommandBuilder};
 use crate::smp;
 
 use super::shell::Shell;
-use crate::allocator::AllocStats;
-use crate::fs::sd;
-use fat32::vfat::{VFat, DynVFatHandle, DynWrapper};
-use mountfs::mount::mfs;
-use mountfs::MetaFileSystem;
+use crate::pigrate::bundle::ProcessBundle;
 
 fn describe_ls_entry<W: io::Write, T: mfs::FileInfo>(writer: &mut W, entry: T, show_all: bool) {
     if !show_all && (entry.metadata().hidden == Some(true) || entry.name() == "." || entry.name() == "..") {
@@ -66,8 +67,15 @@ struct Mascot {
     year_of_birth: u32,
 }
 
-pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
+#[derive(Debug, Serialize, Deserialize)]
+struct Mascot2 {
+    name: String,
+    species: String,
+    year_of_birth: u32,
+    month: u32,
+}
 
+pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
     sh.command()
         .name("serde")
         .help("")
@@ -81,25 +89,23 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             let serialized = serde_cbor::ser::to_vec(&ferris);
             match serialized {
                 Ok(serialized) => {
+                    info!("encoded: {}", hex::encode(serialized.as_slice()));
 
-                    let tux: Result<Mascot, _> = serde_cbor::de::from_slice(serialized.as_ref());
+                    let tux: Result<Mascot2, _> = serde_cbor::de::from_slice(serialized.as_ref());
 
                     match tux {
                         Ok(tux) => {
                             info!("Decoded: {:?}", tux);
-                        },
+                        }
                         Err(e) => {
                             writeln!(sh.writer, "error: {}", e);
                         }
                     }
-
-
-                },
+                }
                 Err(e) => {
                     writeln!(sh.writer, "error: {}", e);
                 }
             }
-
         })
         .build();
 
@@ -141,6 +147,41 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
+        .name("runstring")
+        .help("run a program from a save string")
+        .func_result(|sh, _cmd| {
+            writeln!(sh.writer, "Enter a save string:");
+
+            let mut save: Vec<u8> = Vec::new();
+            sh.read_line(&mut save);
+
+            writeln!(sh.writer, "Save string len: {}", save.len());
+
+            let decoded = hex::decode(save)?;
+
+            use compression::prelude::*;
+            let comp: Vec<_> = decoded.iter().cloned().decode(&mut GZipDecoder::new()).collect::<Result<Vec<_>, _>>()?;
+
+            writeln!(sh.writer, "Uncompressed len: {}", comp.len());
+
+            let bundle: ProcessBundle = serde_cbor::de::from_slice(comp.as_slice())?;
+
+            writeln!(sh.writer, "unbundled process: {}", &bundle.name);
+
+            let proc = Process::from_bundle(&bundle)?;
+
+            proc.dump(&mut sh.writer);
+
+            writeln!(sh.writer, "Launching process...");
+
+            let res = SCHEDULER.add(proc);
+            writeln!(sh.writer, "pid: {:?}", res);
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
         .name("lsd")
         .help("")
         .func(|sh, cmd| {
@@ -166,7 +207,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                     match &entry {
                         mfs::Entry::File(_) => describe_ls_entry(&mut sh.writer, entry, true),
                         mfs::Entry::Dir(f) => {
-
                             match f.entries() {
                                 Ok(entries) => {
                                     for entry in entries {
@@ -177,7 +217,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                                     writeln!(sh.writer, "error: {}", e);
                                 }
                             }
-
                         }
                     }
                 }
@@ -185,7 +224,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                     writeln!(sh.writer, "error: {}", e);
                 }
             }
-
         })
         .build();
 
@@ -197,7 +235,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             let width = sh.commands.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
 
             for (k, cmd) in sh.commands.iter() {
-
                 let help = cmd.as_ref()
                     .map(|c| c.help)
                     .filter(|c| !c.is_empty());
@@ -207,7 +244,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 } else {
                     writeln!(&mut sh.writer, "{:width$}", *k, width = width);
                 }
-
             }
         })
         .build();
@@ -219,7 +255,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             .help(help)
             .func_result(move |sh, cmd| {
                 if cmd.args.len() == 2 {
-
                     let addr: u64 = cmd.args[1].parse()?;
                     SCHEDULER.crit_process(addr, |p| {
                         match p {
@@ -230,7 +265,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                             None => None
                         }
                     }).ok_or("could not find process")?;
-
                 } else {
                     writeln!(sh.writer, "usage: requires process id");
                 }
@@ -239,6 +273,5 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             })
             .build();
     }
-
 }
 

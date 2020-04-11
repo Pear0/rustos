@@ -97,9 +97,9 @@ impl NetHandler {
     pub unsafe fn new(usb: usb::Usb) -> Option<NetHandler> {
         let usb = Arc::new(usb);
 
-        if !usb.ethernet_available() {
+        while !usb.ethernet_available() {
             info!("ethernet not available");
-            return None;
+            pi::timer::spin_sleep(Duration::from_millis(2000));
         }
 
         while !usb.ethernet_link_up() {

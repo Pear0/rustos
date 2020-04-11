@@ -20,7 +20,7 @@ use crate::{IRQ, NET, SCHEDULER, timer};
 use crate::FILESYSTEM;
 use crate::io::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
-use crate::process::Process;
+use crate::process::{Process, Id};
 use crate::shell::command::{Command, CommandBuilder};
 use crate::smp;
 
@@ -125,7 +125,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
         match command.path() {
             "cat" => {
                 if command.args.len() < 2 {
-                    writeln!(self.writer, "expected: cat <path>");
+                    writeln!(self.writer, "expected: cat <path>")?;
                 } else {
                     for arg in command.args[1..].iter() {
                         match self.open_file(arg) {
@@ -133,11 +133,11 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                                 if let Some(mut f) = e.into_file() {
                                     io::copy(&mut f, &mut self.writer)?;
                                 } else {
-                                    writeln!(self.writer, "error: not a file");
+                                    writeln!(self.writer, "error: not a file")?;
                                 }
                             }
                             Err(e) => {
-                                writeln!(self.writer, "error: {}", e);
+                                writeln!(self.writer, "error: {}", e)?;
                             }
                         }
                     }
@@ -145,7 +145,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
             }
             "cd" => {
                 if command.args.len() < 2 {
-                    writeln!(self.writer, "expected: cd <path>");
+                    writeln!(self.writer, "expected: cd <path>")?;
                 } else {
                     for component in Path::new(command.args[1]).components() {
                         match component {
@@ -163,7 +163,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                                 if let fat32::vfat::Entry::Dir(d) = FILESYSTEM.open(new.to_str().unwrap())? {
                                     self.cwd.push(d.name);
                                 } else {
-                                    writeln!(self.writer, "error: invalid path");
+                                    writeln!(self.writer, "error: invalid path")?;
                                     return Ok(());
                                 }
                             }
@@ -202,19 +202,19 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 }
             }
             "uptime" => {
-                writeln!(self.writer, "Uptime: {:?}", timer::current_time());
+                writeln!(self.writer, "Uptime: {:?}", timer::current_time())?;
             }
             "reboot" => {
                 use pi::pm::reset;
 
-                writeln!(self.writer, "Resetting");
+                writeln!(self.writer, "Resetting")?;
                 unsafe { reset(); }
             }
             "pi-info" => {
                 use crate::mbox::with_mbox;
 
                 use aarch64::SPSR_EL1;
-                writeln!(self.writer, "DAIF: {:04b}", unsafe { SPSR_EL1.get_value(SPSR_EL1::D | SPSR_EL1::A | SPSR_EL1::I | SPSR_EL1::F) });
+                writeln!(self.writer, "DAIF: {:04b}", unsafe { SPSR_EL1.get_value(SPSR_EL1::D | SPSR_EL1::A | SPSR_EL1::I | SPSR_EL1::F) })?;
 
 
                 with_mbox(|mbox| {
@@ -225,7 +225,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 });
 
                 let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
-                writeln!(self.writer, "cpu attrs: {:?}", attrs);
+                writeln!(self.writer, "cpu attrs: {:?}", attrs)?;
             }
             "arp" => {
                 if command.args.len() == 2 {
@@ -233,23 +233,23 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                         Ok(addr) => {
                             match NET.critical(|n| n.arp_request(addr)) {
                                 Ok(mac) => {
-                                    writeln!(self.writer, "existing entry at {}", mac);
+                                    writeln!(self.writer, "existing entry at {}", mac)?;
                                 }
                                 Err(e) => {
-                                    writeln!(self.writer, "error: {:?}", e);
+                                    writeln!(self.writer, "error: {:?}", e)?;
                                 }
                             }
                         }
                         Err(e) => {
-                            writeln!(self.writer, "error: {}", e);
+                            writeln!(self.writer, "error: {}", e)?;
                         }
                     }
                 } else {
                     let arp_table = NET.critical(|n| n.arp.copy_table());
 
-                    writeln!(self.writer, "ARP Table:");
+                    writeln!(self.writer, "ARP Table:")?;
                     for entry in arp_table.iter() {
-                        writeln!(self.writer, "{:04x} {} -> {}", (entry.0).0, (entry.0).1, entry.1);
+                        writeln!(self.writer, "{:04x} {} -> {}", (entry.0).0, (entry.0).1, entry.1)?;
                     }
                 }
             }
@@ -267,15 +267,15 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                     let ms: u32 = match command.args[1].parse() {
                         Ok(ms) => ms,
                         Err(e) => {
-                            writeln!(self.writer, "error: {}", e);
+                            writeln!(self.writer, "error: {}", e)?;
                             return Ok(());
                         }
                     };
 
                     let res = kernel_api::syscall::sleep(Duration::from_millis(ms as u64));
-                    writeln!(self.writer, "-> {:?}", res);
+                    writeln!(self.writer, "-> {:?}", res)?;
                 } else {
-                    writeln!(self.writer, "usage: sleep <ms>");
+                    writeln!(self.writer, "usage: sleep <ms>")?;
                 }
             }
             "run" => {
@@ -287,17 +287,17 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                             if let Some(id) = id {
                                 kernel_api::syscall::waitpid(id);
                             } else {
-                                writeln!(self.writer, "scheduler: failed to start process");
+                                writeln!(self.writer, "scheduler: failed to start process")?;
                             }
 
                         }
                         Err(e) => {
-                            writeln!(self.writer, "error: {:?}", e);
+                            writeln!(self.writer, "error: {:?}", e)?;
                             return Ok(());
                         }
                     }
                 } else {
-                    writeln!(self.writer, "usage: run <program>");
+                    writeln!(self.writer, "usage: run <program>")?;
                 }
             }
             "runb" => {
@@ -307,21 +307,80 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                             SCHEDULER.add(proc);
                         }
                         Err(e) => {
-                            writeln!(self.writer, "error: {:?}", e);
+                            writeln!(self.writer, "error: {:?}", e)?;
                             return Ok(());
                         }
                     }
                 } else {
-                    writeln!(self.writer, "usage: run <program>");
+                    writeln!(self.writer, "usage: run <program>")?;
                 }
             }
             "procs" => {
-                let mut snaps = Vec::new();
-                SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
 
-                for snap in snaps.iter() {
-                    writeln!(self.writer, "{:?}", snap);
+                if command.args.len() == 2 {
+
+                    match command.args[1].parse() {
+                        Ok(id) => {
+                            SCHEDULER.crit_process(id, |proc| {
+                                match proc {
+                                    Some(proc) => {
+                                        proc.dump(&mut self.writer);
+
+                                        match proc.to_bundle() {
+                                            Ok(bundle) => {
+
+                                                match serde_cbor::ser::to_vec(&bundle) {
+                                                    Ok(bundle) => {
+
+                                                        writeln!(self.writer, "Serialized bundle size: {}", bundle.len());
+
+                                                        use compression::prelude::*;
+
+                                                        let comp: Result<Vec<_>, _> = bundle.iter().cloned().encode(&mut GZipEncoder::new(), Action::Finish).collect();
+
+                                                        match comp {
+                                                            Ok(comp) => {
+                                                                writeln!(self.writer, "Compressed size: {}", comp.len());
+                                                                writeln!(self.writer, "hex: {}", hex::encode(comp.as_slice()));
+                                                            }
+                                                            Err(e) => {
+                                                                writeln!(self.writer, "compression error: {:?}", e);
+                                                            }
+                                                        }
+
+                                                    }
+                                                    Err(e) => {
+                                                        writeln!(self.writer, "serialization error: {:?}", e);
+                                                    }
+                                                }
+
+                                            }
+                                            Err(e) => {
+                                                writeln!(self.writer, "bundle error: {:?}", e);
+                                            }
+                                        }
+
+                                    }
+                                    None => {
+                                        writeln!(self.writer, "no process found for id");
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            writeln!(self.writer, "error: {:?}", e)?;
+                        }
+                    }
+
+                } else {
+                    let mut snaps = Vec::new();
+                    SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+
+                    for snap in snaps.iter() {
+                        writeln!(self.writer, "{:?}", snap)?;
+                    }
                 }
+
             }
             "current-el" => {
                 let el = unsafe { aarch64::current_el() };
@@ -381,6 +440,11 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                         writeln!(self.writer);
                         break 'line_loop;
                     }
+                    b'\x12' => { // Ctrl-R  -> trigger reset
+                        use pi::pm::reset;
+                        writeln!(self.writer, "Resetting");
+                        unsafe { reset(); }
+                    }
                     8u8 | 127u8 => {
                         if line_buf.len() > 0 {
                             self.backspace();
@@ -417,7 +481,39 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
         }
     }
 
-    fn bell(&mut self) {
+    pub fn read_line(&mut self, line: &mut Vec<u8>) -> io::Result<usize> {
+        let mut size = 0;
+
+        'line_loop: loop {
+            match self.read_byte() {
+                b'\r' | b'\n' => {
+                    writeln!(self.writer);
+                    break 'line_loop;
+                }
+                8u8 | 127u8 => {
+                    if size > 0 {
+                        self.backspace();
+                        line.pop();
+                        size -= 1;
+                    } else {
+                        self.bell();
+                    }
+                }
+                // if we are in the first or fourth ASCII block and
+                // haven't already handled it, treat this as invalid.
+                byte if byte < 0x20 || byte >= 0x80 => self.bell(),
+                byte => {
+                    line.push(byte);
+                    size += 1;
+                    self.writer.write(core::slice::from_ref(&byte));
+                }
+            }
+        }
+
+        Ok(size)
+    }
+
+    pub fn bell(&mut self) {
         write!(self.writer, "\x07");
     }
 

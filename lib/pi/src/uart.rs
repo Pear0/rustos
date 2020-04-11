@@ -68,7 +68,7 @@ impl MiniUart {
     ///
     /// By default, reads will never time out. To set a read timeout, use
     /// `set_read_timeout()`.
-    pub fn new() -> MiniUart {
+    pub fn new_options(high_baud: bool) -> MiniUart {
         let registers = unsafe {
             // Enable the mini UART as an auxiliary device.
             (*AUX_ENABLES).or_mask(1);
@@ -85,7 +85,11 @@ impl MiniUart {
 //         registers.IER_REG.write(0b1111_1111); // receive interrupts / no transmit
 
 //        registers.IIR_REG.write(0xc6); // disable interrupts
-        registers.BAUD_REG.write(270); // 151200 baud
+        if high_baud {
+            registers.BAUD_REG.write(33); // 921600 baud
+        } else {
+            registers.BAUD_REG.write(270); // 151200 baud
+        }
 
         Gpio::new(14).into_alt(Function::Alt5);
         Gpio::new(15).into_alt(Function::Alt5);
@@ -96,6 +100,10 @@ impl MiniUart {
             registers,
             timeout: None,
         }
+    }
+
+    pub fn new() -> Self {
+        Self::new_options(false)
     }
 
     /// Set the read timeout to `t` duration.

@@ -11,12 +11,40 @@ use core::num::ParseIntError;
 #[derive(Debug)]
 pub enum CommandError {
     ParseInt(core::num::ParseIntError),
+    HexError(hex::FromHexError),
+    SerdeCbor(serde_cbor::Error),
+    Compression(compression::prelude::CompressionError),
+    Os(kernel_api::OsError),
     Str(&'static str),
 }
 
 impl From<core::num::ParseIntError> for CommandError {
     fn from(e: ParseIntError) -> Self {
         CommandError::ParseInt(e)
+    }
+}
+
+impl From<hex::FromHexError> for CommandError {
+    fn from(e: hex::FromHexError) -> Self {
+        CommandError::HexError(e)
+    }
+}
+
+impl From<serde_cbor::Error> for CommandError {
+    fn from(e: serde_cbor::Error) -> Self {
+        CommandError::SerdeCbor(e)
+    }
+}
+
+impl From<compression::prelude::CompressionError> for CommandError {
+    fn from(e: compression::prelude::CompressionError) -> Self {
+        CommandError::Compression(e)
+    }
+}
+
+impl From<kernel_api::OsError> for CommandError {
+    fn from(e: kernel_api::OsError) -> Self {
+        CommandError::Os(e)
     }
 }
 

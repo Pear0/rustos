@@ -28,3 +28,15 @@ impl<T> Completion<T> {
     }
 }
 
+
+pub trait Waitable : Sync + Send {
+
+    fn done_waiting(&self) -> bool;
+
+    fn name(&self) -> &'static str {
+        "[unknown waitable]"
+    }
+
+}
+
+

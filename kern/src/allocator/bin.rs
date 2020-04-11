@@ -256,7 +256,7 @@ impl AllocStats for Allocator {
 
         writeln!(w, "allocated: {}", allocated)?;
         writeln!(w, "total: {}", total)?;
-        writeln!(w, "percent: {}", 100.0 * (allocated as f64) / (total as f64))?;
+        writeln!(w, "percent: {}%", 100.0 * (allocated as f64) / (total as f64))?;
 
         Ok(())
     }

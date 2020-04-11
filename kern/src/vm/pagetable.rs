@@ -29,7 +29,7 @@ impl Page {
     }
 }
 
-const l2_pages: usize = 3;
+const L2_PAGES: usize = 3;
 
 #[repr(C)]
 #[repr(align(65536))]
@@ -101,7 +101,7 @@ impl L3PageTable {
 #[repr(align(65536))]
 pub struct PageTable {
     pub l2: L2PageTable,
-    pub l3: [Box<L3PageTable>; l2_pages],
+    pub l3: [Box<L3PageTable>; L2_PAGES],
 }
 
 impl PageTable {
@@ -149,7 +149,7 @@ impl PageTable {
 
         let l2 = addr & (0b1_1111_1111_1111); // 13 bits
 
-        if l2 >= l2_pages as u64 {
+        if l2 >= L2_PAGES as u64 {
             panic!("Address: {:x} -> L2 invalid: {:x}", va.as_u64(), l2);
         }
 
@@ -186,10 +186,10 @@ impl PageTable {
 
 impl<'a> IntoIterator for &'a PageTable {
     type Item = &'a L3Entry;
-    type IntoIter = Chain<Iter<'a, L3Entry>, Iter<'a, L3Entry>>;
+    type IntoIter = Chain<Chain<Iter<'a, L3Entry>, Iter<'a, L3Entry>>, Iter<'a, L3Entry>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.l3[0].entries.iter().chain(self.l3[1].entries.iter())
+        self.l3[0].entries.iter().chain(self.l3[1].entries.iter()).chain(self.l3[2].entries.iter())
     }
 }
 
@@ -285,6 +285,19 @@ impl UserPageTable {
     /// `USER_RW` permission.
     pub fn new() -> UserPageTable {
         UserPageTable(PageTable::new(USER_RW))
+    }
+
+    pub fn iter_mapped_pages<'a>(&'a self) -> impl Iterator<Item=(VirtualAddr, PhysicalAddr)> + 'a {
+        self.l3.iter()
+            .flat_map(|l3| l3.entries.iter())
+            .enumerate()
+            .map(|(i, entry)| (VirtualAddr::from(USER_IMG_BASE + i * PAGE_SIZE), entry.get_page_addr()))
+            .filter_map(|(i, e)| {
+                match e {
+                    Some(s) => Some((i, s)),
+                    None => None,
+                }
+            })
     }
 
     /// Allocates a page and set an L3 entry translates given virtual address to the

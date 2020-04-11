@@ -84,9 +84,9 @@ fn main() {
         parity: serial::ParityNone,
         stop_bits: opt.stop_bits,
         flow_control: opt.flow_control,
-    }).unwrap();
+    }).expect("failed to configure");
 
-    SerialDevice::set_timeout(&mut port, Duration::from_secs(opt.timeout)).unwrap();
+    SerialDevice::set_timeout(&mut port, Duration::from_secs(opt.timeout)).expect("failed to set timeout");
 
     for i in 0..1 {
         println!("Sending...");

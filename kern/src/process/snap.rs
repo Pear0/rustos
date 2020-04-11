@@ -15,6 +15,8 @@ pub enum SnapState {
     /// The process is currently dead (ready to be reclaimed).
     Dead,
 
+    WaitingObj,
+
     Suspended,
 }
 
@@ -26,6 +28,7 @@ impl From<&State> for SnapState {
             State::Waiting(_) => Waiting,
             State::Running(ctx) => Running(ctx.core_id),
             State::Dead => Dead,
+            State::WaitingObj(_) => WaitingObj,
             State::Suspended => Suspended
         }
     }
@@ -48,7 +51,7 @@ impl From<&Process> for SnapProcess {
 
         let mut cpu_time = proc.cpu_time;
         if let State::Running(ctx) = &proc.state {
-            cpu_time = pi::timer::current_time() - ctx.scheduled_at;
+            cpu_time += pi::timer::current_time() - ctx.scheduled_at;
         }
 
         SnapProcess {

@@ -408,25 +408,34 @@ impl TcpConnection {
                 // TODO packets arriving out of order. an handling dropped ACKs we've sent.
 
                 if frame.payload.len() != 0 {
-                    // Ack the bytes.
-                    self.acked_number = self.acked_number.add(frame.payload.len() as u32);
-                    let mut flags = Flags::default();
-                    flags.set_ack(true);
-                    self.send_packet(manager, flags, empty_payload());
-
-                    // kprintln!("got packet with data: {:?}", frame.payload.as_ref());
-
-                    // self.raw_send_bytes(manager, frame.payload.as_ref());
 
                     use crate::io::SyncWrite;
                     match self.recv.write(frame.payload.as_ref()) {
                         Err(e) => {
+                            // ack no bytes
+
                             kprintln!("failed to write but acked: {}", e);
                         }
                         Ok(n) if n != frame.payload.len() => {
-                            kprintln!("failed to write but acked {} bytes", frame.payload.len() - n);
+                            kprintln!("trunc'd ack because {} bytes could not be written", frame.payload.len() - n);
+
+                            // Ack only the bytes we were able to write into the buffer
+                            if n != 0 {
+                                self.acked_number = self.acked_number.add(n as u32);
+                                let mut flags = Flags::default();
+                                flags.set_ack(true);
+                                self.send_packet(manager, flags, empty_payload());
+                            }
                         }
-                        _ => {}
+                        _ => {
+
+                            // Ack all the bytes
+                            self.acked_number = self.acked_number.add(frame.payload.len() as u32);
+                            let mut flags = Flags::default();
+                            flags.set_ack(true);
+                            self.send_packet(manager, flags, empty_payload());
+
+                        }
                     };
                 }
 

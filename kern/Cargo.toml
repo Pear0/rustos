@@ -21,10 +21,13 @@ fat32 = { path = "../lib/fat32/", features = ["no_std"] }
 mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
 aarch64 = { path = "../lib/aarch64/" }
 kernel_api = { path = "../lib/kernel_api" }
+compression = { version = "0.1", default-features = false, features = ["gzip", "bzip2", "deflate", "lzss"] }
+hex = { version = "0.4.2", default-features = false }
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 log = { version = "0.4.8", features = [] }
 serde = { version = "1.0.106", default-features = false, features = ["alloc", "derive"] }
 serde_cbor = { version = "0.11.1", default-features = false, features = ["alloc"] }
-hashbrown = "0.6.3"
+hashbrown = { version = "0.6.3", features = ["serde"] }
 modular-bitfield = "0.6.0"
 
 [dev-dependencies]

@@ -3,6 +3,7 @@ use core::fmt;
 
 use crate::process::Process;
 use core::time::Duration;
+use crate::sync::Waitable;
 
 /// Type of a function used to determine if a process is ready to be scheduled
 /// again. The scheduler calls this function when it is the process's turn to
@@ -28,6 +29,10 @@ pub enum State {
     /// The process is currently dead (ready to be reclaimed).
     Dead,
 
+    /// Waiting on a Waitable. This is explicit because it provides much more introspection
+    /// than an arbitrary function.
+    WaitingObj(Box<dyn Waitable>),
+
     /// The process is suspended.
     Suspended,
 }
@@ -39,6 +44,7 @@ impl fmt::Debug for State {
             State::Running(_) => write!(f, "State::Running"),
             State::Waiting(_) => write!(f, "State::Waiting"),
             State::Dead => write!(f, "State::Dead"),
+            State::WaitingObj(_) => write!(f, "State::WaitingObj"),
             State::Suspended => write!(f, "State::Suspended"),
         }
     }

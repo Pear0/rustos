@@ -39,12 +39,9 @@ transmit: build
 	# screen $(TTY_PATH) 115200
 	(stty -f $(TTY_PATH) 115200 >/dev/null | cat $(TTY_PATH) ) 2>/dev/null
 
-transmit_reboot: build
-	@echo "Rebooting..."
-	( stty -f $(TTY_PATH) 115200 & ; sleep 0.1 ; echo "\n\n\n\nreboot\n" > $(TTY_PATH) ) 2>/dev/null
-	sleep 2
-	@echo "+ Transmitting build/$(KERN).bin to $(TTY_PATH)"
-	ttywrite -i build/$(KERN).bin $(TTY_PATH)
+transmit_fast: build
+	@echo "+ Transmitting build/$(KERN).bin to $(TTY_PATH) @ 921600 baud"
+	ttywrite --baud 921600 -i build/$(KERN).bin $(TTY_PATH)
 	# screen $(TTY_PATH) 115200
 	(stty -f $(TTY_PATH) 115200 >/dev/null | cat $(TTY_PATH) ) 2>/dev/null
 

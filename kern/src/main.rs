@@ -60,6 +60,7 @@ pub mod io;
 mod logger;
 pub mod mbox;
 pub mod net;
+pub mod pigrate;
 pub mod shell;
 pub mod smp;
 pub mod sync;

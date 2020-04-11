@@ -9,12 +9,12 @@ extern crate alloc;
 #[cfg(feature = "no_std")]
 mod no_std;
 
-// we don't use no_std::* because intellij-rust cant infer around if properly.
-#[cfg(feature = "no_std")]
+// we don't use no_std::* because intellij-rust cant infer around it properly.
+#[cfg(all(feature = "no_std", feature = "alloc"))]
 pub use self::no_std::ffi;
 #[cfg(feature = "no_std")]
 pub use self::no_std::io;
-#[cfg(feature = "no_std")]
+#[cfg(all(feature = "no_std", feature = "alloc"))]
 pub use self::no_std::path;
 
 #[cfg(not(feature = "no_std"))]

@@ -14,12 +14,14 @@ use aarch64;
 use aarch64::SPSR_EL1;
 use shim::path::Path;
 
-use crate::{FILESYSTEM, smp};
+use crate::{FILESYSTEM, smp, VMM};
 use crate::param::*;
 use crate::process::{Stack, State};
 use crate::traps::TrapFrame;
 use crate::vm::*;
 use crate::sync::Completion;
+use shim::{io, ioerr};
+use crate::pigrate::bundle::{ProcessBundle, MemoryBundle};
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
@@ -181,6 +183,73 @@ impl Process {
         Ok(proc)
     }
 
+    pub fn from_bundle(bundle: &ProcessBundle) -> OsResult<Process> {
+        let mut proc = Process::new(bundle.name.clone())?;
+
+        proc.context.decode_from_bytes(&bundle.frame).map_err(|_| OsError::InvalidArgument)?;
+
+        // set kernel specific values that don't make sense to use from the bundle.
+        proc.context.tpidr = 0; // will get a new process id when scheduled.
+        proc.context.ttbr0 = VMM.get_baddr().as_u64();
+        proc.context.ttbr1 = proc.vmap.get_baddr().as_u64();
+
+        for (raw_va, data) in bundle.memory.generic_pages.iter() {
+            let va = VirtualAddr::from(*raw_va);
+
+            let page = proc.vmap.alloc(va, PagePerm::RW);
+
+            if page.len() != data.len() {
+                return Err(OsError::BadAddress);
+            }
+
+            page.copy_from_slice(data.as_slice());
+        }
+
+        Ok(proc)
+    }
+
+    fn memory_to_bundle(&self) -> io::Result<MemoryBundle> {
+        // State does not impl PartialEq
+        // assert_eq!(self.state, State::Suspended);
+
+        let mut bundle = MemoryBundle::default();
+
+        for (va, pa) in self.vmap.iter_mapped_pages() {
+            let mut page_copy: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
+            page_copy.extend_from_slice(unsafe { core::slice::from_raw_parts(pa.as_ptr(), PAGE_SIZE) });
+            bundle.generic_pages.insert(va.as_u64(), page_copy);
+        }
+
+        Ok(bundle)
+    }
+
+    pub fn to_bundle(&self) -> io::Result<ProcessBundle> {
+        if let State::Suspended = self.state {
+            let mut bundle = ProcessBundle::default();
+            bundle.name.push_str(self.name.as_str());
+            bundle.memory = self.memory_to_bundle()?;
+            bundle.frame.extend_from_slice(self.context.as_bytes());
+
+            Ok(bundle)
+        } else {
+            ioerr!(WouldBlock, "process not suspended")
+        }
+    }
+
+    pub fn dump<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
+        writeln!(w, "Name: {}", self.name);
+
+        writeln!(w, "Frame:");
+        writeln!(w, "{:?}", self.context);
+
+        writeln!(w, "Memory Mapping:");
+        for (va, pa) in self.vmap.iter_mapped_pages() {
+            writeln!(w, "  {:x?} -> {:x?}", va, pa);
+        }
+
+        Ok(())
+    }
+
     /// Returns the highest `VirtualAddr` that is supported by this system.
     pub fn get_max_va() -> VirtualAddr {
         VirtualAddr::from(u64::max_value())
@@ -232,6 +301,16 @@ impl Process {
                 }
             }
         }
+
+        if let State::WaitingObj(obj) = &mut self.state {
+            if obj.done_waiting() {
+                self.state = State::Ready;
+            }
+        }
+
+        // check ready and suspend last. This allows us to go from waiting to Suspended
+        // in one tick via fallthrough.
+
         if let State::Suspended = &self.state {
             if !self.request_suspend {
                 self.state = State::Ready;

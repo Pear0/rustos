@@ -9,6 +9,8 @@ use crate::net::{NetResult, NetErrorKind};
 use crate::io::{SyncWrite, SyncRead};
 use shim::io;
 use shim::io::Error;
+use crate::sync;
+use core::time::Duration;
 
 struct Buffer {
     deque: VecDeque<u8>,
@@ -82,4 +84,19 @@ impl SyncWrite for BufferHandle {
         BufferHandle::write(self, buf).or(ioerr!(WouldBlock, "buffer full"))
     }
 }
+
+impl sync::Waitable for BufferHandle {
+
+    fn done_waiting(&self) -> bool {
+        if let Some(b) = self.0.lock_timeout("BufferHandle::done_waiting", Duration::from_micros(1)) {
+            return !b.deque.is_empty();
+        }
+        return false;
+    }
+
+    fn name(&self) -> &'static str {
+        "[sync::Waitable]"
+    }
+}
+
 
