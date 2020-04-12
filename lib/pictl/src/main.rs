@@ -69,7 +69,7 @@ fn run_program(args: &[String]) {
 fn ping_program(args: &[String]) -> io::Result<()> {
     use std::io::*;
 
-    let mut stream = TcpStream::connect("169.254.78.130:200")?;
+    let mut stream = TcpStream::connect("10.45.52.130:200")?;
 
     {
         let mut encoder = pigrate_core::stream::Encoder::new(&mut stream);

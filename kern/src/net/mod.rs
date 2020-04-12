@@ -110,7 +110,7 @@ impl NetHandler {
         debug!("eth UP");
 
         let mac = get_mac_address()?;
-        let my_ip = ipv4::Address::from(&[169, 254, 78, 130]);
+        let my_ip = ipv4::Address::from(&[10, 45, 52, 130]);
 
         let eth = Arc::new(ether::Interface::new(usb.clone(), mac));
 
@@ -164,7 +164,7 @@ impl NetHandler {
 
         self.eth.register::<ArpPacket>(Box::new(move |eth, _header, arp_req, _| {
 
-            let my_ip = ipv4::Address::from(&[169, 254, 78, 130]);
+            let my_ip = ipv4::Address::from(&[10, 45, 52, 130]);
 
             if arp_req.hw_address_space.get() != arp::HW_ADDR_ETHER
                 || arp_req.protocol_address_space.get() != arp::PROT_ADDR_IP

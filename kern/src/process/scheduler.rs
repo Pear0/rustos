@@ -305,18 +305,23 @@ impl Scheduler {
         match proc {
             None => false,
             Some((idx, proc)) => {
-                if let State::Running(ctx) = &proc.state {
-                    let delta = pi::timer::current_time() - ctx.scheduled_at;
-                    proc.cpu_time += delta;
+
+                if proc.has_request_kill() {
+                    self.kill(tf);
+                } else {
+                    if let State::Running(ctx) = &proc.state {
+                        let delta = pi::timer::current_time() - ctx.scheduled_at;
+                        proc.cpu_time += delta;
+                    }
+
+                    proc.task_switches += 1;
+                    proc.state = new_state;
+                    *(proc.context.borrow_mut()) = *tf;
+
+                    // something is very bad if the entry we found is no longer here.
+                    let owned = self.processes.remove(idx).unwrap();
+                    self.processes.push_back(owned);
                 }
-
-                proc.task_switches += 1;
-                proc.state = new_state;
-                *(proc.context.borrow_mut()) = *tf;
-
-                // something is very bad if the entry we found is no longer here.
-                let owned = self.processes.remove(idx).unwrap();
-                self.processes.push_back(owned);
 
                 true
             }

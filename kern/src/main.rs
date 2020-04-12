@@ -113,7 +113,7 @@ fn network_thread() -> ! {
 
     NET.critical(|net| {
 
-        let my_ip = ipv4::Address::from(&[169, 254, 78, 130]);
+        let my_ip = ipv4::Address::from(&[10, 45, 52, 130]);
 
         net.tcp.add_listening_port((my_ip, 100), Box::new(|sink, source| {
 

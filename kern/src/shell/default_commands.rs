@@ -25,13 +25,15 @@ use crate::FILESYSTEM;
 use crate::fs::sd;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
+use crate::pigrate::bundle::ProcessBundle;
+use crate::pigrate_server::{pigrate_server, register_pigrate};
 use crate::process::Process;
 use crate::shell::command::{Command, CommandBuilder};
 use crate::smp;
 
 use super::shell::Shell;
-use crate::pigrate::bundle::ProcessBundle;
-use crate::pigrate_server::{pigrate_server, register_pigrate};
+
+mod net;
 
 fn describe_ls_entry<W: io::Write, T: mfs::FileInfo>(writer: &mut W, entry: T, show_all: bool) {
     if !show_all && (entry.metadata().hidden == Some(true) || entry.name() == "." || entry.name() == "..") {
@@ -229,6 +231,12 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
+        .name("net")
+        .help("network stack utilities")
+        .func_result(|sh, cmd| net::NetCmd::process(sh, cmd))
+        .build();
+
+    sh.command()
         .name("help")
         .func(|sh, _cmd| {
             writeln!(&mut sh.writer, "Commands:");
@@ -250,11 +258,32 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
+        .name("kill")
+        .func_result(|sh, cmd| {
+            if cmd.args.len() < 2 {
+                writeln!(sh.writer, "usage: requires process id");
+                return Ok(());
+            }
+
+            let addr: u64 = cmd.args[1].parse()?;
+            SCHEDULER.crit_process(addr, |p| {
+                match p {
+                    Some(p) => {
+                        p.request_kill();
+                        Some(())
+                    }
+                    None => None
+                }
+            }).ok_or("could not find process")?;
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
         .name("pigrate")
         .func(|sh, _cmd| {
-            
             register_pigrate();
-            
         })
         .build();
 

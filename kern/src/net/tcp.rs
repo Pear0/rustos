@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::slice::from_mut;
@@ -20,7 +21,7 @@ use crate::net::util::ChecksumOnesComplement;
 use crate::process::Process;
 use crate::shell;
 use core::ops::AddAssign;
-use core::fmt;
+use core::fmt::{self, Write};
 use crate::fs::handle::{Source, Sink};
 use shim::io;
 
@@ -638,5 +639,27 @@ impl ConnectionManager {
             kprintln!("Connection {:?} killed", key);
         }
     }
+
+    pub fn print_info(&self) -> String {
+        let mut result = String::new();
+
+        let lock = m_lock!(self.inner);
+
+        writeln!(result, "Listening Ports:").unwrap();
+
+        for (socket, _) in lock.listening_ports.iter() {
+            writeln!(result, "  {}:{}", socket.0, socket.1).unwrap();
+        }
+
+        writeln!(result, "\nConnections:").unwrap();
+
+        for (_, conn) in lock.connections.as_ref().unwrap().iter(){
+            writeln!(result, "  {}:{} -> {}:{} {:?}", conn.local.0, conn.local.1, conn.remote.0, conn.remote.1, conn.state).unwrap();
+        }
+
+        result
+    }
+
+
 }
 

@@ -14,7 +14,7 @@ use aarch64;
 use aarch64::SPSR_EL1;
 use shim::path::Path;
 
-use crate::{FILESYSTEM, smp, VMM};
+use crate::{FILESYSTEM, smp, VMM, SCHEDULER};
 use crate::param::*;
 use crate::process::{Stack, State};
 use crate::traps::TrapFrame;
@@ -64,6 +64,12 @@ impl fmt::Debug for CoreAffinity {
     }
 }
 
+pub struct KernProcessCtx {
+    pid: Id,
+}
+
+type KernProcess = Box<dyn FnOnce(KernProcessCtx) + Send>;
+
 /// A structure that represents the complete state of a process.
 pub struct Process {
     /// The saved trap frame of a process.
@@ -84,11 +90,13 @@ pub struct Process {
     pub affinity: CoreAffinity,
 
     pub request_suspend: bool,
+    request_kill: bool,
 
     pub file_descriptors: Vec<FileDescriptor>,
 
     pub dead_completions: Vec<Arc<Completion<Id>>>,
 
+    kernel_proc_entry: Option<KernProcess>,
 }
 
 impl Process {
@@ -112,8 +120,10 @@ impl Process {
             affinity: CoreAffinity::all(),
             task_switches: 0,
             request_suspend: false,
+            request_kill: false,
             file_descriptors: Vec::new(),
             dead_completions: Vec::new(),
+            kernel_proc_entry: None,
         })
     }
 
@@ -132,6 +142,38 @@ impl Process {
         p.context.ttbr1 = p.vmap.get_baddr().as_u64();
 
         Ok(p)
+    }
+
+    fn kernel_process_bootstrap() -> ! {
+        let pid: Id = kernel_api::syscall::getpid();
+
+        let entry = SCHEDULER.crit_process(pid, |proc| {
+            proc.map(|proc| proc.kernel_proc_entry.take() ) });
+
+        let entry = match entry {
+            None => {
+                error!("kernel process pid={} could not find itself!", pid);
+                kernel_api::syscall::exit();
+            }
+            Some(None) => {
+                error!("kernel_process_bootstrap() pid={} launched with no kernel_proc_entry!", pid);
+                kernel_api::syscall::exit();
+            }
+            Some(Some(entry)) => entry,
+        };
+
+        entry(KernProcessCtx { pid });
+        kernel_api::syscall::exit();
+    }
+
+    pub fn kernel_process_boxed(name: String, f: KernProcess) -> OsResult<Process> {
+        let mut proc = Self::kernel_process_old(name, Self::kernel_process_bootstrap)?;
+        proc.kernel_proc_entry = Some(f);
+        Ok(proc)
+    }
+
+    pub fn kernel_process<F: FnOnce(KernProcessCtx) + Send + 'static>(name: String, f: F) -> OsResult<Process> {
+        Self::kernel_process_boxed(name, Box::new(f))
     }
 
     /// Load a program stored in the given path by calling `do_load()` method.
@@ -275,6 +317,14 @@ impl Process {
     /// stack.
     pub fn get_stack_top() -> VirtualAddr {
         VirtualAddr::from(u64::max_value() & (!0xFu64))
+    }
+
+    pub fn has_request_kill(&self) -> bool {
+        self.request_kill
+    }
+
+    pub fn request_kill(&mut self) {
+        self.request_kill = true;
     }
 
     /// Returns `true` if this process is ready to be scheduled.

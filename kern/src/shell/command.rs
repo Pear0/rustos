@@ -16,6 +16,7 @@ pub enum CommandError {
     Compression(compression::prelude::CompressionError),
     Os(kernel_api::OsError),
     Str(&'static str),
+    Io(io::Error),
 }
 
 impl From<core::num::ParseIntError> for CommandError {
@@ -51,6 +52,12 @@ impl From<kernel_api::OsError> for CommandError {
 impl From<&'static str> for CommandError {
     fn from(e: &'static str) -> Self {
         CommandError::Str(e)
+    }
+}
+
+impl From<io::Error> for CommandError {
+    fn from(e: io::Error) -> Self {
+        CommandError::Io(e)
     }
 }
 
