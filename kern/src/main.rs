@@ -21,6 +21,9 @@ extern crate modular_bitfield;
 extern crate serde;
 extern crate serde_cbor;
 
+#[macro_use]
+extern crate shim;
+
 extern crate pigrate_core as pigrate;
 
 use alloc::borrow::ToOwned;
@@ -43,7 +46,6 @@ use shim::{io, ioerr};
 
 use crate::mutex::Mutex;
 use crate::net::GlobalNetHandler;
-use crate::net::tcp::{SHELL_READ, SHELL_WRITE};
 use crate::process::{Process, Stack, Id};
 use crate::traps::syndrome::Syndrome;
 use crate::process::fd::FileDescriptor;
@@ -67,6 +69,7 @@ pub mod iosync;
 mod logger;
 pub mod mbox;
 pub mod net;
+pub mod pigrate_server;
 pub mod shell;
 pub mod smp;
 pub mod sync;
@@ -136,7 +139,6 @@ fn network_thread() -> ! {
 
 fn my_net_thread2() -> ! {
     let pid: Id = kernel_api::syscall::getpid();
-
     let (source, sink) = SCHEDULER.crit_process(pid, |f| {
         let f = f.unwrap();
         (f.file_descriptors[0].read.as_ref().unwrap().clone(), f.file_descriptors[1].write.as_ref().unwrap().clone())
@@ -169,15 +171,6 @@ fn my_thread() -> ! {
 
 
     shell::shell("$ ");
-
-    kernel_api::syscall::exit();
-}
-
-fn my_net_thread() -> ! {
-    let write: Arc<dyn SyncWrite> = Arc::new(SHELL_WRITE.get());
-    let read: Arc<dyn SyncRead> = Arc::new(SHELL_READ.get());
-
-    shell::Shell::new("$ ", ReadWrapper::new(read), WriteWrapper::new(write)).shell_loop();
 
     kernel_api::syscall::exit();
 }
@@ -283,11 +276,6 @@ fn kmain() -> ! {
 
     {
         let proc = Process::kernel_process_old("shell".to_owned(), my_thread).unwrap();
-        SCHEDULER.add(proc);
-    }
-
-    {
-        let proc = Process::kernel_process_old("net shell".to_owned(), my_net_thread).unwrap();
         SCHEDULER.add(proc);
     }
 

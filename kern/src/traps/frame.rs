@@ -1,7 +1,7 @@
 use shim::io;
 use fat32::util::SliceExt;
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Default, Copy, Clone, Debug)]
 pub struct TrapFrame {
     pub elr: u64,
@@ -13,6 +13,8 @@ pub struct TrapFrame {
     pub simd: [u128; 32],
     pub regs: [u64; 31],
 }
+
+const_assert_size!(TrapFrame, 808);
 
 impl TrapFrame {
 

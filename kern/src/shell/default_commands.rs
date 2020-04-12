@@ -31,6 +31,7 @@ use crate::smp;
 
 use super::shell::Shell;
 use crate::pigrate::bundle::ProcessBundle;
+use crate::pigrate_server::{pigrate_server, register_pigrate};
 
 fn describe_ls_entry<W: io::Write, T: mfs::FileInfo>(writer: &mut W, entry: T, show_all: bool) {
     if !show_all && (entry.metadata().hidden == Some(true) || entry.name() == "." || entry.name() == "..") {
@@ -245,6 +246,15 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                     writeln!(&mut sh.writer, "{:width$}", *k, width = width);
                 }
             }
+        })
+        .build();
+
+    sh.command()
+        .name("pigrate")
+        .func(|sh, _cmd| {
+            
+            register_pigrate();
+            
         })
         .build();
 

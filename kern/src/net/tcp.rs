@@ -278,9 +278,6 @@ struct TcpConnection {
     unacked_packets: Vec<PendingPacket>,
 }
 
-pub static SHELL_READ: Global<BufferHandle> = Global::new(|| BufferHandle::new());
-pub static SHELL_WRITE: Global<BufferHandle> = Global::new(|| BufferHandle::new());
-
 impl TcpConnection {
     pub fn new(local: Socket, remote: Socket, state: State, recv: Sink, send: Source) -> Self {
         Self {
