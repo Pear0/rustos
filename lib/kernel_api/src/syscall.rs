@@ -20,100 +20,39 @@ pub fn sleep(span: Duration) -> OsResult<Duration> {
         panic!("too big!");
     }
 
-    let ms = span.as_millis() as u64;
-    let mut ecode: u64;
-    let mut elapsed_ms: u64;
-
-    unsafe {
-        asm!("mov x0, $2
-              svc $3
-              mov $0, x0
-              mov $1, x7"
-             : "=r"(elapsed_ms), "=r"(ecode)
-             : "r"(ms), "i"(NR_SLEEP)
-             : "x0", "x7"
-             : "volatile");
+    let mut ms = span.as_millis() as u64;
+    if ms == 0 && span > Duration::default() {
+        ms = 1;
     }
 
-    err_or!(ecode, Duration::from_millis(elapsed_ms))
+    unsafe { do_syscall1r!(NR_SLEEP, ms) }.map(|ms| Duration::from_millis(ms))
+
+}
+
+pub fn sched_yield() {
+    sleep(Duration::default());
 }
 
 pub fn time() -> Duration {
-
-    let mut elapsed_s: u64 = 0;
-    let mut elapsed_ns: u64 = 0;
-    unsafe {
-        asm!("svc $2
-              mov $0, x0
-              mov $1, x1"
-             : "=r"(elapsed_s), "=r"(elapsed_ns)
-             : "i"(NR_TIME)
-             : "x0", "x7"
-             : "volatile");
-    }
-
+    let (elapsed_s, elapsed_ns) = unsafe { do_syscall2!(NR_TIME) };
     Duration::new(elapsed_s, elapsed_ns as u32)
 }
 
 pub fn exit() -> ! {
-
-    unsafe {
-        asm!("svc $0"
-             :
-             : "i"(NR_EXIT)
-             : "x0", "x7"
-             : "volatile");
-    }
-
+    unsafe { do_syscall0!(NR_EXIT); }
     loop{}
 }
 
 pub fn write(b: u8) {
-
-    let b = b as u64;
-
-    unsafe {
-        asm!("mov x0, $0
-              svc $1"
-             :
-             : "r"(b), "i"(NR_WRITE)
-             : "x0", "x7"
-             : "volatile");
-    }
-
+    unsafe { do_syscall0!(NR_WRITE, b as u64) };
 }
 
 pub fn getpid() -> u64 {
-
-    let mut pid: u64 = 0;
-    unsafe {
-        asm!("svc $1
-              mov $0, x0"
-             : "=r"(pid)
-             : "i"(NR_GETPID)
-             : "x0", "x7"
-             : "volatile");
-    }
-
-    pid
+    unsafe { do_syscall1!(NR_GETPID) }
 }
 
 pub fn waitpid(pid: u64) -> OsResult<Duration> {
-    let mut ecode: u64;
-    let mut elapsed_ms: u64;
-
-    unsafe {
-        asm!("mov x0, $2
-              svc $3
-              mov $0, x0
-              mov $1, x7"
-             : "=r"(elapsed_ms), "=r"(ecode)
-             : "r"(pid), "i"(NR_WAITPID)
-             : "x0", "x7"
-             : "volatile");
-    }
-
-    err_or!(ecode, Duration::from_millis(elapsed_ms))
+    unsafe { do_syscall1r!(NR_WAITPID, pid) }.map(|ms| Duration::from_millis(ms))
 }
 
 

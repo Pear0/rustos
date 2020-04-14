@@ -8,6 +8,9 @@ use shim::io;
 #[cfg(feature = "user-space")]
 pub mod syscall;
 
+#[macro_use]
+mod syscall_macros;
+
 pub type OsResult<T> = core::result::Result<T, OsError>;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
