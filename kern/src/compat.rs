@@ -11,6 +11,7 @@ use pi::timer;
 use crate::{ALLOCATOR, IRQ};
 use crate::mbox::with_mbox;
 use core::sync::atomic::{AtomicBool, Ordering};
+use crate::allocator::tags::{MemTag, TaggingAlloc};
 
 /// Function implementations for linked C libraries
 
@@ -62,7 +63,7 @@ extern "C" fn usDelay(amt: u32) {
 extern "C" fn malloc(size: u32) -> *mut u8 {
     unsafe {
         let l = Layout::from_size_align_unchecked((size+4) as usize, 4);
-        let p = ALLOCATOR.alloc(l);
+        let p = ALLOCATOR.alloc_tag(l, MemTag::CLib);
         *(p as *mut u32) = size+4; // store size (to deallocate) in first byte
         p.offset(4)
     }
@@ -73,7 +74,7 @@ extern "C" fn free(ptr: *mut u8) {
     unsafe {
         let size = *(ptr.offset(-4) as *mut u32);
         let l = Layout::from_size_align_unchecked(size as usize, 4);
-        ALLOCATOR.dealloc(ptr.offset(-4), l);
+        ALLOCATOR.dealloc_tag(ptr.offset(-4), l, MemTag::CLib);
     }
 }
 

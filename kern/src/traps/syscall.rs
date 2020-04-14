@@ -3,12 +3,13 @@ use core::time::Duration;
 use alloc::sync::Arc;
 
 use kernel_api::*;
+use crate::kernel_call::*;
 
 use crate::console::CONSOLE;
 use crate::process::{EventPollFn, State};
 use crate::{SCHEDULER, process};
 use crate::traps::TrapFrame;
-use crate::sync::Completion;
+use crate::sync::{Completion, Waitable};
 
 
 fn set_result(tf: &mut TrapFrame, regs: &[u64]) {
@@ -29,20 +30,24 @@ fn set_err(tf: &mut TrapFrame, res: OsError) {
 /// parameter: the approximate true elapsed time from when `sleep` was called to
 /// when `sleep` returned.
 pub fn sys_sleep(ms: u32, tf: &mut TrapFrame) {
-    let start = pi::timer::current_time();
-    let wait_until = start + Duration::from_millis(ms as u64);
+    if ms == 0 {
+        SCHEDULER.switch(State::Ready, tf);
+    } else {
+        let start = pi::timer::current_time();
+        let wait_until = start + Duration::from_millis(ms as u64);
 
-    let time_fn: EventPollFn = Box::new(move |tf| {
-        let now = pi::timer::current_time();
-        let good = now >= wait_until;
-        if good {
-            let d = (now - start).as_millis() as u64;
-            set_result(&mut tf.context, &[d]);
-            set_err(&mut tf.context, OsError::Ok);
-        }
-        good
-    });
-    SCHEDULER.switch(State::Waiting(time_fn), tf);
+        let time_fn: EventPollFn = Box::new(move |tf| {
+            let now = pi::timer::current_time();
+            let good = now >= wait_until;
+            if good {
+                let d = (now - start).as_millis() as u64;
+                set_result(&mut tf.context, &[d]);
+                set_err(&mut tf.context, OsError::Ok);
+            }
+            good
+        });
+        SCHEDULER.switch(State::Waiting(time_fn), tf);
+    }
 }
 
 /// Returns current time.
@@ -127,6 +132,11 @@ pub fn sys_waitpid(pid: u64, tf: &mut TrapFrame) {
     SCHEDULER.switch(State::Waiting(time_fn), tf);
 }
 
+pub fn sys_wait_waitable(tf: &mut TrapFrame) {
+    // TODO insecure (can be called from userspace)
+    let arc: Arc<dyn Waitable> = unsafe { core::mem::transmute([tf.regs[0], tf.regs[1]]) };
+    SCHEDULER.switch(State::WaitingObj(arc), tf);
+}
 
 pub fn handle_syscall(num: u16, tf: &mut TrapFrame) {
 
@@ -151,6 +161,9 @@ pub fn handle_syscall(num: u16, tf: &mut TrapFrame) {
         NR_WAITPID => {
             let pid = tf.regs[0];
             sys_waitpid(pid, tf);
+        }
+        NR_WAIT_WAITABLE => {
+            sys_wait_waitable(tf);
         }
         _ => kprintln!("Unknown syscall: {}", num),
     }

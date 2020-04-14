@@ -1,12 +1,13 @@
 use alloc::boxed::Box;
 use alloc::collections::vec_deque::VecDeque;
+use alloc::format;
 use alloc::vec::Vec;
 use core::borrow::{Borrow, BorrowMut};
 use core::time::Duration;
-use alloc::format;
 
-use aarch64::{MPIDR_EL1, SP, SPSR_EL1, CNTP_CTL_EL0};
+use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
+use pi::interrupt::CoreInterrupt;
 
 use crate::{IRQ, SCHEDULER, smp};
 use crate::cls::CoreLocal;
@@ -14,9 +15,8 @@ use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State};
 use crate::process::snap::SnapProcess;
-use crate::traps::TrapFrame;
 use crate::process::state::RunContext;
-use pi::interrupt::CoreInterrupt;
+use crate::traps::TrapFrame;
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler(Mutex<Option<Scheduler>>);
@@ -27,6 +27,10 @@ extern "C" {
     fn _start();
 }
 
+fn reset_timer() {
+    use aarch64::regs::*;
+    unsafe { CNTV_TVAL_EL0.set(100000) };
+}
 
 impl GlobalScheduler {
     /// Returns an uninitialized wrapper around a local scheduler.
@@ -71,51 +75,27 @@ impl GlobalScheduler {
         self.critical(move |scheduler| scheduler.add(process))
     }
 
+    fn switch_to_locked(scheduler: &mut Scheduler, tf: &mut TrapFrame) -> Id {
+        if let Some(id) = scheduler.switch_to(tf) {
+            id
+        } else {
+            scheduler.schedule_idle_task(tf)
+        }
+    }
+
     /// Performs a context switch using `tf` by setting the state of the current
     /// process to `new_state`, saving `tf` into the current process, and
     /// restoring the next process's trap frame into `tf`. For more details, see
     /// the documentation on `Scheduler::schedule_out()` and `Scheduler::switch_to()`.
     pub fn switch(&self, new_state: State, tf: &mut TrapFrame) -> Id {
-        self.critical(|scheduler| scheduler.schedule_out(new_state, tf));
-        self.switch_to(tf)
+        self.critical(|scheduler| {
+            scheduler.schedule_out(new_state, tf);
+            Self::switch_to_locked(scheduler, tf)
+        })
     }
 
     pub fn switch_to(&self, tf: &mut TrapFrame) -> Id {
-        self.critical(|scheduler| {
-            if let Some(id) = scheduler.switch_to(tf) {
-                id
-            } else {
-                scheduler.schedule_idle_task(tf)
-            }
-        })
-
-        // loop {
-            // let rtn = self.critical(|scheduler| scheduler.switch_to(tf));
-            // if let Some(id) = rtn {
-            //     return id;
-            // }
-
-            // FIXME lol??????? I don't want to DIE
-            // unsafe {
-            //     let mut v = aarch64::regs::CNTKCTL_EL1.get();
-            //     let m = aarch64::regs::CNTKCTL_EL1::EVNTI;
-            //
-            //     v &= !m;
-            //     // seems to wait around 134μs
-            //     v |= (13) << m.trailing_zeros();
-            //
-            //     v |= aarch64::regs::CNTKCTL_EL1::EVNTEN;
-            //
-            //     aarch64::regs::CNTKCTL_EL1.set(v);
-            // }
-
-
-            // self.mask_next_tick(true);
-            // unsafe { aarch64::sti() }
-            // aarch64::wfe();
-            // unsafe { aarch64::cli() }
-            // self.mask_next_tick(false);
-        // }
+        self.critical(|scheduler| Self::switch_to_locked(scheduler, tf))
     }
 
     /// Kills currently running process and returns that process's ID.
@@ -163,7 +143,7 @@ impl GlobalScheduler {
         kprintln!("Enabling timer");
         // timer::tick_in(TICK);
         // interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
-        
+
         use aarch64::regs::*;
 
         let core = smp::core();
@@ -173,9 +153,9 @@ impl GlobalScheduler {
 
         // let v = unsafe { CNTVCT_EL0.get() };
         unsafe { CNTV_TVAL_EL0.set(100000 * 10) };
-        unsafe { CNTV_CTL_EL0.set((CNTV_CTL_EL0.get() & !CNTV_CTL_EL0::IMASK ) | CNTV_CTL_EL0::ENABLE) } ;
-        
-        
+        unsafe { CNTV_CTL_EL0.set((CNTV_CTL_EL0.get() & !CNTV_CTL_EL0::IMASK) | CNTV_CTL_EL0::ENABLE) };
+
+
         // Bootstrap the first process
         self.bootstrap();
     }
@@ -190,14 +170,10 @@ impl GlobalScheduler {
 
         let core = crate::smp::core();
         IRQ.register_core(core, CoreInterrupt::CNTVIRQ, Box::new(|tf| {
-
             SCHEDULER.switch(State::Ready, tf);
 
-            // let v = unsafe { CNTVCT_EL0.get() };
-            unsafe { CNTV_TVAL_EL0.set(100000) };
-            
-            // kprintln!("foo");
-
+            // somewhat redundant, .switch() is suppose to do this.
+            reset_timer();
         }));
 
         // let v = unsafe { CNTPCT_EL0.get() };
@@ -215,7 +191,6 @@ impl GlobalScheduler {
         //         SCHEDULER.switch(State::Ready, tf);
         //     }
         // }));
-
     }
 
     // The following method may be useful for testing Phase 3:
@@ -254,6 +229,9 @@ impl Scheduler {
             let proc = Process::kernel_process_old(name, || {
                 loop {
                     aarch64::wfe();
+                    // trigger context switch immediately after WFE so we dont take a full
+                    // scheduler slice.
+                    kernel_api::syscall::sched_yield();
                 }
             }).expect("failed to create idle task");
             idle_tasks.push(proc);
@@ -261,7 +239,7 @@ impl Scheduler {
 
         Scheduler {
             processes: VecDeque::new(),
-            last_id: Some(1),
+            last_id: Some(1), // id zero is reserved for idle task
             idle_task: idle_tasks,
         }
     }
@@ -275,7 +253,9 @@ impl Scheduler {
     fn schedule_idle_task(&mut self, tf: &mut TrapFrame) -> Id {
         let core = smp::core();
         let proc = &mut self.idle_task[core];
-        Scheduler::load_frame(tf, proc)
+        let id = Scheduler::load_frame(tf, proc);
+        reset_timer();
+        id
     }
 
     /// Adds a process to the scheduler's queue and returns that process's ID if
@@ -300,27 +280,31 @@ impl Scheduler {
     /// If the `processes` queue is empty or there is no current process,
     /// returns `false`. Otherwise, returns `true`.
     fn schedule_out(&mut self, mut new_state: State, tf: &mut TrapFrame) -> bool {
-        let proc = self.processes.iter_mut().enumerate()
-            .find(|(_, p)| p.context.tpidr == tf.tpidr);
+        let core = smp::core();
+        let proc: Option<(usize, &mut Process)>;
+        if self.idle_task[core].context.tpidr == tf.tpidr {
+            proc = Some((usize::max_value(), &mut self.idle_task[core]));
+        } else {
+            proc = self.processes.iter_mut().enumerate()
+                .find(|(_, p)| p.context.tpidr == tf.tpidr);
+        }
+
         match proc {
             None => false,
             Some((idx, proc)) => {
-
                 if proc.has_request_kill() {
                     self.kill(tf);
                 } else {
-                    if let State::Running(ctx) = &proc.state {
-                        let delta = pi::timer::current_time() - ctx.scheduled_at;
-                        proc.cpu_time += delta;
-                    }
-
                     proc.task_switches += 1;
-                    proc.state = new_state;
+                    proc.set_state(new_state);
                     *(proc.context.borrow_mut()) = *tf;
 
-                    // something is very bad if the entry we found is no longer here.
-                    let owned = self.processes.remove(idx).unwrap();
-                    self.processes.push_back(owned);
+                    // special processes like idle task aren't stored in self.processes
+                    if idx != usize::max_value() {
+                        // something is very bad if the entry we found is no longer here.
+                        let owned = self.processes.remove(idx).expect("could not find process in self.processes");
+                        self.processes.push_back(owned);
+                    }
                 }
 
                 true
@@ -332,7 +316,7 @@ impl Scheduler {
         let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
         let now = pi::timer::current_time();
 
-        proc.state = State::Running(RunContext { core_id, scheduled_at: now });
+        proc.set_state(State::Running(RunContext { core_id, scheduled_at: now }));
         *tf = *proc.context.borrow();
 
         proc.context.tpidr
@@ -367,6 +351,8 @@ impl Scheduler {
         let owned = self.processes.remove(idx).unwrap();
         self.processes.push_front(owned);
 
+        reset_timer();
+
         Some(id)
     }
 
@@ -379,7 +365,7 @@ impl Scheduler {
         match proc {
             None => None,
             Some((idx, proc)) => {
-                proc.state = State::Dead;
+                proc.set_state(State::Dead);
                 *(proc.context.borrow_mut()) = *tf;
 
                 for comp in proc.dead_completions.drain(..) {
@@ -395,6 +381,10 @@ impl Scheduler {
     }
 
     pub fn get_process_snaps(&mut self, snaps: &mut Vec<SnapProcess>) {
+        for core in &self.idle_task {
+            snaps.push(SnapProcess::from(core));
+        }
+
         for proc in self.processes.iter() {
             snaps.push(SnapProcess::from(proc));
         }

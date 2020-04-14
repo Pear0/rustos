@@ -6,8 +6,10 @@ use pi::atags::Atags;
 use crate::mutex::Mutex;
 use crate::smp;
 use shim::io;
+use crate::allocator::tags::{TaggingAlloc, MemTag};
 
 mod linked_list;
+pub mod tags;
 pub mod util;
 
 mod bin;
@@ -65,25 +67,33 @@ impl Allocator {
         })
     }
 
+    pub unsafe fn alloc_tag(&self, layout: Layout, tag: MemTag) -> *mut u8 {
+        smp::no_interrupt(|| {
+            m_lock!(self.0)
+                .as_mut()
+                .expect("allocator uninitialized")
+                .alloc_tag(layout, tag)
+        })
+    }
+
+    pub unsafe fn dealloc_tag(&self, ptr: *mut u8, layout: Layout, tag: MemTag) {
+        smp::no_interrupt(|| {
+            m_lock!(self.0)
+                .as_mut()
+                .expect("allocator uninitialized")
+                .dealloc_tag(ptr, layout, tag);
+        })
+    }
+
 }
 
 unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        smp::no_interrupt(|| {
-            m_lock!(self.0)
-                .as_mut()
-                .expect("allocator uninitialized")
-                .alloc(layout)
-        })
+        self.alloc_tag(layout, MemTag::Global)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        smp::no_interrupt(|| {
-            m_lock!(self.0)
-                .as_mut()
-                .expect("allocator uninitialized")
-                .dealloc(ptr, layout);
-        })
+        self.dealloc_tag(ptr, layout, MemTag::Global)
     }
 }
 

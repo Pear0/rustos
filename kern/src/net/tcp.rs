@@ -276,6 +276,7 @@ struct TcpConnection {
 
     // packets that have not yet been acknowledged and may need to be
     // resent.
+    // TODO packets are never removed from this buffer.
     unacked_packets: Vec<PendingPacket>,
 }
 
@@ -307,7 +308,14 @@ impl TcpConnection {
         header.ack_number.set(self.acked_number.get());
         header.sequence_number.set(self.seq_number.get());
 
-        header.window_size.set(0xFF_FF);
+        let mut window: u16 = 0xFF_FF;
+        if let Some(w) = self.recv.estimate_free_capacity() {
+            if w < window as usize {
+                window = w as u16;
+            }
+        }
+
+        header.window_size.set(window);
 
         let payload_len = payload.len();
         let frame = TcpFrame { header, payload };
@@ -370,7 +378,7 @@ impl TcpConnection {
             State::C_SynSent => {}
             State::S_SynReceived => {
                 if frame.header.sequence_number.get() != self.acked_number.get() {
-                    kprintln!("Got packet with seq mismatch: {} != {}", frame.header.sequence_number.get(), self.acked_number);
+                    trace!("Got packet with seq mismatch: {} != {}", frame.header.sequence_number.get(), self.acked_number);
                     return;
                 }
 
@@ -385,7 +393,7 @@ impl TcpConnection {
 
                 // TODO not a proper connection close.
                 if frame.header.flags.get_rst() {
-                    kprintln!("got RST");
+                    debug!("got RST");
                     self.state = State::Killed;
 
                     let mut flags = Flags::default();
@@ -399,7 +407,7 @@ impl TcpConnection {
                 self.remote_acked_number = frame.header.ack_number.get();
 
                 if frame.header.sequence_number.get() != self.acked_number.get() {
-                    kprintln!("Got packet with seq mismatch: {} != {:?}", frame.header.sequence_number.get(), self.acked_number);
+                    trace!("Got packet with seq mismatch: {} != {:?}", frame.header.sequence_number.get(), self.acked_number);
                     return;
                 }
 
@@ -414,10 +422,10 @@ impl TcpConnection {
                         Err(e) => {
                             // ack no bytes
 
-                            kprintln!("failed to write but acked: {}", e);
+                            warn!("failed to write but acked: {}", e);
                         }
                         Ok(n) if n != frame.payload.len() => {
-                            kprintln!("trunc'd ack because {} bytes could not be written", frame.payload.len() - n);
+                            trace!("trunc'd ack because {} bytes could not be written", frame.payload.len() - n);
 
                             // Ack only the bytes we were able to write into the buffer
                             if n != 0 {
@@ -480,7 +488,7 @@ impl TcpConnection {
                 true
             }
             Err(e) => {
-                kprintln!("failed to read source: {}", e);
+                debug!("failed to read source: {}", e);
                 false
             }
             _ => {
@@ -493,19 +501,19 @@ impl TcpConnection {
         'resend_loop: for _ in 0..self.unsent_packets.len() {
             match self.unsent_packets.pop_front() {
                 Some(pending) => {
-                    kprintln!("resending packet");
+                    debug!("resending packet");
                     match m_lock!(manager.inner).ip.send(pending.dest, &pending.frame) {
                         Ok(_) => {
-                            kprintln!("successfully resent packet");
+                            debug!("successfully resent packet");
                             self.unacked_packets.push(PendingPacket::new(pending.dest, pending.frame).update_attempt());
                         }
                         Err(e) => {
                             if e.is_spurious() {
-                                kprintln!("failed to resend packet, error: {:?}", e);
+                                debug!("failed to resend packet, error: {:?}", e);
                                 self.unsent_packets.push_back(pending.update_attempt());
                                 break 'resend_loop;
                             } else {
-                                kprintln!("failed to send packet: {:?}", e);
+                                debug!("failed to send packet: {:?}", e);
                             }
                         }
                     }
@@ -654,7 +662,9 @@ impl ConnectionManager {
         writeln!(result, "\nConnections:").unwrap();
 
         for (_, conn) in lock.connections.as_ref().unwrap().iter(){
-            writeln!(result, "  {}:{} -> {}:{} {:?}", conn.local.0, conn.local.1, conn.remote.0, conn.remote.1, conn.state).unwrap();
+            writeln!(result, "  {}:{} -> {}:{} {:?} unsent:{}, unacked:{}",
+                     conn.local.0, conn.local.1, conn.remote.0, conn.remote.1,
+                     conn.state, conn.unsent_packets.len(), conn.unacked_packets.len()).unwrap();
         }
 
         result

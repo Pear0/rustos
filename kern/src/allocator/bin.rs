@@ -2,9 +2,11 @@ use core::alloc::Layout;
 
 use crate::allocator::linked_list::LinkedList;
 use crate::allocator::{LocalAlloc, AllocStats};
+use crate::allocator::tags::{TaggingAlloc, MemTag};
 
 use super::util::align_up;
 use shim::io;
+use pi::atags::Atag::Mem;
 
 /// A simple allocator that allocates based on size classes.
 ///   bin 0 (2^3 bytes)    : handles allocations in (0, 2^3]
@@ -21,6 +23,7 @@ pub struct Allocator {
     start: usize,
     end: usize,
     used: usize,
+    tag_used: [usize; MemTag::len() as usize],
     wilderness: usize,
     wilderness_end: usize,
     bins: [LinkedList; 30],
@@ -39,6 +42,7 @@ impl Allocator {
             start: align_up(start, 8),
             end,
             used: 0,
+            tag_used: [0; MemTag::len() as usize],
             wilderness: align_up(start, 8),
             wilderness_end: end,
             bins: [LinkedList::new(); 30],
@@ -164,7 +168,7 @@ impl Allocator {
         self.allocate_bin_entry(bin)
     }
 
-    fn do_alloc(&mut self, layout: Layout) -> Option<*mut u8> {
+    fn do_alloc(&mut self, layout: Layout, tag: MemTag) -> Option<*mut u8> {
         let bin = self.layout_to_bin(layout);
 
         // println!("[alloc] layout(size:0x{:x}, align:0x{:x}) -> bin:{}, bin_size:0x{:x}", layout.size(), layout.align(), bin, self.bin_size(bin));
@@ -172,6 +176,7 @@ impl Allocator {
         if let Some(p) = self.bins[bin].pop() {
             // println!("[alloc] served with fastbin:{}", bin);
             self.used += self.bin_size(bin);
+            self.tag_used[tag as u8 as usize] += self.bin_size(bin);
             return Some(p as *mut u8);
         }
 
@@ -181,18 +186,30 @@ impl Allocator {
         }
 
         self.used += self.bin_size(bin);
+        self.tag_used[tag as u8 as usize] += self.bin_size(bin);
         Some(self.bins[bin].pop().unwrap() as *mut u8)
     }
 
-    fn do_dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+    fn do_dealloc(&mut self, ptr: *mut u8, layout: Layout, tag: MemTag) {
         let bin = self.layout_to_bin(layout);
         self.used -= self.bin_size(bin);
+        self.tag_used[tag as u8 as usize] -= self.bin_size(bin);
 
         // cast is safe because we only ever give out 8 byte aligned pointers
         // anyway.
         unsafe { self.bins[bin].push(ptr as *mut usize) };
     }
 
+}
+
+impl TaggingAlloc for Allocator {
+    unsafe fn alloc_tag(&mut self, layout: Layout, tag: MemTag) -> *mut u8 {
+        self.do_alloc(layout, tag).unwrap_or(0 as *mut u8)
+    }
+
+    unsafe fn dealloc_tag(&mut self, ptr: *mut u8, layout: Layout, tag: MemTag) {
+        self.do_dealloc(ptr, layout, tag);
+    }
 }
 
 impl LocalAlloc for Allocator {
@@ -218,9 +235,7 @@ impl LocalAlloc for Allocator {
     /// or `layout` does not meet this allocator's
     /// size or alignment constraints.
     unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        // println!("alloc(size: 0x{:x}, align: 0x{:x})", layout.size(), layout.align());
-        let x = self.do_alloc(layout).unwrap_or(0 as *mut u8);
-        // self.dump("alloc");
+        let x = self.do_alloc(layout, MemTag::Global).unwrap_or(0 as *mut u8);
         x
     }
 
@@ -238,9 +253,7 @@ impl LocalAlloc for Allocator {
     /// Parameters not meeting these conditions may result in undefined
     /// behavior.
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        // println!("dealloc(ptr: 0x{:x}, size: 0x{:x}, align: 0x{:x})", ptr as usize, layout.size(), layout.align());
-        self.do_dealloc(ptr, layout);
-        // self.dump("alloc");
+        self.do_dealloc(ptr, layout, MemTag::Global);
     }
 }
 
@@ -257,6 +270,12 @@ impl AllocStats for Allocator {
         writeln!(w, "allocated: {}", allocated)?;
         writeln!(w, "total: {}", total)?;
         writeln!(w, "percent: {}%", 100.0 * (allocated as f64) / (total as f64))?;
+
+        writeln!(w, "Tags:")?;
+        for i in 0..MemTag::len() {
+            let tag = MemTag::from(i);
+            writeln!(w, "  {:?}: {}%", tag, 100.0 * (self.tag_used[i as usize] as f64) / (total as f64))?;
+        }
 
         Ok(())
     }

@@ -3,6 +3,7 @@
 #![feature(decl_macro)]
 #![feature(asm)]
 #![feature(global_asm)]
+#![feature(coerce_unsized)]
 #![feature(optin_builtin_traits)]
 #![feature(ptr_internals)]
 #![feature(raw_vec_internals)]
@@ -10,6 +11,8 @@
 #![feature(c_variadic)]
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
+
+#![allow(unused_imports)]
 
 extern crate alloc;
 #[macro_use]
@@ -51,6 +54,7 @@ use crate::traps::syndrome::Syndrome;
 use crate::process::fd::FileDescriptor;
 use crate::fs::handle::{SourceWrapper, SinkWrapper};
 use crate::iosync::{SyncWrite, SyncRead, ReadWrapper, WriteWrapper};
+use pigrate::Error;
 
 #[macro_use]
 pub mod console;
@@ -66,6 +70,7 @@ mod compat;
 pub mod debug;
 pub mod fs;
 pub mod iosync;
+pub mod kernel_call;
 mod logger;
 pub mod mbox;
 pub mod net;
@@ -114,6 +119,45 @@ fn network_thread() -> ! {
     NET.critical(|net| {
 
         let my_ip = ipv4::Address::from(&[10, 45, 52, 130]);
+
+        net.tcp.add_listening_port((my_ip, 300), Box::new(|sink, source| {
+
+            let mut proc = Process::kernel_process(String::from("net/echo"), |ctx| {
+
+                let (source, sink) = ctx.get_stdio_or_panic();
+
+                loop {
+                    let mut buf = [0u8; 1024];
+
+                    match source.read(&mut buf) {
+                        Ok(0) => kernel_call::syscall::wait_waitable(source.clone()),
+                        Ok(n) => {
+                            let mut left = &mut buf[..];
+
+                            while left.len() > 0 {
+
+                                match sink.write(left) {
+                                    Ok(0) => kernel_call::syscall::wait_waitable(sink.clone()),
+                                    Ok(n) => {
+                                        left = &mut left[n..];
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+            }).or(ioerr!(Other, "foo"))?;
+
+            proc.set_stdio(Arc::new(source), Arc::new(sink));
+
+            SCHEDULER.add(proc);
+
+            Ok(())
+        }));
+
 
         net.tcp.add_listening_port((my_ip, 100), Box::new(|sink, source| {
 

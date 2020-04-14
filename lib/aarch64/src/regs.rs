@@ -192,6 +192,8 @@ defreg!(SP_EL1);
 defreg!(SP_EL2);
 defreg!(SP_EL3);
 
+defreg!(TPIDR_EL0);
+
 // (ref. D1.7.1 PSTATE-related system registers)
 defreg!(NZCV, [
     N    [31-31],

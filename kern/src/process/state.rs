@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::fmt;
 
 use crate::process::Process;
@@ -31,7 +32,7 @@ pub enum State {
 
     /// Waiting on a Waitable. This is explicit because it provides much more introspection
     /// than an arbitrary function.
-    WaitingObj(Box<dyn Waitable>),
+    WaitingObj(Arc<dyn Waitable>),
 
     /// The process is suspended.
     Suspended,

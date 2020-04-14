@@ -32,6 +32,15 @@ impl TrapFrame {
         Ok(())
     }
 
+    pub fn get_el(&self) -> u8 {
+        use aarch64::regs::SPSR_EL1;
+        (SPSR_EL1::get_value(self.spsr, SPSR_EL1::M) >> 2) as u8
+    }
+
+    pub fn is_el1(&self) -> bool {
+        self.get_el() == 1
+    }
+
     pub fn dump<T: io::Write>(&self, w: &mut T, full: bool) -> io::Result<()> {
         writeln!(w, "Trap Frame:")?;
 

@@ -33,11 +33,17 @@ impl BufferHandle {
             F: FnOnce(&mut Buffer) -> R,
     {
         let mut guard = m_lock!(self.0);
-        f(guard.deref_mut())
+        let r = f(guard.deref_mut());
+        aarch64::sev();
+        r
     }
 
     pub fn len(&self) -> usize {
         self.critical(|b| b.deque.len())
+    }
+
+    pub fn free_capacity(&self) -> usize {
+        self.critical(|b| b.max_size - b.deque.len())
     }
 
     pub fn write_full(&self, buf: &[u8]) -> NetResult<()> {

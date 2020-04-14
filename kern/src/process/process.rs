@@ -16,13 +16,14 @@ use shim::path::Path;
 
 use crate::{FILESYSTEM, smp, VMM, SCHEDULER};
 use crate::param::*;
-use crate::process::{Stack, State};
+use crate::process::{Stack, State, TimeRatio, TimeRing};
 use crate::traps::TrapFrame;
 use crate::vm::*;
 use crate::sync::Completion;
 use shim::{io, ioerr};
 use crate::pigrate::bundle::{ProcessBundle, MemoryBundle};
 use crate::process::fd::FileDescriptor;
+use crate::fs::handle::{Source, Sink};
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
@@ -68,6 +69,18 @@ pub struct KernProcessCtx {
     pid: Id,
 }
 
+impl KernProcessCtx {
+
+    /// Will panic if file descriptors are not assigned.
+    pub fn get_stdio_or_panic(&self) -> (Arc<Source>, Arc<Sink>) {
+        SCHEDULER.crit_process(self.pid, |f| {
+            let f = f.unwrap();
+            (f.file_descriptors[0].read.as_ref().unwrap().clone(), f.file_descriptors[1].write.as_ref().unwrap().clone())
+        })
+    }
+
+}
+
 type KernProcess = Box<dyn FnOnce(KernProcessCtx) + Send>;
 
 /// A structure that represents the complete state of a process.
@@ -79,11 +92,17 @@ pub struct Process {
     /// The page table describing the Virtual Memory of the process
     pub vmap: Box<UserPageTable>,
     /// The scheduling state of the process.
-    pub state: State,
+    state: State,
 
     pub name: String,
 
     pub cpu_time: Duration,
+
+    pub ready_ratio: TimeRatio,
+    pub running_ratio: TimeRatio,
+    pub waiting_ratio: TimeRatio,
+    
+    pub running_slices: TimeRing,
 
     pub task_switches: usize,
 
@@ -117,6 +136,10 @@ impl Process {
             state: State::Ready,
             name,
             cpu_time: Duration::from_millis(0),
+            ready_ratio: TimeRatio::new(),
+            running_ratio: TimeRatio::new(),
+            waiting_ratio: TimeRatio::new(),
+            running_slices: TimeRing::new(),
             affinity: CoreAffinity::all(),
             task_switches: 0,
             request_suspend: false,
@@ -254,6 +277,20 @@ impl Process {
         Ok(proc)
     }
 
+    pub fn set_stdio(&mut self, source: Arc<Source>, sink: Arc<Sink>) {
+        if self.file_descriptors.len() >= 1 {
+            self.file_descriptors[0] = FileDescriptor::read(source);
+        } else {
+            self.file_descriptors.push(FileDescriptor::read(source));
+        }
+
+        if self.file_descriptors.len() >= 2 {
+            self.file_descriptors[1] = FileDescriptor::write(sink);
+        } else {
+            self.file_descriptors.push(FileDescriptor::write(sink));
+        }
+    }
+
     fn memory_to_bundle(&self) -> io::Result<MemoryBundle> {
         // State does not impl PartialEq
         // assert_eq!(self.state, State::Suspended);
@@ -327,6 +364,36 @@ impl Process {
         self.request_kill = true;
     }
 
+    pub fn get_state(&self) -> &State {
+        &self.state
+    }
+
+    pub fn set_state(&mut self, new_state: State) {
+        let now = pi::timer::current_time();
+
+        match &self.state {
+            State::Ready => self.ready_ratio.set_active_with_time(false, now),
+            State::Running(ctx) => {
+                self.running_ratio.set_active_with_time(false, now);
+                let delta = now - ctx.scheduled_at;
+                self.cpu_time += delta;
+                self.running_slices.record(delta);
+            },
+            State::Waiting(_) | State::WaitingObj(_) => self.waiting_ratio.set_active_with_time(false, now),
+            _ => {},
+        }
+
+        match &new_state {
+            State::Ready => self.ready_ratio.set_active_with_time(true, now),
+            State::Running(_) => self.running_ratio.set_active_with_time(true, now),
+            State::Waiting(_) | State::WaitingObj(_) => self.waiting_ratio.set_active_with_time(true, now),
+            _ => {},
+        }
+
+        self.state = new_state;
+    }
+
+
     /// Returns `true` if this process is ready to be scheduled.
     ///
     /// This functions returns `true` only if one of the following holds:
@@ -345,7 +412,7 @@ impl Process {
         if let State::Waiting(h) = &mut self.state {
             let mut copy = core::mem::replace(h, Box::new(|_| false));
             if copy(self) {
-                self.state = State::Ready;
+                self.set_state(State::Ready);
             } else {
 
                 // this will always succeed. Cannot re-use h due to lifetimes of passing self
@@ -358,7 +425,7 @@ impl Process {
 
         if let State::WaitingObj(obj) = &mut self.state {
             if obj.done_waiting() {
-                self.state = State::Ready;
+                self.set_state(State::Ready);
             }
         }
 
@@ -367,13 +434,13 @@ impl Process {
 
         if let State::Suspended = &self.state {
             if !self.request_suspend {
-                self.state = State::Ready;
+                self.set_state(State::Ready);
             }
         }
 
         if let State::Ready = &self.state {
             if self.request_suspend {
-                self.state = State::Suspended;
+                self.set_state(State::Suspended);
             }
         }
 

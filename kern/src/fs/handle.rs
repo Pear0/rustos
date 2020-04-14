@@ -51,6 +51,17 @@ pub enum Sink {
     Buffer(buffer::BufferHandle),
 }
 
+impl Sink {
+
+    pub fn estimate_free_capacity(&self) -> Option<usize> {
+        match self {
+            Sink::KernSerial => None,
+            Sink::Buffer(b) => Some(b.free_capacity()),
+        }
+    }
+
+}
+
 impl SyncWrite for Sink {
     fn write(&self, buf: &[u8]) -> io::Result<usize> {
         match self {
