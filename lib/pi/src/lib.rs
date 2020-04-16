@@ -5,8 +5,12 @@
 #![feature(never_type)]
 #![no_std]
 
+#[macro_use]
+extern crate aarch64;
+
 pub mod atags;
 pub mod common;
+pub mod dma;
 pub mod gpio;
 pub mod interrupt;
 pub mod mbox;
