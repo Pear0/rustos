@@ -258,6 +258,86 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
+        .name("proc2")
+        .help("print processes in a table")
+        .func_result(|sh, cmd| {
+
+            let mut repeat: bool = false;
+            if let Some(arg) = cmd.args.get(1) {
+                repeat = *arg == "-w";
+            }
+
+            let cols = [
+                String::from("  pid"), String::from("     state"), String::from("      name"),
+                String::from("     cpu time"), String::from("cpu %"), String::from("waiting %"),
+                String::from("ready %"), String::from("slice time"), String::from("task switches"),
+                String::from("    lr"),
+            ].to_vec();
+
+            loop {
+                let mut table = shutil::TableWriter::new(&mut sh.writer, 180, cols.clone());
+                write!(table.get_writer(), "\x1b[2K")?;
+                table.print_header()?;
+
+                let mut snaps = Vec::new();
+                SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+
+                snaps.sort_by(|a, b| a.tpidr.cmp(&b.tpidr));
+
+                for snap in snaps.iter() {
+                    // write!(table.get_writer(), "\x1b[2K")?;
+                    table.print(snap.tpidr)?
+                        .print_debug(snap.state)?
+                        .print(&snap.name)?
+                        .print_debug(snap.cpu_time)?
+                        .print(&format_args!("{}.{}%", snap.cpu_usage / 10, snap.cpu_usage % 10))?
+                        .print(&format_args!("{}.{}%", snap.waiting_usage / 10, snap.waiting_usage % 10))?
+                        .print(&format_args!("{}.{}%", snap.ready_usage / 10, snap.ready_usage % 10))?
+                        .print_debug(snap.avg_run_slice)?
+                        .print(snap.task_switches)?
+                        .print(&format_args!("0x{:x}", snap.lr))?
+                        .finish()?;
+                }
+
+                if !repeat || sh.cancel_requested() {
+                    break;
+                }
+
+                kernel_api::syscall::sleep(Duration::from_millis(500));
+
+                if sh.cancel_requested() {
+                    break;
+                }
+
+                write!(sh.writer, "\x1b[{}F", snaps.len()+1)?;
+            }
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
+        .name("color-test")
+        .help("print small ANSI color grid")
+        .func_result(|sh, cmd| {
+
+            for i in 0..11 {
+                for j in 0..10 {
+                    let n = 10 * i + j;
+                    if n > 108 {
+                        break;
+                    }
+                    write!(sh.writer, "\x1b[{}m {:3}\x1b[m", n, n)?;
+                }
+                writeln!(sh.writer, "")?;
+            }
+
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
         .name("kill")
         .func_result(|sh, cmd| {
             if cmd.args.len() < 2 {

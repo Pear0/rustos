@@ -7,6 +7,7 @@ pub use self::state::{EventPollFn, State};
 use alloc::boxed::Box;
 use core::time::Duration;
 
+mod address_space;
 pub mod fd;
 mod mailbox;
 mod process;
@@ -121,6 +122,9 @@ impl TimeRing {
     }
 
     pub fn average(&self) -> Duration {
+        if self.len == 0 {
+            return Duration::default();
+        }
         let mut total = Duration::default();
         for i in 0..self.len {
             total += self.items[i];

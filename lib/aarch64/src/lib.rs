@@ -10,6 +10,7 @@ pub mod sp;
 pub mod asm;
 pub mod attr;
 pub mod regs;
+pub mod semi;
 pub mod vmsa;
 
 pub use sp::SP;
@@ -44,3 +45,29 @@ pub fn affinity() -> usize {
         MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize
     }
 }
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Implementor {
+    ARM,
+    Broadcom,
+    Other(u8),
+}
+
+impl Implementor {
+    pub fn hardware() -> Self {
+        (unsafe { MIDR_EL1.get_value(MIDR_EL1::IMPL) } as u8).into()
+    }
+}
+
+impl From<u8> for Implementor {
+    fn from(a: u8) -> Self {
+        use Implementor::*;
+        match a {
+            b'A' => ARM,
+            b'B' => Broadcom,
+            o => Other(o),
+        }
+    }
+}
+
+

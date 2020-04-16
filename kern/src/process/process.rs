@@ -24,6 +24,7 @@ use shim::{io, ioerr};
 use crate::pigrate::bundle::{ProcessBundle, MemoryBundle};
 use crate::process::fd::FileDescriptor;
 use crate::fs::handle::{Source, Sink};
+use crate::process::address_space::{AddressSpaceManager, Region, RegionKind};
 
 /// Type alias for the type of a process ID.
 pub type Id = u64;
@@ -90,7 +91,7 @@ pub struct Process {
     /// The memory allocation used for the process's stack.
     pub stack: Stack,
     /// The page table describing the Virtual Memory of the process
-    pub vmap: Box<UserPageTable>,
+    pub vmap: Box<AddressSpaceManager>,
     /// The scheduling state of the process.
     state: State,
 
@@ -101,7 +102,7 @@ pub struct Process {
     pub ready_ratio: TimeRatio,
     pub running_ratio: TimeRatio,
     pub waiting_ratio: TimeRatio,
-    
+
     pub running_slices: TimeRing,
 
     pub task_switches: usize,
@@ -125,7 +126,7 @@ impl Process {
     /// If enough memory could not be allocated to start the process, returns
     /// `None`. Otherwise returns `Some` of the new `Process`.
     pub fn new(name: String) -> OsResult<Process> {
-        let vmap = Box::new(UserPageTable::new());
+        let vmap = Box::new(AddressSpaceManager::new());
         let stack = Stack::new().ok_or(OsError::NoMemory)?;
         let context = Box::new(TrapFrame::default());
 
@@ -230,13 +231,21 @@ impl Process {
         use shim::io::Read;
         let mut proc = Process::new(pn.as_ref().to_str().ok_or(OsError::InvalidArgument)?.to_owned())?;
 
-        proc.vmap.alloc(Process::get_stack_base(), PagePerm::RW);
+        proc.vmap.add_region(Region::new(Process::get_stack_base(), PAGE_SIZE, RegionKind::Normal));
+
+        let image_base = Process::get_image_base();
 
         let mut file = FILESYSTEM.open(pn)?.into_file().ok_or(OsError::InvalidArgument)?;
 
-        let mut base = Process::get_image_base();
+        let mut base = image_base;
         'page_loop: loop {
-            let mut buf = proc.vmap.alloc(base, PagePerm::RWX);
+            if image_base == base {
+                proc.vmap.add_region(Region::new(image_base, PAGE_SIZE, RegionKind::Normal));
+            } else {
+                proc.vmap.expand_region(image_base, PAGE_SIZE);
+            }
+
+            let mut buf = proc.vmap.get_page_mut(base).expect("tried to deref bad page");
 
             while buf.len() > 0 {
                 let read_amount = file.read(buf)?;
@@ -246,7 +255,7 @@ impl Process {
                 buf = &mut buf[read_amount..];
             }
 
-            base = base.add(VirtualAddr::from(PAGE_SIZE));
+            base = base + VirtualAddr::from(PAGE_SIZE);
         }
 
         Ok(proc)
@@ -265,7 +274,8 @@ impl Process {
         for (raw_va, data) in bundle.memory.generic_pages.iter() {
             let va = VirtualAddr::from(*raw_va);
 
-            let page = proc.vmap.alloc(va, PagePerm::RW);
+            proc.vmap.add_region(Region::new(va, PAGE_SIZE, RegionKind::Normal));
+            let page = proc.vmap.get_page_mut(va).expect("could not deref bad va");
 
             if page.len() != data.len() {
                 return Err(OsError::BadAddress);
@@ -297,7 +307,7 @@ impl Process {
 
         let mut bundle = MemoryBundle::default();
 
-        for (va, pa) in self.vmap.iter_mapped_pages() {
+        for (va, pa) in self.vmap.table.iter_mapped_pages() {
             let mut page_copy: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
             page_copy.extend_from_slice(unsafe { core::slice::from_raw_parts(pa.as_ptr(), PAGE_SIZE) });
             bundle.generic_pages.insert(va.as_u64(), page_copy);
@@ -325,8 +335,13 @@ impl Process {
         writeln!(w, "Frame:");
         writeln!(w, "{:?}", self.context);
 
+        writeln!(w, "Memory Regions:");
+        for region in self.vmap.regions.iter() {
+            writeln!(w, "  {:x?}", region);
+        }
+
         writeln!(w, "Memory Mapping:");
-        for (va, pa) in self.vmap.iter_mapped_pages() {
+        for (va, pa) in self.vmap.table.iter_mapped_pages() {
             writeln!(w, "  {:x?} -> {:x?}", va, pa);
         }
 

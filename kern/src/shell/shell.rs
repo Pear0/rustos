@@ -16,7 +16,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, NET, SCHEDULER, timer};
+use crate::{IRQ, NET, SCHEDULER, timer, hw};
 use crate::FILESYSTEM;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
@@ -26,6 +26,7 @@ use crate::smp;
 
 use super::command_args::{CommandArgs, Error};
 use super::default_commands;
+use pi::atags::{Atag, Atags};
 
 pub struct Shell<'a, R: io::Read, W: io::Write> {
     pub prefix: &'a str,
@@ -34,6 +35,7 @@ pub struct Shell<'a, R: io::Read, W: io::Write> {
     pub reader: R,
     pub writer: W,
     pub commands: HashMap<&'a str, Option<Command<'a, R, W>>>,
+    buffered_byte: Option<u8>,
 }
 
 type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
@@ -47,6 +49,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
             reader,
             writer,
             commands: HashMap::new(),
+            buffered_byte: None,
         };
 
         default_commands::register_commands(&mut shell);
@@ -216,16 +219,28 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 use aarch64::SPSR_EL1;
                 writeln!(self.writer, "DAIF: {:04b}", unsafe { SPSR_EL1.get_value(SPSR_EL1::D | SPSR_EL1::A | SPSR_EL1::I | SPSR_EL1::F) })?;
 
+                writeln!(self.writer, "CPU implementor: {:?}", aarch64::Implementor::hardware())?;
+
+                writeln!(self.writer, "MIDR_EL1: {:#x}", unsafe { aarch64::MIDR_EL1.get() })?;
 
                 with_mbox(|mbox| {
-                    writeln!(self.writer, "Serial: {:?}", mbox.serial_number());
-                    writeln!(self.writer, "MAC: {:?}", mbox.mac_address());
-                    writeln!(self.writer, "Board Revision: {:?}", mbox.board_revision());
+                    writeln!(self.writer, "Serial: {:x?}", mbox.serial_number());
+                    writeln!(self.writer, "MAC: {:x?}", mbox.mac_address());
+                    writeln!(self.writer, "Board Revision: {:x?}", mbox.board_revision());
                     writeln!(self.writer, "Temp: {:?}", mbox.core_temperature());
                 });
 
                 let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
                 writeln!(self.writer, "cpu attrs: {:?}", attrs)?;
+
+                writeln!(self.writer, "Atags:")?;
+                for atag in Atags::get() {
+                    writeln!(self.writer, "{:?}", atag)?;
+                }
+
+                writeln!(self.writer, "Is QEMU: {}", hw::is_qemu())?;
+
+
             }
             "arp" => {
                 if command.args.len() == 2 {
@@ -426,6 +441,15 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
         Ok(())
     }
 
+    pub fn cancel_requested(&mut self) -> bool {
+        while self.has_byte() {
+            if self.read_byte() == b'\x03' {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn shell_loop(&mut self) {
         writeln!(self.writer);
         while !self.dead_shell {
@@ -455,7 +479,10 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                     }
                     // if we are in the first or fourth ASCII block and
                     // haven't already handled it, treat this as invalid.
-                    byte if byte < 0x20 || byte >= 0x80 => self.bell(),
+                    byte if byte < 0x20 || byte >= 0x80 => {
+                        write!(self.writer, "\\x{:02x}", byte);
+                        self.bell()
+                    },
                     byte => match line_buf.push(byte) {
                         Ok(()) => {
                             self.writer.write(core::slice::from_ref(&byte));
@@ -521,15 +548,26 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
         write!(self.writer, "\x08 \x08");
     }
 
-    fn read_byte(&mut self) -> u8 {
+    fn has_byte(&mut self) -> bool {
+        if self.buffered_byte.is_some() {
+            return true;
+        }
 
-        // let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) };
-        //
-        // if core_id != 1 {
-        //     loop{
-        //         aarch64::wfe();
-        //     }
-        // }
+        let mut b: u8 = 0;
+        if let Ok(n) = self.reader.read(core::slice::from_mut(&mut b)) {
+            if n == 1 {
+                self.buffered_byte = Some(b);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    fn read_byte(&mut self) -> u8 {
+        if let Some(b) = self.buffered_byte.take() {
+            return b;
+        }
 
         loop {
             let mut b: u8 = 0;

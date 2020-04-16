@@ -55,6 +55,8 @@ use crate::process::fd::FileDescriptor;
 use crate::fs::handle::{SourceWrapper, SinkWrapper};
 use crate::iosync::{SyncWrite, SyncRead, ReadWrapper, WriteWrapper};
 use pigrate::Error;
+use crate::mbox::with_mbox;
+use crate::param::PAGE_SIZE;
 
 #[macro_use]
 pub mod console;
@@ -69,6 +71,7 @@ pub mod cls;
 mod compat;
 pub mod debug;
 pub mod fs;
+pub mod hw;
 pub mod iosync;
 pub mod kernel_call;
 mod logger;
@@ -323,7 +326,7 @@ fn kmain() -> ! {
         SCHEDULER.add(proc);
     }
 
-    {
+    if !hw::is_qemu() {
         let mut proc = Process::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
         proc.affinity.set_only(0);
         SCHEDULER.add(proc);
@@ -331,6 +334,108 @@ fn kmain() -> ! {
 
     {
         let proc = Process::kernel_process_old("led".to_owned(), led_blink).unwrap();
+        SCHEDULER.add(proc);
+    }
+
+    {
+        let proc = Process::kernel_process("display".to_owned(), |ctx| {
+
+            kernel_api::syscall::sleep(Duration::from_secs(1));
+
+            let mut width: u32 = 0;
+            let mut height: u32 = 0;
+            let mut pitch: u32 = 0;
+            let mut isrgb: u32 = 0;
+            let mut lfb: &mut [u32] = &mut [];
+
+            with_mbox(|mbox| {
+                use pi::common::*;
+
+                mbox.0[0] = 35*4;
+                mbox.0[1] = MBOX_REQUEST;
+
+                mbox.0[2] = 0x48003;  //set phy wh
+                mbox.0[3] = 8;
+                mbox.0[4] = 8;
+                mbox.0[5] = 1024;         //FrameBufferInfo.width
+                mbox.0[6] = 768;          //FrameBufferInfo.height
+
+                mbox.0[7] = 0x48004;  //set virt wh
+                mbox.0[8] = 8;
+                mbox.0[9] = 8;
+                mbox.0[10] = 1024;        //FrameBufferInfo.virtual_width
+                mbox.0[11] = 768;         //FrameBufferInfo.virtual_height
+
+                mbox.0[12] = 0x48009; //set virt offset
+                mbox.0[13] = 8;
+                mbox.0[14] = 8;
+                mbox.0[15] = 0;           //FrameBufferInfo.x_offset
+                mbox.0[16] = 0;           //FrameBufferInfo.y.offset
+
+                mbox.0[17] = 0x48005; //set depth
+                mbox.0[18] = 4;
+                mbox.0[19] = 4;
+                mbox.0[20] = 32;          //FrameBufferInfo.depth
+
+                mbox.0[21] = 0x48006; //set pixel order
+                mbox.0[22] = 4;
+                mbox.0[23] = 4;
+                mbox.0[24] = 1;           //RGB, not BGR preferably
+
+                mbox.0[25] = 0x40001; //get framebuffer, gets alignment on request
+                mbox.0[26] = 8;
+                mbox.0[27] = 8;
+                mbox.0[28] = 4096 * 16;        //FrameBufferInfo.pointer
+                mbox.0[29] = 0;           //FrameBufferInfo.size
+
+                mbox.0[30] = 0x40008; //get pitch
+                mbox.0[31] = 4;
+                mbox.0[32] = 4;
+                mbox.0[33] = 0;           //FrameBufferInfo.pitch
+
+                mbox.0[34] = MBOX_TAG_LAST;
+
+                if unsafe { mbox.call(MBOX_CH_PROP) } && mbox.0[20] == 32 && mbox.0[28] != 0 {
+                    mbox.0[28] &= 0x3FFFFFFF;   //convert GPU address to ARM address
+                    width=mbox.0[5];          //get actual physical width
+                    height=mbox.0[6];         //get actual physical height
+                    pitch=mbox.0[33];         //get number of bytes per line
+                    isrgb=mbox.0[24];         //get the actual channel order
+                    lfb = unsafe { core::slice::from_raw_parts_mut(mbox.0[28] as *mut u32, mbox.0[29] as usize / 4) };
+                } else {
+                    error!("Unable to set screen resolution to 1024x768x32");
+                }
+
+            });
+
+            if width == 0 {
+                return;
+            }
+
+            info!("Frame buffer: 0x{:x}, width={}, height={}, pitch={}, isrgb={}, len={}", lfb.as_ptr() as usize, width, height, pitch, isrgb, lfb.len());
+
+            // lfb = &mut lfb[..PAGE_SIZE];
+
+            for i in (0..(lfb.len()*4)).step_by(PAGE_SIZE) {
+                let addr = (lfb.as_ptr() as usize) + i;
+                unsafe { VMM.mark_page_non_cached(addr) };
+            }
+
+            use fat32::util::*;
+
+            let bytes: &mut [u8] = unsafe { lfb.cast_mut() };
+
+            loop {
+                for i in 0..bytes.len() {
+                    let b = unsafe { (0x80000 as *const u32).offset(i as isize).read() };
+
+                    bytes[i] = ((b & 0xFF) ^ ((b >> 8) & 0xFF) ^ ((b >> 16) & 0xFF) ^ ((b >> 24) & 0xFF)) as u8;
+                }
+                // lfb.copy_from_slice(unsafe { core::slice::from_raw_parts(0x80000 as *const u32, lfb.len()) });
+                kernel_api::syscall::sleep(Duration::from_millis(100));
+            }
+
+        }).unwrap();
         SCHEDULER.add(proc);
     }
 

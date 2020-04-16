@@ -176,40 +176,6 @@ impl GlobalScheduler {
             reset_timer();
         }));
 
-        // let v = unsafe { CNTPCT_EL0.get() };
-        // unsafe { CNTP_CVAL_EL0.set(v + 10000) };
-
-        // IRQ.register(pi::interrupt::Interrupt::Timer1, Box::new(|tf| {
-        //     timer::tick_in(TICK);
-        //     // aarch64::sev(); // tick other threads
-        //
-        //     // let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-        //     // kprint!("IRQ: {}", core_id);
-        //
-        //     if !SCHEDULER.is_mask_next_tick() {
-        //         // kprint!("s");
-        //         SCHEDULER.switch(State::Ready, tf);
-        //     }
-        // }));
-    }
-
-    // The following method may be useful for testing Phase 3:
-    //
-    // * A method to load a extern function to the user process's page table.
-    //
-    pub fn test_phase_3(&self, proc: &mut Process) {
-        use crate::vm::{VirtualAddr, PagePerm};
-
-        let len = 50;
-
-        let page = proc.vmap.alloc(
-            VirtualAddr::from(USER_IMG_BASE as u64), PagePerm::RWX);
-
-        let text = unsafe {
-            core::slice::from_raw_parts(test_user_process as *const u8, len)
-        };
-
-        page[0..len].copy_from_slice(text);
     }
 }
 

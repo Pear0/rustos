@@ -55,6 +55,10 @@ pub fn waitpid(pid: u64) -> OsResult<Duration> {
     unsafe { do_syscall1r!(NR_WAITPID, pid) }.map(|ms| Duration::from_millis(ms))
 }
 
+pub fn sbrk(increment: i64) -> OsResult<*const u8> {
+    unsafe { do_syscall1r!(NR_SBRK, increment as u64) }.map(|addr| addr as *const u8)
+}
+
 
 struct Console;
 
