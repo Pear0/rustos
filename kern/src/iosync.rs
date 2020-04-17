@@ -132,3 +132,25 @@ impl<T: AsRef<dyn SyncWrite>> io::Write for WriteWrapper<T> {
     }
 }
 
+pub struct TeeingWriter<W: io::Write, T: io::Write> {
+    writer: W,
+    tee: T,
+}
+
+impl<W: io::Write, T: io::Write> TeeingWriter<W, T> {
+    pub fn new(writer: W, tee: T) -> Self {
+        Self { writer, tee }
+    }
+}
+
+impl<W: io::Write, T: io::Write> io::Write for TeeingWriter<W, T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.tee.write(buf).ok();
+        self.writer.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.tee.flush().ok();
+        self.writer.flush()
+    }
+}

@@ -17,7 +17,7 @@ use stack_vec::StackVec;
 
 use crate::{IRQ, NET, SCHEDULER, timer};
 use crate::FILESYSTEM;
-use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
+use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper, TeeingWriter};
 use crate::net::arp::ArpResolver;
 use crate::process::Process;
 use aarch64::MPIDR_EL1;
@@ -30,13 +30,23 @@ mod shell;
 
 pub use command_args::CommandArgs as CommandArgs;
 pub use shell::Shell as Shell;
+use crate::display::text::TextPainter;
+use crate::display_manager::GlobalDisplay;
+use crate::display::Painter;
 
 // use std::path::{Path, PathBuf, Component};
 
 
 
-pub fn serial_shell(prefix: &'static str) -> Shell<ConsoleSync, ConsoleSync> {
-    Shell::new(prefix, ConsoleSync::new(), ConsoleSync::new())
+pub fn serial_shell(prefix: &'static str) -> Shell<ConsoleSync, TeeingWriter<ConsoleSync, TextPainter<GlobalDisplay>>> {
+
+    let p = Painter::new(GlobalDisplay::new());
+
+    let painter = TextPainter::new(p, 86, 116);
+
+    let writer = TeeingWriter::new(ConsoleSync::new(), painter);
+
+    Shell::new(prefix, ConsoleSync::new(), writer)
 }
 
 /// Starts a shell using `prefix` as the prefix for each line. This function

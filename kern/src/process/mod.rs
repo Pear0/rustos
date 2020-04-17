@@ -1,9 +1,3 @@
-pub use crate::param::TICK;
-
-pub use self::process::{Id, Process};
-pub use self::scheduler::GlobalScheduler;
-pub use self::stack::Stack;
-pub use self::state::{EventPollFn, State};
 use alloc::boxed::Box;
 use core::time::Duration;
 
@@ -15,6 +9,13 @@ mod scheduler;
 mod snap;
 mod stack;
 mod state;
+
+pub use crate::param::TICK;
+
+pub use self::process::{Id, Process, KernProcessCtx};
+pub use self::scheduler::GlobalScheduler;
+pub use self::stack::Stack;
+pub use self::state::{EventPollFn, State};
 
 #[derive(Clone, Debug)]
 pub struct TimeRatio {

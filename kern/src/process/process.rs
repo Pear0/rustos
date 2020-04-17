@@ -67,7 +67,7 @@ impl fmt::Debug for CoreAffinity {
 }
 
 pub struct KernProcessCtx {
-    pid: Id,
+    pub pid: Id,
 }
 
 impl KernProcessCtx {
