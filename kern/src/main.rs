@@ -55,6 +55,8 @@ use crate::process::fd::FileDescriptor;
 use crate::fs::handle::{SourceWrapper, SinkWrapper};
 use crate::iosync::{SyncWrite, SyncRead, ReadWrapper, WriteWrapper};
 use pigrate::Error;
+use crate::mbox::with_mbox;
+use crate::param::PAGE_SIZE;
 
 #[macro_use]
 pub mod console;
@@ -68,7 +70,10 @@ pub mod allocator;
 pub mod cls;
 mod compat;
 pub mod debug;
+pub mod display;
+mod display_manager;
 pub mod fs;
+pub mod hw;
 pub mod iosync;
 pub mod kernel_call;
 mod logger;
@@ -323,7 +328,7 @@ fn kmain() -> ! {
         SCHEDULER.add(proc);
     }
 
-    {
+    if !hw::is_qemu() {
         let mut proc = Process::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
         proc.affinity.set_only(0);
         SCHEDULER.add(proc);
@@ -331,6 +336,11 @@ fn kmain() -> ! {
 
     {
         let proc = Process::kernel_process_old("led".to_owned(), led_blink).unwrap();
+        SCHEDULER.add(proc);
+    }
+
+    {
+        let proc = Process::kernel_process("display".to_owned(), display_manager::display_process).unwrap();
         SCHEDULER.add(proc);
     }
 

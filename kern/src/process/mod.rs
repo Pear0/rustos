@@ -1,12 +1,7 @@
-pub use crate::param::TICK;
-
-pub use self::process::{Id, Process};
-pub use self::scheduler::GlobalScheduler;
-pub use self::stack::Stack;
-pub use self::state::{EventPollFn, State};
 use alloc::boxed::Box;
 use core::time::Duration;
 
+mod address_space;
 pub mod fd;
 mod mailbox;
 mod process;
@@ -14,6 +9,13 @@ mod scheduler;
 mod snap;
 mod stack;
 mod state;
+
+pub use crate::param::TICK;
+
+pub use self::process::{Id, Process, KernProcessCtx};
+pub use self::scheduler::GlobalScheduler;
+pub use self::stack::Stack;
+pub use self::state::{EventPollFn, State};
 
 #[derive(Clone, Debug)]
 pub struct TimeRatio {
@@ -121,6 +123,9 @@ impl TimeRing {
     }
 
     pub fn average(&self) -> Duration {
+        if self.len == 0 {
+            return Duration::default();
+        }
         let mut total = Duration::default();
         for i in 0..self.len {
             total += self.items[i];

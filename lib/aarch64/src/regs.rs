@@ -13,8 +13,6 @@ defreg!(MPIDR_EL1, [
 
 // (ref. D13.2.10: Secure Configuration Register)
 defreg!(SCR_EL3, [
-    TERR [15-15], // Trap Error record accesses
-    TLOR [14-14], // Trap LOR registers
     TWE  [13-13], // Traps EL2, EL1, and EL0 execution of WFE to EL3
     TWI  [12-12], // Traps EL2, EL1, and EL0 execution of WFI to EL3
     ST   [11-11], // Traps Secure EL1 accesses to the Counter-timer Physical Secure timer registers to EL3
@@ -284,6 +282,16 @@ defreg!(CNTV_CVAL_EL0);
 defreg!(CNTV_TVAL_EL0);
 
 defreg!(CNTVCT_EL0);
+
+
+// (ref. D7.2.73 Main ID Register)
+defreg!(MIDR_EL1, [
+    IMPL [31-24], // Implementor
+    VAR  [23-20], // Variant
+    ARCH [19-16], // Architecture
+    PART  [15-4], // Part Number
+    REV    [3-0], // Revision
+]);
 
 
 

@@ -49,7 +49,7 @@ impl VMManager {
     pub unsafe fn mark_page_non_cached(&self, addr: usize) {
         assert_eq!(addr % PAGE_SIZE, 0);
 
-        kprintln!("marking 0x{:x} as non cached", addr);
+        trace!("marking 0x{:x} as non cached", addr);
 
         let mut lock = m_lock!(self.0);
         let kern_page_table = lock.as_mut().unwrap();

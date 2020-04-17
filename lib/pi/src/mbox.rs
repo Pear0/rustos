@@ -1,11 +1,11 @@
 use crate::common::*;
 
 #[repr(align(16))]
-pub struct MBox(pub [u32; 36]);
+pub struct MBox(pub [u32; 64]);
 
 impl MBox {
     pub unsafe fn new() -> MBox {
-        MBox([0; 36])
+        MBox([0; 64])
     }
 
     pub unsafe fn call(&mut self, ch: u8) -> bool {

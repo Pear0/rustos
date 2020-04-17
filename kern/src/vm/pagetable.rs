@@ -61,6 +61,10 @@ impl L3Entry {
         L3Entry(RawL3Entry::new(0))
     }
 
+    fn reset(&mut self) {
+        self.0 = RawL3Entry::new(0);
+    }
+
     /// Returns `true` if the L3Entry is valid and `false` otherwise.
     fn is_valid(&self) -> bool {
         self.0.get_value(RawL3Entry::VALID) != 0
@@ -177,6 +181,16 @@ impl PageTable {
         self
     }
 
+    pub fn get_entry(&self, va: VirtualAddr) -> &L3Entry {
+        let (l2, l3) = PageTable::locate(va);
+        &self.l3[l2].entries[l3]
+    }
+
+    pub fn get_entry_mut(&mut self, va: VirtualAddr) -> &mut L3Entry {
+        let (l2, l3) = PageTable::locate(va);
+        &mut self.l3[l2].entries[l3]
+    }
+
     /// Returns a base address of the pagetable. The returned `PhysicalAddr` value
     /// will point the start address of the L2PageTable.
     pub fn get_baddr(&self) -> PhysicalAddr {
@@ -269,6 +283,9 @@ impl KernPageTable {
         entry
     }
 
+    pub fn get_baddr(&self) -> PhysicalAddr {
+        self.0.get_baddr()
+    }
 
 }
 
@@ -288,7 +305,7 @@ impl UserPageTable {
     }
 
     pub fn iter_mapped_pages<'a>(&'a self) -> impl Iterator<Item=(VirtualAddr, PhysicalAddr)> + 'a {
-        self.l3.iter()
+        self.0.l3.iter()
             .flat_map(|l3| l3.entries.iter())
             .enumerate()
             .map(|(i, entry)| (VirtualAddr::from(USER_IMG_BASE + i * PAGE_SIZE), entry.get_page_addr()))
@@ -298,6 +315,18 @@ impl UserPageTable {
                     None => None,
                 }
             })
+    }
+
+    fn as_va_sub(va: VirtualAddr) -> VirtualAddr {
+        if va.as_usize() < USER_IMG_BASE {
+            panic!("Tried to create user page below USER_IMG_BASE: {:x}", va.as_usize());
+        }
+
+        va.sub(VirtualAddr::from(USER_IMG_BASE))
+    }
+
+    pub fn is_valid(&self, va: VirtualAddr) -> bool {
+        self.0.is_valid(Self::as_va_sub(va))
     }
 
     /// Allocates a page and set an L3 entry translates given virtual address to the
@@ -311,15 +340,11 @@ impl UserPageTable {
     /// TODO. use Result<T> and make it failurable
     /// TODO. use perm properly
     pub fn alloc(&mut self, va: VirtualAddr, _perm: PagePerm) -> &mut [u8] {
+        let va_sub = Self::as_va_sub(va);
 
-        if va.as_usize() < USER_IMG_BASE {
-            panic!("Tried to create user page below USER_IMG_BASE: {:x}", va.as_usize());
-        }
-
-        let va_sub = va.sub(VirtualAddr::from(USER_IMG_BASE));
-
-        if self.0.is_valid(va_sub) {
-            panic!("Tried to double allocate page: {:x}", va.as_usize());
+        if self.is_valid(va) {
+            self.dealloc(va);
+            error!("allocating over an already allocated page: {:x}", va.as_usize());
         }
 
         let mut entry = RawL3Entry::new(0);
@@ -341,6 +366,36 @@ impl UserPageTable {
 
         unsafe { core::slice::from_raw_parts_mut(alloc, PAGE_SIZE) }
     }
+
+    pub fn dealloc(&mut self, va: VirtualAddr) -> bool {
+        let entry = self.0.get_entry_mut(Self::as_va_sub(va));
+
+        if entry.is_valid() {
+            let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
+            unsafe { ALLOCATOR.dealloc(addr as *mut u8, Page::layout()) }
+            entry.reset();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub unsafe fn get_page_ref(&self, va: VirtualAddr) -> Option<&mut [u8]> {
+        assert_eq!(va.as_usize() % PAGE_SIZE, 0);
+
+        let entry = self.0.get_entry(Self::as_va_sub(va));
+        if !entry.is_valid() {
+            return None;
+        }
+
+        let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
+        Some(unsafe { core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE) })
+    }
+
+    pub fn get_baddr(&self) -> PhysicalAddr {
+        self.0.get_baddr()
+    }
+
 }
 
 impl Deref for KernPageTable {
@@ -351,13 +406,13 @@ impl Deref for KernPageTable {
     }
 }
 
-impl Deref for UserPageTable {
-    type Target = PageTable;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+// impl Deref for UserPageTable {
+//     type Target = PageTable;
+//
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
 
 impl DerefMut for KernPageTable {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -365,16 +420,16 @@ impl DerefMut for KernPageTable {
     }
 }
 
-impl DerefMut for UserPageTable {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+// impl DerefMut for UserPageTable {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.0
+//     }
+// }
 
 impl Drop for UserPageTable {
     fn drop(&mut self) {
 
-        for l3 in self.l3.iter_mut() {
+        for l3 in self.0.l3.iter_mut() {
             for entry in l3.entries.iter_mut() {
                 if entry.is_valid() {
                     let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;

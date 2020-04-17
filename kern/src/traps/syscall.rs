@@ -10,6 +10,7 @@ use crate::process::{EventPollFn, State};
 use crate::{SCHEDULER, process};
 use crate::traps::TrapFrame;
 use crate::sync::{Completion, Waitable};
+use crate::param::PAGE_SIZE;
 
 
 fn set_result(tf: &mut TrapFrame, regs: &[u64]) {
@@ -138,6 +139,19 @@ pub fn sys_wait_waitable(tf: &mut TrapFrame) {
     SCHEDULER.switch(State::WaitingObj(arc), tf);
 }
 
+pub fn sys_sbrk(tf: &mut TrapFrame) {
+    let incr = tf.regs[0] as i64;
+    if incr % (PAGE_SIZE as i64) != 0 {
+        set_err(tf, OsError::InvalidArgument);
+        return;
+    }
+
+
+
+    set_result(tf, &[0]);
+    set_err(tf, OsError::Ok);
+}
+
 pub fn handle_syscall(num: u16, tf: &mut TrapFrame) {
 
     match num as usize {
@@ -164,6 +178,9 @@ pub fn handle_syscall(num: u16, tf: &mut TrapFrame) {
         }
         NR_WAIT_WAITABLE => {
             sys_wait_waitable(tf);
+        }
+        NR_SBRK => {
+            sys_sbrk(tf);
         }
         _ => kprintln!("Unknown syscall: {}", num),
     }

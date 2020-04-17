@@ -1,4 +1,8 @@
+use alloc::sync::Arc;
 use crate::mutex::Mutex;
+use core::marker::PhantomData;
+use core::ops::Deref;
+use crate::fs::handle::Sink;
 
 #[derive(Debug)]
 pub struct Completion<T>(Mutex<Option<T>>);

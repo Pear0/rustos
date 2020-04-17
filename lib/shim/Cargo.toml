@@ -11,7 +11,7 @@ authors = [
 edition = "2018"
 
 [dependencies]
-cfg-if = "0.1"
+cfg-if = "0.1.10"
 core_io = { version = "0.1.20190701", package = "core_io", optional = true }
 
 [dev-dependencies]
