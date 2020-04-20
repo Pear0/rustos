@@ -14,6 +14,7 @@ edition = "2018"
 memcpy = true
 
 [dependencies]
+mini-alloc = { path = "../lib/mini-alloc" }
 pi = { path = "../lib/pi" }
 shutil = { path = "../lib/shutil" }
 shim = { path = "../lib/shim", features = ["no_std", "alloc"] }

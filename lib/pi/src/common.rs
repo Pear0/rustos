@@ -11,6 +11,11 @@ pub const GPIO_BASE: usize = IO_BASE + 0x20_0000;
 
 pub const USB_BASE: usize = IO_BASE + 0x98_0000;
 
+pub const DMA_CHANNEL_BASE: usize = IO_BASE + 0x7000;
+pub const DMA_CHANNEL_15: usize = IO_BASE + 0xE0_5000;
+pub const DMA_INT_STATUS: usize = DMA_CHANNEL_BASE + 0xfe0;
+pub const DMA_ENABLE: usize = DMA_CHANNEL_BASE + 0xff0;
+
 /// The number of cores in Rpi3
 pub const NCORES: usize = 4;
 

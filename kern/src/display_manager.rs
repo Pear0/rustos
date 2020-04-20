@@ -7,6 +7,8 @@ use crate::process::KernProcessCtx;
 use crate::VMM;
 
 use crate::display::{ColorMode, DisplayConfig, Painter, Color, DisplayHolder};
+use mini_alloc::MiniBox;
+use crate::mini_allocators::NOCACHE_ALLOC;
 
 
 fn display_init() -> Option<DisplayConfig> {
@@ -102,6 +104,22 @@ pub fn display_process(ctx: KernProcessCtx) {
         None => return,
         Some(d) => d,
     };
+
+    use pi::dma;
+
+    let mut controller = unsafe { dma::Controller::new(1) };
+
+    let mut block = MiniBox::new(&NOCACHE_ALLOC, dma::ControlBlock::new());
+
+    block.source = dma::Source::Constant(display.mode.encode(0xFF0000.into()));
+    block.destination = dma::Destination::Increasing(display.lfb.as_mut_ptr(), display.lfb.len());
+
+    let start = pi::timer::current_time();
+    controller.execute::<pi::timer::SpinWaiter>(block);
+
+    let diff = pi::timer::current_time() - start;
+    info!("Screen DMA took: {:?}", diff);
+
 
     let mut p = Painter::new(&display);
 

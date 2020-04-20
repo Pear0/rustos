@@ -16,6 +16,7 @@ pub trait TaggingAlloc {
 pub enum MemTag {
     Global = 0,
     CLib,
+    NoCacheMini,
     __last,
 }
 

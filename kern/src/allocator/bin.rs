@@ -7,6 +7,7 @@ use crate::allocator::tags::{TaggingAlloc, MemTag};
 use super::util::align_up;
 use shim::io;
 use pi::atags::Atag::Mem;
+use std::sync::atomic::AtomicU128;
 
 /// A simple allocator that allocates based on size classes.
 ///   bin 0 (2^3 bytes)    : handles allocations in (0, 2^3]

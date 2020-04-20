@@ -25,4 +25,9 @@ pub fn is_qemu() -> bool {
     aes && sha1 && sha2
 }
 
+static CORE_DMA_CONTROLLERS: usize = 0;
+
+
+
+
 

@@ -147,7 +147,7 @@ macro_rules! defbit32 {
     ($regname:ident) => { defbit!($regname, []); };
     ($regname:ident, [$($field:ident $bits:tt,)*]) => {
         #[allow(non_snake_case)]
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, Default, Debug)]
         #[repr(C)]
         pub struct $regname (u32);
 
@@ -203,7 +203,7 @@ macro_rules! defbit32 {
                 self
             }
 
-            $( define_bitfield!($field, $bits); )*
+            $( define_bitfield32!($field, $bits); )*
         }
     }
 }

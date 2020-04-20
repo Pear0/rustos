@@ -27,10 +27,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mini-alloc"
+version = "0.1.0"
+dependencies = [
+ "aarch64 0.1.0",
+ "shim 0.1.0",
+]
+
+[[package]]
 name = "pi"
 version = "0.1.0"
 dependencies = [
  "aarch64 0.1.0",
+ "mini-alloc 0.1.0",
  "shim 0.1.0",
  "volatile 0.1.0",
 ]

@@ -1,6 +1,8 @@
 use shim::io;
 
 use crate::display::{DisplayHolder, Painter};
+use mini_alloc::MiniBox;
+use crate::mini_allocators::NOCACHE_ALLOC;
 
 pub struct TextPainter<D: DisplayHolder> {
     painter: Painter<D>,
@@ -26,12 +28,26 @@ impl<D: DisplayHolder> TextPainter<D> {
     }
 
     fn scroll_up(&mut self) {
-        for y in 0..8*(self.row-1) {
-            let src = y + 8;
-            for x in 0..8*self.max_column {
-                self.painter.holder.with_display(|d| d.copy_pixel(x, src, x, y));
-            }
+        use pi::dma;
+
+        let mut controller = unsafe { dma::Controller::new(1) };
+
+        let mut block = MiniBox::new(&NOCACHE_ALLOC, dma::ControlBlock::new());
+
+        let mut pair = None;
+        self.painter.holder.with_display(|d| {
+            pair = Some((d.lfb.as_mut_ptr(), d.lfb.len(), d.pitch * 8));
+        });
+
+        if let Some(pair) = pair {
+            let len = pair.1 - pair.2;
+
+            block.source = dma::Source::Increasing(unsafe { pair.0.offset(pair.2 as isize) }, len);
+            block.destination = dma::Destination::Increasing(pair.0, len);
+
+            controller.execute::<pi::timer::SpinWaiter>(block);
         }
+
     }
 
     pub fn write_char(&mut self, char: u8) {

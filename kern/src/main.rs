@@ -78,6 +78,7 @@ pub mod iosync;
 pub mod kernel_call;
 mod logger;
 pub mod mbox;
+pub mod mini_allocators;
 pub mod net;
 pub mod pigrate_server;
 pub mod shell;

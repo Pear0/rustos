@@ -11,6 +11,7 @@ authors = [
 edition = "2018"
 
 [dependencies]
+mini-alloc = { path = "../mini-alloc" }
 volatile = { path = "../volatile" }
 shim = { path = "../shim", features = ["no_std"] }
 aarch64 = { path = "../aarch64" }

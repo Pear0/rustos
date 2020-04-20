@@ -76,3 +76,21 @@ pub fn spin_sleep(t: Duration) {
 pub fn tick_in(t: Duration) {
     Timer::new().tick_in(t);
 }
+
+pub trait Waiter {
+    fn wait(t: Duration) -> Duration;
+}
+
+pub struct SpinWaiter();
+
+impl Waiter for SpinWaiter {
+    fn wait(t: Duration) -> Duration {
+        let start = current_time();
+        while current_time() < start + t {}
+        current_time() - start
+    }
+}
+
+
+
+
