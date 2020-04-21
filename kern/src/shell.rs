@@ -63,7 +63,8 @@ impl<'a> Command<'a> {
 
 struct Shell {
     cwd: PathBuf,
-    dead_shell: bool
+    dead_shell: bool,
+    buffered_byte: Option<u8>,
 }
 
 type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
@@ -73,6 +74,7 @@ impl Shell {
         Shell {
             cwd: PathBuf::from("/"),
             dead_shell: false,
+            buffered_byte: None,
         }
     }
 
@@ -295,12 +297,68 @@ impl Shell {
             }
             "procs" => {
 
-                let mut snaps = Vec::new();
-                SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
 
-                for snap in snaps.iter() {
-                    kprintln!("{:?}", snap);
+                let mut repeat: bool = false;
+                if let Some(arg) = command.args.get(1) {
+                    repeat = *arg == "-w";
                 }
+
+                let cols = [
+                    String::from("  pid"), String::from("     state"), String::from("      name"),
+                    String::from("     cpu time"), String::from("cpu %"), String::from("waiting %"),
+                    String::from("ready %"), String::from("slice time"), String::from("task switches"),
+                    String::from("    lr"),
+                ].to_vec();
+
+                loop {
+                    use shim::io::Write;
+                    let mut foo = CONSOLE.lock();
+
+                    let mut table = shutil::TableWriter::new(foo.deref_mut(), 180, cols.clone());
+                    write!(table.get_writer(), "\x1b[2K")?;
+                    table.print_header()?;
+
+                    let mut snaps = Vec::new();
+                    SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+
+                    snaps.sort_by(|a, b| a.tpidr.cmp(&b.tpidr));
+
+                    for snap in snaps.iter() {
+                        // write!(table.get_writer(), "\x1b[2K")?;
+                        table.print(snap.tpidr)?
+                            .print_debug(snap.state)?
+                            .print(&snap.name)?
+                            .print_debug(snap.cpu_time)?
+                            .print(&format_args!("{}.{}%", snap.cpu_usage / 10, snap.cpu_usage % 10))?
+                            .print(&format_args!("{}.{}%", snap.waiting_usage / 10, snap.waiting_usage % 10))?
+                            .print(&format_args!("{}.{}%", snap.ready_usage / 10, snap.ready_usage % 10))?
+                            .print_debug(snap.avg_run_slice)?
+                            .print(snap.task_switches)?
+                            .print(&format_args!("0x{:x}", snap.lr))?
+                            .finish()?;
+                    }
+
+                    if !repeat || self.cancel_requested() {
+                        break;
+                    }
+
+                    kernel_api::syscall::sleep(Duration::from_millis(500));
+
+                    if self.cancel_requested() {
+                        break;
+                    }
+
+                    kprint!("\x1b[{}F", snaps.len()+1);
+                }
+
+
+                //
+                // let mut snaps = Vec::new();
+                // SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+                //
+                // for snap in snaps.iter() {
+                //     kprintln!("{:?}", snap);
+                // }
 
 
             }
@@ -311,22 +369,58 @@ impl Shell {
 
         Ok(())
     }
-}
 
-fn bell() {
-    CONSOLE.lock().write_byte(7);
-}
+    pub fn cancel_requested(&mut self) -> bool {
+        while self.has_byte() {
+            if self.read_byte() == b'\x03' {
+                return true;
+            }
+        }
+        false
+    }
 
-fn backspace() {
-    let mut console = CONSOLE.lock();
-    console.write_byte(8);
-    console.write_byte(b' ');
-    console.write_byte(8);
-}
+    pub fn bell(&mut self) {
+        kprint!("\x07");
+    }
 
-fn read_byte() -> u8 {
-    CONSOLE.lock().read_byte()
+    fn backspace(&mut self) {
+        kprint!("\x08 \x08");
+    }
+
+    fn has_byte(&mut self) -> bool {
+        if self.buffered_byte.is_some() {
+            return true;
+        }
+
+        let b = CONSOLE.lock().read_byte();
+        self.buffered_byte = Some(b);
+        return true;
+    }
+
+    fn read_byte(&mut self) -> u8 {
+        if let Some(b) = self.buffered_byte.take() {
+            return b;
+        }
+
+        CONSOLE.lock().read_byte()
+    }
+
 }
+//
+// fn bell() {
+//     CONSOLE.lock().write_byte(7);
+// }
+//
+// fn backspace() {
+//     let mut console = CONSOLE.lock();
+//     console.write_byte(8);
+//     console.write_byte(b' ');
+//     console.write_byte(8);
+// }
+//
+// fn read_byte() -> u8 {
+//     CONSOLE.lock().read_byte()
+// }
 
 /// Starts a shell using `prefix` as the prefix for each line. This function
 /// never returns.
@@ -339,25 +433,25 @@ pub fn shell(prefix: &str) {
         let mut line_buf = StackVec::new(&mut raw_buf);
 
         'line_loop: loop {
-            match read_byte() {
+            match shell.read_byte() {
                 b'\r' | b'\n' => {
                     kprintln!();
                     break 'line_loop;
                 }
                 8u8 | 127u8 => {
                     if line_buf.len() > 0 {
-                        backspace();
+                        shell.backspace();
                         line_buf.pop();
                     } else {
-                        bell();
+                        shell.bell();
                     }
                 }
                 // if we are in the first or fourth ASCII block and
                 // haven't already handled it, treat this as invalid.
-                byte if byte < 0x20 || byte >= 0x80 => bell(),
+                byte if byte < 0x20 || byte >= 0x80 => shell.bell(),
                 byte => match line_buf.push(byte) {
                     Ok(()) => CONSOLE.lock().write_byte(byte),
-                    Err(_) => bell(),
+                    Err(_) => shell.bell(),
                 }
             }
         }
