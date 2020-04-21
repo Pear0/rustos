@@ -1,0 +1,10 @@
+
+
+It uses the top-most bits of the address. if the top most bits are 11111...., it uses TTBR1_EL1.
+If they are 00000..., it uses TTBR0_EL1. The number of significant bits in both cases is configurable.
+If there is a mix, it is invalid.
+
+
+
+
+

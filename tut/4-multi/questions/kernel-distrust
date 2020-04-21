@@ -1,0 +1,7 @@
+
+A process has to trust the kernel.
+
+The kernel can poke anything in the process at any time and has direct access to all memory to see anything.
+
+
+

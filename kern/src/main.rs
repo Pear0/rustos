@@ -90,6 +90,18 @@ fn led_blink() -> ! {
     }
 }
 
+fn hello_tas() -> ! {
+
+    kernel_api::syscall::sleep(Duration::from_secs(3));
+
+    for _ in 0..3 {
+        kprintln!("Hello TAs! Use the `help` command for more info");
+        kernel_api::syscall::sleep(Duration::from_secs(3));
+    }
+
+    kernel_api::syscall::exit();
+}
+
 
 fn kmain() -> ! {
 
@@ -121,6 +133,11 @@ fn kmain() -> ! {
 
     {
         let mut proc = Process::kernel_process_old(String::from("led blink"), led_blink).unwrap();
+        SCHEDULER.add(proc);
+    }
+
+    {
+        let mut proc = Process::kernel_process_old(String::from("hello tas"), hello_tas).unwrap();
         SCHEDULER.add(proc);
     }
 

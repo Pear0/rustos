@@ -1,0 +1,7 @@
+
+
+It allows methods on the inner PageTable to be called directly on the UserPageTable or KernPageTable.
+
+Because rust implicitly deref's.
+
+

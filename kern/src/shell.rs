@@ -297,6 +297,7 @@ impl Shell {
             }
             "procs" => {
 
+                kprintln!("This is a table of all running processes. When processes get scheduled in and out, this updates counters that aggregate information such as total cpu time and % time in various states over the last 2 seconds.");
 
                 let mut repeat: bool = false;
                 if let Some(arg) = command.args.get(1) {
@@ -360,6 +361,20 @@ impl Shell {
                 //     kprintln!("{:?}", snap);
                 // }
 
+
+            }
+            "help" => {
+
+                kprintln!("this is help!");
+
+
+                kprintln!("Cool commands:");
+                kprintln!("  all the lab 3 commands");
+                kprintln!("  run - run a bin file in the background");
+                kprintln!("  procs - print a table of all running processes");
+                kprintln!("  sleep - sleep the shell for milliseconds");
+                kprintln!("  uptime - print Pi's uptime");
+                kprintln!("  reboot - reboots the Pi back into the bootloader");
 
             }
             path => {

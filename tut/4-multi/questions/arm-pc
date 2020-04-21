@@ -1,0 +1,15 @@
+
+
+For ret:
+
+mv lr, 0xA
+ret
+
+
+For eret from EL1:
+
+
+mov x1, 0xA
+msr ELR_EL1, x1
+eret
+

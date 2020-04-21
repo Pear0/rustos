@@ -1,0 +1,9 @@
+
+
+You'd allocate a single stack page. If process faults do to a translation fault,
+and the stack pointer is still within the "allowable stack region", allocate a new page for
+the stack pointer location and resume the process.
+
+
+
+

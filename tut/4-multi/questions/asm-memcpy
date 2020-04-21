@@ -1,0 +1,12 @@
+
+
+; I hope nobody cares about the value of w3 lmao
+
+memcpy:
+    ldr w3, [x0], #4
+    str w3, [x1], #4
+    subs x2, x2, #4
+    bge memcpy
+    ret
+
+

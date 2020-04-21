@@ -1,0 +1,6 @@
+
+
+SCHEDULER.switch() is used to schedule a process out after its time slice but the same API is also
+used to put a process in the Waiting state for a sleep syscall. The SCHEDULER is unaware of what the context
+is.
+

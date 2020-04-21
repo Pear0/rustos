@@ -1,0 +1,7 @@
+
+
+
+WFE waits for event. If no event occurs, the CPU waits indefinitely. It does what it says on the tin.
+
+
+

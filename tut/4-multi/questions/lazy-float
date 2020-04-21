@@ -1,0 +1,9 @@
+
+
+When you schedule in a process, don't load the SIMD regs and keep them disabled.
+
+If a process triggers an exception trying to use them, load them from the frame and enable them.
+
+On schedule out if they are enabled, save them then disable them.
+
+

@@ -1,0 +1,7 @@
+
+If another process is scheduled on the processor, the waiting process will not be re-scheduled until there
+is an open time slice.
+
+
+
+

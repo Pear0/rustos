@@ -1,0 +1,9 @@
+
+
+CBZ checks a register against zero and branches to a PC-offset immediate if the register == 0.
+
+It would be used to check an error code for example, if the error code is zero to jump to a different
+basic block handling error case.
+
+
+

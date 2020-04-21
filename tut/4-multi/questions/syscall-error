@@ -1,0 +1,10 @@
+
+
+The disadvantage of our use is that one register is dedicated to handling the error condition response
+where many syscalls will only return a valid (positive) value in one of the registers. Unix more efficiently
+packs it.
+
+
+The advantage is that decoding oof the Result becomes much simpler and it is harder to accidentally
+confuse a data value and an error code.
+

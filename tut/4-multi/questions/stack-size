@@ -1,0 +1,9 @@
+
+The process might call a syscall like mmap() to allocate memory below the bottom
+of the current stack. Or a custom syscall similar to sbrk couold be added that grows the stack down
+rather than increasing the heap.
+
+Or a process could work like in Go where it is expected to check how much stack is left and will allocate a new
+chunk of memory in the heap (again, using mmap()) and will just support a discontinuous stack.
+
+

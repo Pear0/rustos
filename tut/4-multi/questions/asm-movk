@@ -1,0 +1,7 @@
+
+
+mov x0, 0xBCDE
+movk x0, 0xA, LSL #16
+msr ELR_EL1, x0
+
+

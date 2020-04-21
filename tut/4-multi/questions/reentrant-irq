@@ -1,0 +1,8 @@
+
+
+Some IRQs are more important than others. For example a sound driver IRQ that needs to fill
+the sound card's DMA buffer may interrupt an IRQ that is handling a network packet response.
+
+If sound misses an IRQ, the user will definitely notice the audio skip, but a dropped network packet isn't
+very important.
+

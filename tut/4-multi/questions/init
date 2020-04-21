@@ -1,0 +1,21 @@
+
+
+_start is the very entrypoint from the firmware / bootloader. We don't know 100% what state we're in
+and need to set some very basic things. First checking MPIDR_EL1 to see what core we are. Only core 0
+should continue. Then setting a stack pointer so that we can make function calls.
+
+
+zeros_bss: The compiler emits code expecting there to be a section called .bss. The loader is meant to ensure this
+memory is zeroed but we do not have an ELF loader so we must ensure that this section is zeroed ourselves.
+
+
+switch_to_el2: Detects if we are in EL3 and drops us into EL2, doing a few other things like ensuring nonsecure mode
+and ensuring interrupts are masked in EL2.
+
+switch_to_el1: very similar to the previous, detects EL2 and drops into EL1 after putting things in a known state
+and setting VBAR_EL1 which is the exception vector.
+
+
+kinit: called from _start. Orchestrates the calling the other functions then calls kmain(), jumping into the kernel's main code.
+
+

@@ -1,0 +1,5 @@
+
+
+Stack implements the Drop trait allowing it to custom destruction.
+In this case deallocating the chunk of memory.
+

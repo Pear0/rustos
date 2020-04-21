@@ -1,0 +1,16 @@
+
+Two separate processes would have an SP pointing the same area of physical memory.
+
+Since the processes are completyely unrelated in execution state, one will very quickly try to read
+a saved link register or other pointer from the stack where the other process has written data. This
+will very quickly lead to one process jumping too or trying to access invalid memory.
+
+
+The processes would have to never increment the stack pointer, only decrement it (allocating space). The
+stack pointer would need to be atomic and global. And each process would need a separate frame pointer.
+The frame pointer would be used to access local variables, incrementing the stack pointer only to allocate a
+new frame on the stack.
+
+
+
+

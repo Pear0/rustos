@@ -1,0 +1,7 @@
+
+mrs x1, CurrentEL
+
+In non EL0, this sets x1 to the current el. In EL0 this faults to the
+kernel which may choose to emulate the instruction to return 0.
+
+
