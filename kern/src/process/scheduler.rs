@@ -16,9 +16,9 @@ use crate::console::kprint;
 use crate::console::kprintln;
 use core::time::Duration;
 use crate::process::snap::SnapProcess;
+use crate::process::state::RunContext;
 
 /// Process scheduler for the entire machine.
-#[derive(Debug)]
 pub struct GlobalScheduler(Mutex<Option<Scheduler>>);
 
 extern "C" {
@@ -67,21 +67,7 @@ impl GlobalScheduler {
                 return id;
             }
 
-            // FIXME lol??????? I don't want to DIE
-            unsafe {
-                let mut v = aarch64::regs::CNTKCTL_EL1.get();
-                let m = aarch64::regs::CNTKCTL_EL1::EVNTI;
-
-                v &= !m;
-                // seems to wait around 134μs
-                v |= (13) << m.trailing_zeros();
-
-                v |= aarch64::regs::CNTKCTL_EL1::EVNTEN;
-
-                aarch64::regs::CNTKCTL_EL1.set(v);
-            }
-
-            aarch64::wfe();
+            aarch64::wfi();
 
         }
     }
@@ -172,7 +158,6 @@ impl GlobalScheduler {
     }
 }
 
-#[derive(Debug)]
 pub struct Scheduler {
     processes: VecDeque<Process>,
     last_id: Option<Id>,
@@ -220,7 +205,8 @@ impl Scheduler {
         match proc {
             None => false,
             Some((idx, proc)) => {
-                proc.state = new_state;
+                proc.task_switches += 1;
+                proc.set_state(new_state);
                 *(proc.context.borrow_mut()) = *tf;
 
                 // something is very bad if the entry we found is no longer here.
@@ -230,6 +216,16 @@ impl Scheduler {
                 true
             }
         }
+    }
+
+    fn load_frame(tf: &mut TrapFrame, proc: &mut Process) -> Id {
+        let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+        let now = pi::timer::current_time();
+
+        proc.set_state(State::Running(RunContext { core_id, scheduled_at: now }));
+        *tf = *proc.context.borrow();
+
+        proc.context.tpidr
     }
 
     /// Finds the next process to switch to, brings the next process to the
@@ -252,10 +248,7 @@ impl Scheduler {
 
         let (idx, proc) = proc?;
 
-        proc.state = State::Running;
-        *tf = *proc.context.borrow();
-
-        let id = proc.context.tpidr;
+        let id = Scheduler::load_frame(tf, proc);
 
         // something is very bad if the entry we found is no longer here.
         let owned = self.processes.remove(idx).unwrap();
@@ -273,7 +266,7 @@ impl Scheduler {
         match proc {
             None => None,
             Some((idx, proc)) => {
-                proc.state = State::Dead;
+                proc.set_state(State::Dead);
                 *(proc.context.borrow_mut()) = *tf;
 
                 // something is very bad if the entry we found is no longer here.

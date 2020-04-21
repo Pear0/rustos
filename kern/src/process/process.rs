@@ -1,17 +1,23 @@
 use alloc::boxed::Box;
-use shim::io;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+use core::ops::Add;
+use core::ops::Deref;
+use core::time::Duration;
+use alloc::sync::Arc;
+use alloc::borrow::ToOwned;
 use shim::path::Path;
 
 use aarch64;
 
 use crate::param::*;
-use crate::process::{Stack, State};
+use crate::process::{Stack, State, TimeRatio, TimeRing};
 use crate::traps::TrapFrame;
 use crate::vm::*;
 use kernel_api::{OsError, OsResult};
 use crate::process::state::EventPollFn;
 use crate::FILESYSTEM;
-use core::ops::Add;
 use aarch64::vmsa::EntryPerm::USER_RW;
 use aarch64::SPSR_EL1;
 
@@ -19,7 +25,6 @@ use aarch64::SPSR_EL1;
 pub type Id = u64;
 
 /// A structure that represents the complete state of a process.
-#[derive(Debug)]
 pub struct Process {
     /// The saved trap frame of a process.
     pub context: Box<TrapFrame>,
@@ -29,6 +34,18 @@ pub struct Process {
     pub vmap: Box<UserPageTable>,
     /// The scheduling state of the process.
     pub state: State,
+
+    pub name: String,
+
+    pub cpu_time: Duration,
+
+    pub ready_ratio: TimeRatio,
+    pub running_ratio: TimeRatio,
+    pub waiting_ratio: TimeRatio,
+
+    pub running_slices: TimeRing,
+
+    pub task_switches: usize,
 }
 
 impl Process {
@@ -37,7 +54,7 @@ impl Process {
     ///
     /// If enough memory could not be allocated to start the process, returns
     /// `None`. Otherwise returns `Some` of the new `Process`.
-    pub fn new() -> OsResult<Process> {
+    pub fn new(name: String) -> OsResult<Process> {
         let mut vmap = Box::new(UserPageTable::new());
         let stack = Stack::new().ok_or(OsError::NoMemory)?;
         let mut context = Box::new(TrapFrame::default());
@@ -47,13 +64,20 @@ impl Process {
             stack,
             vmap,
             state: State::Ready,
+            name,
+            cpu_time: Duration::from_millis(0),
+            ready_ratio: TimeRatio::new(),
+            running_ratio: TimeRatio::new(),
+            waiting_ratio: TimeRatio::new(),
+            running_slices: TimeRing::new(),
+            task_switches: 0,
         })
     }
 
-    pub fn kernel_process(f: fn()) -> OsResult<Process> {
+    pub fn kernel_process_old(name: String, f: fn() -> !) -> OsResult<Process> {
         use crate::VMM;
 
-        let mut p = Process::new()?;
+        let mut p = Process::new(name)?;
 
         p.context.sp = p.stack.top().as_u64();
         p.context.elr = f as u64;
@@ -96,7 +120,7 @@ impl Process {
     fn do_load<P: AsRef<Path>>(pn: P) -> OsResult<Process> {
         use fat32::traits::*;
         use shim::io::Read;
-        let mut proc = Process::new()?;
+        let mut proc = Process::new(pn.as_ref().to_str().ok_or(OsError::InvalidArgument)?.to_owned())?;
 
         proc.vmap.alloc(Process::get_stack_base(), PagePerm::RW);
 
@@ -149,6 +173,35 @@ impl Process {
         VirtualAddr::from(u64::max_value() & (!0xFu64))
     }
 
+    pub fn get_state(&self) -> &State {
+        &self.state
+    }
+
+    pub fn set_state(&mut self, new_state: State) {
+        let now = pi::timer::current_time();
+
+        match &self.state {
+            State::Ready => self.ready_ratio.set_active_with_time(false, now),
+            State::Running(ctx) => {
+                self.running_ratio.set_active_with_time(false, now);
+                let delta = now - ctx.scheduled_at;
+                self.cpu_time += delta;
+                self.running_slices.record(delta);
+            },
+            State::Waiting(_) => self.waiting_ratio.set_active_with_time(false, now),
+            _ => {},
+        }
+
+        match &new_state {
+            State::Ready => self.ready_ratio.set_active_with_time(true, now),
+            State::Running(_) => self.running_ratio.set_active_with_time(true, now),
+            State::Waiting(_) => self.waiting_ratio.set_active_with_time(true, now),
+            _ => {},
+        }
+
+        self.state = new_state;
+    }
+
     /// Returns `true` if this process is ready to be scheduled.
     ///
     /// This functions returns `true` only if one of the following holds:
@@ -168,7 +221,7 @@ impl Process {
 
             let mut copy = core::mem::replace(h, Box::new(|_| false));
             if copy(self) {
-                self.state = State::Ready;
+                self.set_state(State::Ready);
             } else {
 
                 // this will always succeed. Cannot re-use h due to lifetimes of passing self

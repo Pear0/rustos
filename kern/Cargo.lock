@@ -84,6 +84,7 @@ dependencies = [
  "kernel_api 0.1.0",
  "pi 0.1.0",
  "shim 0.1.0",
+ "shutil 0.1.0",
  "stack-vec 0.1.0",
 ]
 
@@ -152,6 +153,13 @@ version = "0.1.0"
 dependencies = [
  "cfg-if 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "core_io 0.1.20190701 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "shutil"
+version = "0.1.0"
+dependencies = [
+ "shim 0.1.0",
 ]
 
 [[package]]

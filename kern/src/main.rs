@@ -69,12 +69,15 @@ fn init_jtag() {
    }
 }
 
-fn my_thread() {
+fn my_thread() -> ! {
 
     shell::shell("$ ");
+
+    kprintln!("Shell died????, restarting pi...");
+    unsafe { pi::pm::reset() };
 }
 
-fn led_blink() {
+fn led_blink() -> ! {
 
     let mut g = gpio::Gpio::new(29).into_output();
     loop {
@@ -112,12 +115,12 @@ fn kmain() -> ! {
     unsafe { SCHEDULER.initialize() };
 
     {
-        let mut proc = Process::kernel_process(my_thread).unwrap();
+        let mut proc = Process::kernel_process_old(String::from("my_thread"), my_thread).unwrap();
         SCHEDULER.add(proc);
     }
 
     {
-        let mut proc = Process::kernel_process(led_blink).unwrap();
+        let mut proc = Process::kernel_process_old(String::from("led blink"), led_blink).unwrap();
         SCHEDULER.add(proc);
     }
 

@@ -15,6 +15,7 @@ memcpy = true
 
 [dependencies]
 pi = { path = "../lib/pi" }
+shutil = { path = "../lib/shutil" }
 shim = { path = "../lib/shim", features = ["no_std", "alloc"] }
 stack-vec = { path = "../lib/stack-vec/" }
 fat32 = { path = "../lib/fat32/", features = ["no_std"] }

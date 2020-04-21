@@ -56,6 +56,9 @@ pub fn sys_exit(tf: &mut TrapFrame) {
 /// It only returns the usual status value.
 pub fn sys_write(b: u8, tf: &mut TrapFrame) {
 
+    if b == b'\n' {
+        CONSOLE.lock().write_byte(b'\r');
+    }
     CONSOLE.lock().write_byte(b);
 
 }
