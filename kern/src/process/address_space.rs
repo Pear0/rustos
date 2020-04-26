@@ -2,21 +2,22 @@ use alloc::vec::Vec;
 use crate::vm::{UserPageTable, VirtualAddr, PagePerm, PhysicalAddr};
 use crate::param::{PAGE_SIZE, PAGE_MASK, PAGE_ALIGN};
 use kernel_api::{OsResult, OsError};
+use core::fmt::Debug;
 
 #[derive(Debug)]
-pub enum RegionKind {
+pub enum KernelRegionKind {
     Normal,
 }
 
 #[derive(Debug)]
-pub struct Region {
+pub struct Region<Kind: Debug> {
     start: usize,
     length: usize,
-    kind: RegionKind,
+    kind: Kind,
 }
 
-impl Region {
-    pub fn new(start: VirtualAddr, length: usize, kind: RegionKind) -> Self {
+impl<Kind: Debug> Region<Kind> {
+    pub fn new(start: VirtualAddr, length: usize, kind: Kind) -> Self {
         Self { start: start.as_usize(), length, kind }
     }
 
@@ -52,12 +53,12 @@ impl Region {
     }
 }
 
-pub struct AddressSpaceManager {
-    pub regions: Vec<Region>,
+pub struct AddressSpaceManager<Kind: Debug> {
+    pub regions: Vec<Region<Kind>>,
     pub table: UserPageTable,
 }
 
-impl AddressSpaceManager {
+impl<Kind: Debug> AddressSpaceManager<Kind> {
     pub fn new() -> Self {
         Self {
             // vector sorted bty
@@ -66,14 +67,14 @@ impl AddressSpaceManager {
         }
     }
 
-    pub fn add_region(&mut self, region: Region) -> OsResult<()> {
+    pub fn add_region(&mut self, region: Region<Kind>) -> OsResult<()> {
         if region.start % PAGE_SIZE != 0 || region.length % PAGE_SIZE != 0 {
             return Err(OsError::InvalidArgument);
         }
 
-        let after: Option<(usize, &Region)> = self.regions.iter().enumerate().find(|(_, reg)| reg.start > region.start);
+        let after: Option<(usize, &Region<Kind>)> = self.regions.iter().enumerate().find(|(_, reg)| reg.start > region.start);
 
-        let before: Option<&Region> = match after {
+        let before: Option<&Region<Kind>> = match after {
             None => self.regions.last(),
             Some((i, _)) => self.regions[..i].last(),
         };
@@ -108,12 +109,12 @@ impl AddressSpaceManager {
             .map(|(i, _)| i)
     }
 
-    pub fn get_region(&self, va: VirtualAddr) -> Option<&Region> {
+    pub fn get_region(&self, va: VirtualAddr) -> Option<&Region<Kind>> {
         let va = va.as_usize();
         self.regions.iter().find(|region|  region.start <= va && va < region.start + region.length)
     }
 
-    pub fn get_region_mut(&mut self, va: VirtualAddr) -> Option<&mut Region> {
+    pub fn get_region_mut(&mut self, va: VirtualAddr) -> Option<&mut Region<Kind>> {
         let va = va.as_usize();
         self.regions.iter_mut().find(|region|  region.start <= va && va < region.start + region.length)
     }

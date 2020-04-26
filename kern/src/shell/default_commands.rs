@@ -19,7 +19,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, IRQ, NET, SCHEDULER, timer};
+use crate::{ALLOCATOR, IRQ, NET, KERNEL_SCHEDULER, timer};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
 use crate::fs::sd;
@@ -177,7 +177,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
 
             writeln!(sh.writer, "Launching process...");
 
-            let res = SCHEDULER.add(proc);
+            let res = KERNEL_SCHEDULER.add(proc);
             writeln!(sh.writer, "pid: {:?}", res);
 
             Ok(())
@@ -280,7 +280,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 table.print_header()?;
 
                 let mut snaps = Vec::new();
-                SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+                KERNEL_SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
 
                 snaps.sort_by(|a, b| a.tpidr.cmp(&b.tpidr));
 
@@ -346,7 +346,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             }
 
             let addr: u64 = cmd.args[1].parse()?;
-            SCHEDULER.crit_process(addr, |p| {
+            KERNEL_SCHEDULER.crit_process(addr, |p| {
                 match p {
                     Some(p) => {
                         p.request_kill();
@@ -375,7 +375,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             .func_result(move |sh, cmd| {
                 if cmd.args.len() == 2 {
                     let addr: u64 = cmd.args[1].parse()?;
-                    SCHEDULER.crit_process(addr, |p| {
+                    KERNEL_SCHEDULER.crit_process(addr, |p| {
                         match p {
                             Some(p) => {
                                 p.request_suspend = val;

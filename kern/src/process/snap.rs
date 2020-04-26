@@ -1,7 +1,7 @@
 use crate::process::{Process, State};
 use alloc::string::String;
 use core::time::Duration;
-use crate::process::process::CoreAffinity;
+use crate::process::process::{CoreAffinity, KernelProcess, ProcessImpl};
 use core::fmt;
 
 #[derive(Debug, Clone, Copy)]
@@ -20,8 +20,8 @@ pub enum SnapState {
     Suspended,
 }
 
-impl From<&State> for SnapState {
-    fn from(state: &State) -> Self {
+impl<T: ProcessImpl> From<&State<T>> for SnapState {
+    fn from(state: &State<T>) -> Self {
         use SnapState::*;
         match state {
             State::Ready => Ready,
@@ -50,8 +50,8 @@ pub struct SnapProcess {
     pub lr: u64,
 }
 
-impl From<&Process> for SnapProcess {
-    fn from(proc: &Process) -> Self {
+impl From<&KernelProcess> for SnapProcess {
+    fn from(proc: &KernelProcess) -> Self {
 
         let mut cpu_time = proc.cpu_time;
         if let State::Running(ctx) = proc.get_state() {

@@ -16,11 +16,11 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, NET, SCHEDULER, timer, hw};
+use crate::{IRQ, NET, KERNEL_SCHEDULER, timer, hw};
 use crate::FILESYSTEM;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::net::arp::ArpResolver;
-use crate::process::{Process, Id};
+use crate::process::{Process, Id, KernelProcess};
 use crate::shell::command::{Command, CommandBuilder};
 use crate::smp;
 
@@ -82,12 +82,12 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
         }
     }
 
-    fn load_process(&self, piece: &str) -> kernel_api::OsResult<Process> {
+    fn load_process(&self, piece: &str) -> kernel_api::OsResult<KernelProcess> {
         let path = Path::new(piece);
         if path.has_root() {
-            Process::load(path)
+            KernelProcess::load(path)
         } else {
-            Process::load(self.cwd.join(path))
+            KernelProcess::load(self.cwd.join(path))
         }
     }
 
@@ -297,7 +297,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 if command.args.len() == 2 {
                     match self.load_process(command.args[1]) {
                         Ok(proc) => {
-                            let id = SCHEDULER.add(proc);
+                            let id = KERNEL_SCHEDULER.add(proc);
 
                             if let Some(id) = id {
                                 kernel_api::syscall::waitpid(id);
@@ -319,7 +319,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 if command.args.len() == 2 {
                     match self.load_process(command.args[1]) {
                         Ok(proc) => {
-                            SCHEDULER.add(proc);
+                            KERNEL_SCHEDULER.add(proc);
                         }
                         Err(e) => {
                             writeln!(self.writer, "error: {:?}", e)?;
@@ -336,7 +336,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
 
                     match command.args[1].parse() {
                         Ok(id) => {
-                            SCHEDULER.crit_process(id, |proc| {
+                            KERNEL_SCHEDULER.crit_process(id, |proc| {
                                 match proc {
                                     Some(proc) => {
                                         proc.dump(&mut self.writer);
@@ -389,7 +389,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
 
                 } else {
                     let mut snaps = Vec::new();
-                    SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+                    KERNEL_SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
 
                     for snap in snaps.iter() {
                         writeln!(self.writer, "{:?}", snap)?;

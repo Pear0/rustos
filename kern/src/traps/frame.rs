@@ -1,9 +1,17 @@
 use shim::io;
 use fat32::util::SliceExt;
 
+
+pub trait Frame {
+    fn get_id(&self) -> u64;
+
+    fn set_id(&mut self, val: u64);
+}
+
+
 #[repr(C, packed)]
 #[derive(Default, Copy, Clone, Debug)]
-pub struct TrapFrame {
+pub struct KernelTrapFrame {
     pub elr: u64,
     pub spsr: u64,
     pub sp: u64,
@@ -14,9 +22,9 @@ pub struct TrapFrame {
     pub regs: [u64; 31],
 }
 
-const_assert_size!(TrapFrame, 808);
+const_assert_size!(KernelTrapFrame, 808);
 
-impl TrapFrame {
+impl KernelTrapFrame {
 
     pub fn as_bytes(&self) -> &[u8] {
         use fat32::util::SliceExt;
@@ -63,5 +71,14 @@ impl TrapFrame {
 
         Ok(())
     }
+}
 
+impl Frame for KernelTrapFrame {
+    fn get_id(&self) -> u64 {
+        self.tpidr
+    }
+
+    fn set_id(&mut self, val: u64) {
+        self.tpidr = val;
+    }
 }

@@ -3,11 +3,11 @@ use alloc::boxed::Box;
 use pi::interrupt::{Interrupt, CoreInterrupt};
 
 use crate::mutex::Mutex;
-use crate::traps::TrapFrame;
+use crate::traps::KernelTrapFrame;
 use crate::smp;
 use core::time::Duration;
 
-pub type IrqHandler = Box<dyn FnMut(&mut TrapFrame) + Send>;
+pub type IrqHandler = Box<dyn FnMut(&mut KernelTrapFrame) + Send>;
 
 #[derive(Copy, Clone, Default, Debug)]
 pub struct IrqStats {
@@ -27,7 +27,7 @@ impl IrqEntry {
         }
     }
 
-    fn record_stats(&mut self, _tf: &TrapFrame) {
+    fn record_stats(&mut self, _tf: &KernelTrapFrame) {
         self.stats.count = self.stats.count.wrapping_add(1);
     }
 
@@ -80,7 +80,7 @@ impl Irq {
 
     /// Executes an irq handler for the givven interrupt.
     /// The caller should assure that `initialize()` has been called before calling this function.
-    pub fn invoke(&self, int: Interrupt, tf: &mut TrapFrame) -> bool {
+    pub fn invoke(&self, int: Interrupt, tf: &mut KernelTrapFrame) -> bool {
         let lock = &mut m_lock!(self.0);
         let entry = &mut lock.as_mut().unwrap()[Interrupt::to_index(int)];
         entry.record_stats(tf);
@@ -92,7 +92,7 @@ impl Irq {
         }
     }
 
-    pub fn invoke_core(&self, core: usize, int: CoreInterrupt, tf: &mut TrapFrame) -> bool {
+    pub fn invoke_core(&self, core: usize, int: CoreInterrupt, tf: &mut KernelTrapFrame) -> bool {
         let lock = &mut m_lock!(self.1.handlers[core]);
         let entry = &mut lock.as_mut().unwrap()[int as usize];
         entry.record_stats(tf);

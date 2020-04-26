@@ -49,7 +49,7 @@ use shim::{io, ioerr};
 
 use crate::mutex::Mutex;
 use crate::net::GlobalNetHandler;
-use crate::process::{Process, Stack, Id};
+use crate::process::{Process, Stack, Id, KernelImpl};
 use crate::traps::syndrome::Syndrome;
 use crate::process::fd::FileDescriptor;
 use crate::fs::handle::{SourceWrapper, SinkWrapper};
@@ -92,7 +92,7 @@ pub mod vm;
 #[cfg_attr(not(test), global_allocator)]
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
-pub static SCHEDULER: GlobalScheduler = GlobalScheduler::uninitialized();
+pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
 pub static VMM: VMManager = VMManager::uninitialized();
 pub static IRQ: Irq = Irq::uninitialized();
 pub static NET: GlobalNetHandler = GlobalNetHandler::uninitialized();
@@ -159,7 +159,7 @@ fn network_thread() -> ! {
 
             proc.set_stdio(Arc::new(source), Arc::new(sink));
 
-            SCHEDULER.add(proc);
+            KERNEL_SCHEDULER.add(proc);
 
             Ok(())
         }));
@@ -170,10 +170,10 @@ fn network_thread() -> ! {
             let mut proc = Process::kernel_process_old(String::from("net thread2"), my_net_thread2)
                 .or(ioerr!(Other, "foo"))?;
 
-            proc.file_descriptors.push(FileDescriptor::read(Arc::new(source)));
-            proc.file_descriptors.push(FileDescriptor::write(Arc::new(sink)));
+            proc.detail.file_descriptors.push(FileDescriptor::read(Arc::new(source)));
+            proc.detail.file_descriptors.push(FileDescriptor::write(Arc::new(sink)));
 
-            SCHEDULER.add(proc);
+            KERNEL_SCHEDULER.add(proc);
 
             Ok(())
         }));
@@ -189,9 +189,9 @@ fn network_thread() -> ! {
 
 fn my_net_thread2() -> ! {
     let pid: Id = kernel_api::syscall::getpid();
-    let (source, sink) = SCHEDULER.crit_process(pid, |f| {
+    let (source, sink) = KERNEL_SCHEDULER.crit_process(pid, |f| {
         let f = f.unwrap();
-        (f.file_descriptors[0].read.as_ref().unwrap().clone(), f.file_descriptors[1].write.as_ref().unwrap().clone())
+        (f.detail.file_descriptors[0].read.as_ref().unwrap().clone(), f.detail.file_descriptors[1].write.as_ref().unwrap().clone())
     });
 
     shell::Shell::new("% ", SourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
@@ -312,13 +312,13 @@ fn kmain() -> ! {
 
     info!("init Scheduler");
     unsafe {
-        SCHEDULER.initialize();
+        KERNEL_SCHEDULER.initialize();
     };
 
     use aarch64::regs::*;
     smp::run_on_secondary_cores(|| {
         unsafe {
-            SCHEDULER.initialize();
+            KERNEL_SCHEDULER.initialize();
         };
     });
 
@@ -326,23 +326,23 @@ fn kmain() -> ! {
 
     {
         let proc = Process::kernel_process_old("shell".to_owned(), my_thread).unwrap();
-        SCHEDULER.add(proc);
+        KERNEL_SCHEDULER.add(proc);
     }
 
     if !hw::is_qemu() {
         let mut proc = Process::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
         proc.affinity.set_only(0);
-        SCHEDULER.add(proc);
+        KERNEL_SCHEDULER.add(proc);
     }
 
     {
         let proc = Process::kernel_process_old("led".to_owned(), led_blink).unwrap();
-        SCHEDULER.add(proc);
+        KERNEL_SCHEDULER.add(proc);
     }
 
     {
         let proc = Process::kernel_process("display".to_owned(), display_manager::display_process).unwrap();
-        SCHEDULER.add(proc);
+        KERNEL_SCHEDULER.add(proc);
     }
 
     // {
@@ -358,7 +358,7 @@ fn kmain() -> ! {
         let core = smp::core();
         pi::timer::spin_sleep(Duration::from_millis(4 * core as u64));
         debug!("Core {} starting scheduler", core);
-        SCHEDULER.start();
+        KERNEL_SCHEDULER.start();
 
         error!("RIP RIP");
     });
@@ -366,5 +366,5 @@ fn kmain() -> ! {
     pi::timer::spin_sleep(Duration::from_millis(50));
     kprintln!("Core 0 starting scheduler");
 
-    SCHEDULER.start();
+    KERNEL_SCHEDULER.start();
 }

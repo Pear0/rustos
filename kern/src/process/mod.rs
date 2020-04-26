@@ -12,7 +12,7 @@ mod state;
 
 pub use crate::param::TICK;
 
-pub use self::process::{Id, Process, KernProcessCtx};
+pub use self::process::{Id, Process, KernProcessCtx, KernelProcess, KernelImpl, ProcessImpl};
 pub use self::scheduler::GlobalScheduler;
 pub use self::stack::Stack;
 pub use self::state::{EventPollFn, State};

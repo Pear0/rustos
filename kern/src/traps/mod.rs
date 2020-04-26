@@ -3,11 +3,11 @@ use alloc::vec::Vec;
 use aarch64::MPIDR_EL1;
 use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
-use crate::{debug, IRQ, SCHEDULER, shell, smp};
+use crate::{debug, IRQ, KERNEL_SCHEDULER, shell, smp};
 use crate::cls::CoreLocal;
 use crate::traps::Kind::Synchronous;
 
-pub use self::frame::TrapFrame;
+pub use self::frame::{Frame, KernelTrapFrame};
 use self::syndrome::Fault;
 use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
@@ -46,7 +46,7 @@ pub struct Info {
     kind: Kind,
 }
 
-fn handle_irqs(tf: &mut TrapFrame) {
+fn handle_irqs(tf: &mut KernelTrapFrame) {
     let ctl = Controller::new();
     // Invoke any handlers
 
@@ -116,7 +116,7 @@ pub fn irq_info() -> Info {
 /// the value of the exception syndrome register. Finally, `tf` is a pointer to
 /// the trap frame for the exception.
 #[no_mangle]
-pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
+pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut KernelTrapFrame) {
     //
     // let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
     // kprintln!("IRQ: {}", core_id);
@@ -152,13 +152,13 @@ pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
                 s => {
                     kprintln!("{:?} {:?} (raw=0x{:x}) @ {:x}", info, s, esr, tf.elr);
 
-                    SCHEDULER.crit_process(tf.tpidr, |proc| {
+                    KERNEL_SCHEDULER.crit_process(tf.tpidr, |proc| {
                         if let Some(proc) = proc {
                             proc.request_suspend = true;
                         }
                     });
 
-                    SCHEDULER.switch(State::Suspended, tf);
+                    KERNEL_SCHEDULER.switch(State::Suspended, tf);
                 }
             }
         }
@@ -179,9 +179,9 @@ pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut TrapFrame) {
     IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
 }
 
-fn debug_shell(tf: &mut TrapFrame) {
+fn debug_shell(tf: &mut KernelTrapFrame) {
     let mut snaps = Vec::new();
-    SCHEDULER.critical(|s| s.get_process_snaps(&mut snaps));
+    KERNEL_SCHEDULER.critical(|s| s.get_process_snaps(&mut snaps));
 
     let snap = snaps.into_iter().find(|s| s.tpidr == tf.tpidr);
 
