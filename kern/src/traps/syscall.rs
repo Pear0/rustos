@@ -6,8 +6,9 @@ use kernel_api::*;
 use crate::kernel_call::*;
 
 use crate::console::CONSOLE;
+use crate::kernel::KERNEL_SCHEDULER;
 use crate::process::{EventPollFn, State, KernelImpl};
-use crate::{KERNEL_SCHEDULER, process};
+use crate::{process};
 use crate::traps::KernelTrapFrame;
 use crate::sync::{Completion, Waitable};
 use crate::param::PAGE_SIZE;

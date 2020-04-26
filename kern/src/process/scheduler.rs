@@ -9,8 +9,9 @@ use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
-use crate::{IRQ, KERNEL_SCHEDULER, smp};
+use crate::{IRQ, smp};
 use crate::cls::CoreLocal;
+use crate::kernel::KERNEL_SCHEDULER;
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State, KernelImpl};

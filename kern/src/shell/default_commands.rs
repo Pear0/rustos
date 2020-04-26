@@ -19,7 +19,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, IRQ, NET, KERNEL_SCHEDULER, timer};
+use crate::{ALLOCATOR, IRQ, NET, timer};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
 use crate::fs::sd;
@@ -32,6 +32,7 @@ use crate::shell::command::{Command, CommandBuilder};
 use crate::smp;
 
 use super::shell::Shell;
+use crate::kernel::KERNEL_SCHEDULER;
 
 mod net;
 

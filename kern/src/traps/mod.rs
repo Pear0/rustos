@@ -3,8 +3,9 @@ use alloc::vec::Vec;
 use aarch64::MPIDR_EL1;
 use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
-use crate::{debug, IRQ, KERNEL_SCHEDULER, shell, smp};
+use crate::{debug, IRQ, shell, smp};
 use crate::cls::CoreLocal;
+use crate::kernel::KERNEL_SCHEDULER;
 use crate::traps::Kind::Synchronous;
 
 pub use self::frame::{Frame, KernelTrapFrame};

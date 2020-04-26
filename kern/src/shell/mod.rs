@@ -15,7 +15,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, NET, KERNEL_SCHEDULER, timer};
+use crate::{IRQ, NET, timer};
 use crate::FILESYSTEM;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper, TeeingWriter};
 use crate::net::arp::ArpResolver;

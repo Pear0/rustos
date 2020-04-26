@@ -16,9 +16,10 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, NET, KERNEL_SCHEDULER, timer, hw};
+use crate::{IRQ, NET, timer, hw};
 use crate::FILESYSTEM;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
+use crate::kernel::KERNEL_SCHEDULER;
 use crate::net::arp::ArpResolver;
 use crate::process::{Process, Id, KernelProcess};
 use crate::shell::command::{Command, CommandBuilder};

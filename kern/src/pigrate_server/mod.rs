@@ -5,12 +5,13 @@ use core::time::Duration;
 
 use shim::{io, ioerr};
 
-use crate::{NET, KERNEL_SCHEDULER};
+use crate::{NET};
 use crate::iosync::{SyncRead, SyncWrite};
 use crate::net::ipv4;
 use crate::process::{Id, Process};
 use crate::process::fd::FileDescriptor;
 use crate::sync::Waitable;
+use crate::kernel::KERNEL_SCHEDULER;
 
 pub fn pigrate_server() -> ! {
     let pid: Id = kernel_api::syscall::getpid();
