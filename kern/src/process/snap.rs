@@ -1,7 +1,7 @@
-use crate::process::{Process, State};
+use crate::process::{Process, State, KernelProcess};
 use alloc::string::String;
 use core::time::Duration;
-use crate::process::process::{CoreAffinity, KernelProcess, ProcessImpl};
+use crate::process::process::{CoreAffinity, ProcessImpl};
 use core::fmt;
 
 #[derive(Debug, Clone, Copy)]
