@@ -12,7 +12,9 @@ use crate::fs::handle::{SinkWrapper, SourceWrapper};
 use crate::net::ipv4;
 use crate::process::{GlobalScheduler, Id, KernelImpl, Process};
 use crate::process::fd::FileDescriptor;
+use crate::traps::irq::Irq;
 
+pub static KERNEL_IRQ: Irq = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
 
 fn network_thread() -> ! {
@@ -130,7 +132,8 @@ fn led_blink() -> ! {
 
 
 pub fn kernel_main() -> ! {
-
+    debug!("init irq");
+    KERNEL_IRQ.initialize();
 
     // initialize local timers for all cores
     unsafe { (0x4000_0008 as *mut u32).write_volatile(0x8000_0000) };
@@ -138,7 +141,6 @@ pub fn kernel_main() -> ! {
     unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
     unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
     unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
-
 
     debug!("initing smp");
 

@@ -16,10 +16,10 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, NET, timer, hw};
+use crate::{NET, timer, hw};
 use crate::FILESYSTEM;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
-use crate::kernel::KERNEL_SCHEDULER;
+use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
 use crate::net::arp::ArpResolver;
 use crate::process::{Process, Id, KernelProcess};
 use crate::shell::command::{Command, CommandBuilder};
@@ -404,7 +404,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
             }
             "irqs" => {
                 writeln!(self.writer, "System:");
-                if let Some(stats) = IRQ.get_stats() {
+                if let Some(stats) = KERNEL_IRQ.get_stats() {
                     for (i, stat) in stats.iter().enumerate() {
                         writeln!(self.writer, "{:>6?}: {:?}", Interrupt::from_index(i), stat);
                     }
@@ -414,7 +414,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
 
                 for core in 0..smp::MAX_CORES {
                     writeln!(self.writer, "Core {}:", core);
-                    if let Some(stats) = IRQ.get_stats_core(core) {
+                    if let Some(stats) = KERNEL_IRQ.get_stats_core(core) {
                         for (i, stat) in stats.iter().enumerate() {
                             writeln!(self.writer, "{:>14?}: {:?}", CoreInterrupt::from_index(i), stat);
                         }

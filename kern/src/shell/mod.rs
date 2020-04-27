@@ -15,9 +15,10 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{IRQ, NET, timer};
+use crate::{NET, timer};
 use crate::FILESYSTEM;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper, TeeingWriter};
+use crate::kernel::KERNEL_IRQ;
 use crate::net::arp::ArpResolver;
 use crate::process::Process;
 use aarch64::MPIDR_EL1;

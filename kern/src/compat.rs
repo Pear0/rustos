@@ -8,7 +8,8 @@ use pi::interrupt::{Controller, Interrupt};
 use pi::mbox::MBox;
 use pi::timer;
 
-use crate::{ALLOCATOR, IRQ};
+use crate::{ALLOCATOR};
+use crate::kernel::KERNEL_IRQ;
 use crate::mbox::with_mbox;
 use core::sync::atomic::{AtomicBool, Ordering};
 use crate::allocator::tags::{MemTag, TaggingAlloc};
@@ -178,7 +179,7 @@ extern "C" fn ConnectInterrupt(_irq: u32, func: TInterruptHandler, data: *mut u8
 
     Controller::new().enable(Interrupt::Usb);
 
-    IRQ.register(Interrupt::Usb, Box::new(move |_| {
+    KERNEL_IRQ.register(Interrupt::Usb, Box::new(move |_| {
         aarch64::dmb();
         func(data as *mut u8);
         aarch64::dsb();

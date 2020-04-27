@@ -9,6 +9,8 @@ use shim::io;
 pub mod syscall;
 
 #[macro_use]
+mod hypercall_macros;
+#[macro_use]
 mod syscall_macros;
 
 pub type OsResult<T> = core::result::Result<T, OsError>;
@@ -84,3 +86,12 @@ pub const NR_WRITE: usize = 4;
 pub const NR_GETPID: usize = 5;
 pub const NR_WAITPID: usize = 6;
 pub const NR_SBRK: usize = 7;
+
+
+
+
+
+
+
+
+

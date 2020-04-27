@@ -9,9 +9,9 @@ use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
-use crate::{IRQ, smp};
+use crate::smp;
 use crate::cls::CoreLocal;
-use crate::kernel::KERNEL_SCHEDULER;
+use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State, KernelImpl};
@@ -171,7 +171,7 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         }
 
         let core = crate::smp::core();
-        IRQ.register_core(core, CoreInterrupt::CNTVIRQ, Box::new(|tf| {
+        KERNEL_IRQ.register_core(core, CoreInterrupt::CNTVIRQ, Box::new(|tf| {
             KERNEL_SCHEDULER.switch(State::Ready, tf);
 
             // somewhat redundant, .switch() is suppose to do this.

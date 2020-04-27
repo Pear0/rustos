@@ -19,11 +19,12 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, IRQ, NET, timer};
+use crate::{ALLOCATOR, NET, timer};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
 use crate::fs::sd;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
+use crate::kernel::KERNEL_IRQ;
 use crate::net::arp::ArpResolver;
 use crate::pigrate::bundle::ProcessBundle;
 use crate::pigrate_server::{pigrate_server, register_pigrate};

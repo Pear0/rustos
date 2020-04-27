@@ -42,7 +42,6 @@ use pi::interrupt::CoreInterrupt;
 use pigrate::Error;
 use process::GlobalScheduler;
 use shim::{io, ioerr};
-use traps::irq::Irq;
 use vm::VMManager;
 
 use crate::fs::handle::{SinkWrapper, SourceWrapper};
@@ -54,6 +53,7 @@ use crate::param::PAGE_SIZE;
 use crate::process::{Id, KernelImpl, Process, Stack};
 use crate::process::fd::FileDescriptor;
 use crate::traps::syndrome::Syndrome;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 #[macro_use]
 pub mod console;
@@ -91,8 +91,27 @@ pub mod vm;
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
 pub static VMM: VMManager = VMManager::uninitialized();
-pub static IRQ: Irq = Irq::uninitialized();
 pub static NET: GlobalNetHandler = GlobalNetHandler::uninitialized();
+
+static BOOT_VARIANT: AtomicUsize = AtomicUsize::new(BootVariant::Unknown as usize);
+
+#[derive(Debug, PartialEq, Eq)]
+#[repr(usize)]
+pub enum BootVariant {
+    Unknown,
+    Kernel,
+    Hypervisor,
+}
+
+impl BootVariant {
+    pub fn get_variant() -> BootVariant {
+        unsafe { core::mem::transmute(BOOT_VARIANT.load(Ordering::Relaxed)) }
+    }
+
+    pub fn kernel() -> bool {
+        Self::get_variant() == BootVariant::Kernel
+    }
+}
 
 fn init_jtag() {
     use gpio::{Function, Gpio};
@@ -111,10 +130,6 @@ fn kmain() -> ! {
     kprintln!("early boot");
     logger::register_global_logger();
 
-    // for atag in pi::atags::Atags::get() {
-    //     kprintln!("{:?}", atag);
-    // }
-
     info!("hello");
 
     unsafe {
@@ -124,8 +139,6 @@ fn kmain() -> ! {
         FILESYSTEM.initialize();
     }
 
-    debug!("init irq");
-    IRQ.initialize();
-
+    BOOT_VARIANT.store(BootVariant::Kernel as usize, Ordering::SeqCst);
     kernel::kernel_main();
 }
