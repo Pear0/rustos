@@ -28,6 +28,26 @@ impl From<u32> for Fault {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct AbortInfo {
+    pub kind: Fault,
+    pub level: u8,
+
+    pub far_not_valid: bool,
+    pub s1ptw: bool, // Fault on the stage 2 translation of an access for a stage 1 translation table walk
+}
+
+impl From<u32> for AbortInfo {
+    fn from(esr: u32) -> Self {
+        Self {
+            kind: Fault::from(esr),
+            level: (esr & 0b11) as u8,
+            far_not_valid: (esr >> 10) & 0b1 != 0,
+            s1ptw: (esr >> 7) & 0b1 != 0,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Syndrome {
     Unknown,
@@ -38,9 +58,9 @@ pub enum Syndrome {
     Hvc(u16),
     Smc(u16),
     MsrMrsSystem,
-    InstructionAbort { kind: Fault, level: u8 },
+    InstructionAbort(AbortInfo),
     PCAlignmentFault,
-    DataAbort { kind: Fault, level: u8 },
+    DataAbort(AbortInfo),
     SpAlignmentFault,
     TrappedFpu,
     SError,
@@ -65,11 +85,11 @@ impl From<u32> for Syndrome {
             0b010110 => Hvc(ESR_EL1::get_value(esr as u64, ESR_EL1::ISS_HSVC_IMM) as u16),
             0b010111 => Smc(ESR_EL1::get_value(esr as u64, ESR_EL1::ISS_HSVC_IMM) as u16),
             0b011000 => MsrMrsSystem,
-            0b100000 => InstructionAbort { kind: Fault::from(esr), level: (esr & 0b11) as u8 },
-            0b100001 => InstructionAbort { kind: Fault::from(esr), level: (esr & 0b11) as u8 },
+            0b100000 => InstructionAbort(AbortInfo::from(esr)),
+            0b100001 => InstructionAbort(AbortInfo::from(esr)),
             0b100010 => PCAlignmentFault,
-            0b100100 => DataAbort { kind: Fault::from(esr), level: (esr & 0b11) as u8 },
-            0b100101 => DataAbort { kind: Fault::from(esr), level: (esr & 0b11) as u8 },
+            0b100100 => DataAbort(AbortInfo::from(esr)),
+            0b100101 => DataAbort(AbortInfo::from(esr)),
             0b100110 => SpAlignmentFault,
             0b101100 => TrappedFpu,
             0b101111 => SError,

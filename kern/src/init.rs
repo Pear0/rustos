@@ -111,9 +111,33 @@ pub unsafe fn switch_to_el1() {
 }
 
 #[no_mangle]
+#[inline(never)]
+unsafe fn el2_init() {
+    if current_el() != 2 {
+        return;
+    }
+
+    extern "C" {
+        static mut hyper_vectors: u64;
+    }
+
+    // set up exception handlers
+    VBAR_EL2.set((&hyper_vectors) as *const u64 as u64);
+
+}
+
+#[no_mangle]
 unsafe fn kinit() -> ! {
     zeros_bss();
     switch_to_el2();
-    switch_to_el1();
-    kmain();
+
+    // for now, always boot hypervisor
+    if current_el() == 2 {
+        el2_init();
+        kmain(true);
+    } else {
+        switch_to_el1();
+        kmain(false);
+    }
+
 }

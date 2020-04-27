@@ -1,8 +1,13 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
-use crate::vm::{UserPageTable, VirtualAddr, PagePerm, PhysicalAddr};
-use crate::param::{PAGE_SIZE, PAGE_MASK, PAGE_ALIGN};
-use kernel_api::{OsResult, OsError};
-use core::fmt::Debug;
+use core::fmt;
+
+use kernel_api::{OsError, OsResult};
+
+use crate::param::{PAGE_ALIGN, PAGE_MASK, PAGE_SIZE};
+use crate::virtualization::VirtDevice;
+use crate::vm::{GuestPageTable, PagePerm, PhysicalAddr, UserPageTable, VirtualAddr};
+use crate::process::ProcessImpl;
 
 #[derive(Debug)]
 pub enum KernelRegionKind {
@@ -10,18 +15,23 @@ pub enum KernelRegionKind {
 }
 
 #[derive(Debug)]
-pub struct Region<Kind: Debug> {
-    start: usize,
-    length: usize,
-    kind: Kind,
+pub enum HyperRegionKind {
+    Normal,
+    Emulated(Arc<dyn VirtDevice>),
 }
 
-impl<Kind: Debug> Region<Kind> {
-    pub fn new(start: VirtualAddr, length: usize, kind: Kind) -> Self {
+pub struct Region<T: ProcessImpl> {
+    start: usize,
+    length: usize,
+    pub kind: T::RegionKind,
+}
+
+impl<T: ProcessImpl> Region<T> {
+    pub fn new(start: VirtualAddr, length: usize, kind: T::RegionKind) -> Self {
         Self { start: start.as_usize(), length, kind }
     }
 
-    pub fn repaint(&self, table: &mut UserPageTable) {
+    pub fn repaint(&self, table: &mut T::PageTable) {
         assert_eq!(self.start % PAGE_SIZE, 0);
         assert_eq!(self.length % PAGE_SIZE, 0);
 
@@ -30,21 +40,20 @@ impl<Kind: Debug> Region<Kind> {
         // careful to avoid wrapping on 0xFFFFFFF0000 (stack) + 0x1000 == 0
         for offset in (0..self.length).step_by(PAGE_SIZE) {
             let base = self.start + offset;
-            if !table.is_valid( VirtualAddr::from(base)) {
+            if !table.is_valid(VirtualAddr::from(base)) {
                 // debug!("base not valid, allocating... 0x{:x}", base);
                 table.alloc(VirtualAddr::from(base), PagePerm::RWX);
             } else {
                 // debug!("base is valid, skipping 0x{:x}", base);
             }
         }
-
     }
 
     pub fn can_grow_up(&self, len: usize) -> bool {
         len % PAGE_SIZE == 0
     }
 
-    pub fn grow_up(&mut self, table: &mut UserPageTable, len: usize) {
+    pub fn grow_up(&mut self, table: &mut T::PageTable, len: usize) {
         if !self.can_grow_up(len) {
             panic!("invalid call to grow_up()");
         }
@@ -53,28 +62,38 @@ impl<Kind: Debug> Region<Kind> {
     }
 }
 
-pub struct AddressSpaceManager<Kind: Debug> {
-    pub regions: Vec<Region<Kind>>,
-    pub table: UserPageTable,
+impl<T: ProcessImpl> fmt::Debug for Region<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Region")
+            .field("start", &self.start)
+            .field("length", &self.length)
+            .field("kind", &self.kind)
+            .finish()
+    }
 }
 
-impl<Kind: Debug> AddressSpaceManager<Kind> {
+pub struct AddressSpaceManager<T: ProcessImpl> {
+    pub regions: Vec<Region<T>>,
+    pub table: T::PageTable,
+}
+
+impl<T: ProcessImpl> AddressSpaceManager<T> {
     pub fn new() -> Self {
         Self {
             // vector sorted bty
             regions: Vec::new(),
-            table: UserPageTable::new(),
+            table: T::PageTable::new(),
         }
     }
 
-    pub fn add_region(&mut self, region: Region<Kind>) -> OsResult<()> {
+    pub fn add_region(&mut self, region: Region<T>) -> OsResult<()> {
         if region.start % PAGE_SIZE != 0 || region.length % PAGE_SIZE != 0 {
             return Err(OsError::InvalidArgument);
         }
 
-        let after: Option<(usize, &Region<Kind>)> = self.regions.iter().enumerate().find(|(_, reg)| reg.start > region.start);
+        let after: Option<(usize, &Region<T>)> = self.regions.iter().enumerate().find(|(_, reg)| reg.start > region.start);
 
-        let before: Option<&Region<Kind>> = match after {
+        let before: Option<&Region<T>> = match after {
             None => self.regions.last(),
             Some((i, _)) => self.regions[..i].last(),
         };
@@ -105,18 +124,18 @@ impl<Kind: Debug> AddressSpaceManager<Kind> {
         let va = va.as_usize();
         self.regions.iter()
             .enumerate()
-            .find(|(_, region)|  region.start <= va && va < region.start + region.length)
+            .find(|(_, region)| region.start <= va && va < region.start + region.length)
             .map(|(i, _)| i)
     }
 
-    pub fn get_region(&self, va: VirtualAddr) -> Option<&Region<Kind>> {
+    pub fn get_region(&self, va: VirtualAddr) -> Option<&Region<T>> {
         let va = va.as_usize();
-        self.regions.iter().find(|region|  region.start <= va && va < region.start + region.length)
+        self.regions.iter().find(|region| region.start <= va && va < region.start + region.length)
     }
 
-    pub fn get_region_mut(&mut self, va: VirtualAddr) -> Option<&mut Region<Kind>> {
+    pub fn get_region_mut(&mut self, va: VirtualAddr) -> Option<&mut Region<T>> {
         let va = va.as_usize();
-        self.regions.iter_mut().find(|region|  region.start <= va && va < region.start + region.length)
+        self.regions.iter_mut().find(|region| region.start <= va && va < region.start + region.length)
     }
 
     pub fn expand_region(&mut self, va: VirtualAddr, length: usize) -> OsResult<()> {
@@ -140,7 +159,6 @@ impl<Kind: Debug> AddressSpaceManager<Kind> {
     pub fn get_baddr(&self) -> PhysicalAddr {
         self.table.get_baddr()
     }
-
 }
 
 

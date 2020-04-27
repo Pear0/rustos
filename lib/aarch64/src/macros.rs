@@ -68,6 +68,11 @@ macro_rules! defreg {
                 (val & mask) >> (mask.trailing_zeros())
             }
 
+            #[inline(always)]
+            pub fn as_value(val: u64, mask: u64) -> u64 {
+                (val << mask.trailing_zeros()) & mask
+            }
+
             $( define_bitfield!($field, $bits); )*
         }
 

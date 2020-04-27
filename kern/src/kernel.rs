@@ -10,12 +10,12 @@ use shim::{io, ioerr};
 use crate::{display_manager, hw, kernel_call, NET, shell, smp, VMM};
 use crate::fs::handle::{SinkWrapper, SourceWrapper};
 use crate::net::ipv4;
-use crate::process::{GlobalScheduler, Id, KernelImpl, Process};
+use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess};
 use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
 use crate::vm::VMManager;
 
-pub static KERNEL_IRQ: Irq = Irq::uninitialized();
+pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
 
 fn network_thread() -> ! {
@@ -76,7 +76,7 @@ fn network_thread() -> ! {
 
 
         net.tcp.add_listening_port((my_ip, 100), Box::new(|sink, source| {
-            let mut proc = Process::kernel_process_old(String::from("net thread2"), my_net_thread2)
+            let mut proc = KernelProcess::kernel_process_old(String::from("net thread2"), my_net_thread2)
                 .or(ioerr!(Other, "foo"))?;
 
             proc.detail.file_descriptors.push(FileDescriptor::read(Arc::new(source)));
@@ -161,36 +161,36 @@ pub fn kernel_main() -> ! {
 
     info!("init Scheduler");
     unsafe {
-        KERNEL_SCHEDULER.initialize();
+        KERNEL_SCHEDULER.initialize_kernel();
     };
 
     use aarch64::regs::*;
     smp::run_on_secondary_cores(|| {
         unsafe {
-            KERNEL_SCHEDULER.initialize();
+            KERNEL_SCHEDULER.initialize_kernel();
         };
     });
 
     debug!("start some processes");
 
     {
-        let proc = Process::kernel_process_old("shell".to_owned(), my_thread).unwrap();
+        let proc = KernelProcess::kernel_process_old("shell".to_owned(), my_thread).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
 
     if !hw::is_qemu() {
-        let mut proc = Process::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
+        let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
         proc.affinity.set_only(0);
         KERNEL_SCHEDULER.add(proc);
     }
 
     {
-        let proc = Process::kernel_process_old("led".to_owned(), led_blink).unwrap();
+        let proc = KernelProcess::kernel_process_old("led".to_owned(), led_blink).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
 
     {
-        let proc = Process::kernel_process("display".to_owned(), display_manager::display_process).unwrap();
+        let proc = KernelProcess::kernel_process("display".to_owned(), display_manager::display_process).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
 

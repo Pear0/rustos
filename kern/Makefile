@@ -6,9 +6,9 @@ SDCARD ?= $(ROOT)/ext/fat32-imgs/hyper.img
 # SDCARD ?= $(ROOT)/user/fs.img
 OBJCPY := $(HOME)/.cargo/bin/rust-objcopy --strip-all -O binary
 TTY_PATH ?= $(shell find /dev -name 'ttyUSB*' -or -name 'cu.usbserial-14*' -maxdepth 1 2>/dev/null | head -n 1)
-QEMU_ARGS ?= -smp 4
+QEMU_ARGS ?=
 QEMU_GUI_ARGS ?= -display cocoa
-# -net nic,model=virtio
+# -net nic,model=virtio -smp 4
 
 .PHONY: all build qemu transmit objdump nm check clean install test
 

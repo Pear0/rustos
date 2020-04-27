@@ -14,7 +14,11 @@
 
 #![allow(unused_imports)]
 
+#[macro_use]
+extern crate aarch64;
 extern crate alloc;
+#[macro_use]
+extern crate enumset;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -71,6 +75,7 @@ pub mod display;
 mod display_manager;
 pub mod fs;
 pub mod hw;
+mod hyper;
 pub mod iosync;
 mod kernel;
 pub mod kernel_call;
@@ -85,6 +90,7 @@ pub mod sync;
 pub mod param;
 pub mod process;
 pub mod traps;
+pub mod virtualization;
 pub mod vm;
 
 #[cfg_attr(not(test), global_allocator)]
@@ -121,7 +127,7 @@ fn init_jtag() {
     }
 }
 
-fn kmain() -> ! {
+fn kmain(boot_hypervisor: bool) -> ! {
     init_jtag();
 
     // This is so that the host computer can attach serial console/screen whatever.
@@ -139,6 +145,11 @@ fn kmain() -> ! {
         FILESYSTEM.initialize();
     }
 
-    BOOT_VARIANT.store(BootVariant::Kernel as usize, Ordering::SeqCst);
-    kernel::kernel_main();
+    if boot_hypervisor {
+        BOOT_VARIANT.store(BootVariant::Hypervisor as usize, Ordering::SeqCst);
+        hyper::hyper_main();
+    } else {
+        BOOT_VARIANT.store(BootVariant::Kernel as usize, Ordering::SeqCst);
+        kernel::kernel_main();
+    }
 }

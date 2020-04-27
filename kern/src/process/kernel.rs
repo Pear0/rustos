@@ -22,7 +22,7 @@ use crate::process::fd::FileDescriptor;
 use crate::sync::Completion;
 use crate::traps::{Frame, KernelTrapFrame};
 
-use crate::vm::VirtualAddr;
+use crate::vm::{VirtualAddr, UserPageTable};
 use alloc::format;
 
 pub struct KernProcessCtx {
@@ -53,6 +53,7 @@ pub struct KernelImpl {
 impl ProcessImpl for KernelImpl {
     type Frame = KernelTrapFrame;
     type RegionKind = KernelRegionKind;
+    type PageTable = UserPageTable;
 
     fn new() -> OsResult<Self> {
         Ok(Self {
@@ -152,7 +153,7 @@ impl Process<KernelImpl> {
     pub fn load<P: AsRef<Path>>(pn: P) -> OsResult<Self> {
         use crate::VMM;
 
-        let mut p = Process::do_load(pn)?;
+        let mut p = Self::do_load(pn)?;
 
         p.context.sp = Self::get_stack_top().as_u64();
         p.context.elr = USER_IMG_BASE as u64;

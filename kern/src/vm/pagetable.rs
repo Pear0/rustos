@@ -15,6 +15,8 @@ use crate::allocator;
 use crate::ALLOCATOR;
 use crate::param::*;
 use crate::vm::{PhysicalAddr, VirtualAddr};
+use crate::traps::HyperTrapFrame;
+use crate::process::HyperProcess;
 
 #[repr(C)]
 pub struct Page([u8; PAGE_SIZE]);
@@ -295,14 +297,22 @@ pub enum PagePerm {
     RWX,
 }
 
+pub trait GuestPageTable: Sized {
+    fn new() -> Self;
+
+    fn get_baddr(&self) -> PhysicalAddr;
+
+    unsafe fn get_page_ref(&self, va: VirtualAddr) -> Option<&mut [u8]>;
+
+    fn is_valid(&self, va: VirtualAddr) -> bool;
+
+    fn alloc(&mut self, va: VirtualAddr, _perm: PagePerm) -> &mut [u8];
+
+}
+
 pub struct UserPageTable(Box<PageTable>);
 
 impl UserPageTable {
-    /// Returns a new `UserPageTable` containing a `PageTable` created with
-    /// `USER_RW` permission.
-    pub fn new() -> UserPageTable {
-        UserPageTable(PageTable::new(USER_RW))
-    }
 
     pub fn iter_mapped_pages<'a>(&'a self) -> impl Iterator<Item=(VirtualAddr, PhysicalAddr)> + 'a {
         self.0.l3.iter()
@@ -323,48 +333,6 @@ impl UserPageTable {
         }
 
         va.sub(VirtualAddr::from(USER_IMG_BASE))
-    }
-
-    pub fn is_valid(&self, va: VirtualAddr) -> bool {
-        self.0.is_valid(Self::as_va_sub(va))
-    }
-
-    /// Allocates a page and set an L3 entry translates given virtual address to the
-    /// physical address of the allocated page. Returns the allocated page.
-    ///
-    /// # Panics
-    /// Panics if the virtual address is lower than `USER_IMG_BASE`.
-    /// Panics if the virtual address has already been allocated.
-    /// Panics if allocator fails to allocate a page.
-    ///
-    /// TODO. use Result<T> and make it failurable
-    /// TODO. use perm properly
-    pub fn alloc(&mut self, va: VirtualAddr, _perm: PagePerm) -> &mut [u8] {
-        let va_sub = Self::as_va_sub(va);
-
-        if self.is_valid(va) {
-            self.dealloc(va);
-            error!("allocating over an already allocated page: {:x}", va.as_usize());
-        }
-
-        let mut entry = RawL3Entry::new(0);
-        entry.set_value(EntryValid::Valid, RawL3Entry::VALID);
-        entry.set_value(EntryType::Table, RawL3Entry::TYPE);
-        entry.set_value(EntryPerm::USER_RW, RawL3Entry::AP);
-
-        entry.set_value(EntrySh::ISh, RawL3Entry::SH);
-        entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
-
-        entry.set_value(1, RawL3Entry::AF);
-        entry.set_value(1, RawL3Entry::NS);
-
-        let alloc = unsafe { ALLOCATOR.alloc(Page::layout()) };
-
-        entry.set_value((alloc as u64) >> 16, RawL3Entry::ADDR);
-
-        self.0.set_entry(va_sub, entry);
-
-        unsafe { core::slice::from_raw_parts_mut(alloc, PAGE_SIZE) }
     }
 
     pub fn dealloc(&mut self, va: VirtualAddr) -> bool {
@@ -398,6 +366,73 @@ impl UserPageTable {
 
 }
 
+impl GuestPageTable for UserPageTable {
+    /// Returns a new `UserPageTable` containing a `PageTable` created with
+    /// `USER_RW` permission.
+    fn new() -> UserPageTable {
+        UserPageTable(PageTable::new(USER_RW))
+    }
+
+
+    fn get_baddr(&self) -> PhysicalAddr {
+        self.0.get_baddr()
+    }
+
+    unsafe fn get_page_ref(&self, va: VirtualAddr) -> Option<&mut [u8]> {
+        assert_eq!(va.as_usize() % PAGE_SIZE, 0);
+
+        let entry = self.0.get_entry(Self::as_va_sub(va));
+        if !entry.is_valid() {
+            return None;
+        }
+
+        let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
+        Some(unsafe { core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE) })
+    }
+
+    fn is_valid(&self, va: VirtualAddr) -> bool {
+        self.0.is_valid(Self::as_va_sub(va))
+    }
+
+    /// Allocates a page and set an L3 entry translates given virtual address to the
+    /// physical address of the allocated page. Returns the allocated page.
+    ///
+    /// # Panics
+    /// Panics if the virtual address is lower than `USER_IMG_BASE`.
+    /// Panics if the virtual address has already been allocated.
+    /// Panics if allocator fails to allocate a page.
+    ///
+    /// TODO. use Result<T> and make it failurable
+    /// TODO. use perm properly
+    fn alloc(&mut self, va: VirtualAddr, _perm: PagePerm) -> &mut [u8] {
+        let va_sub = Self::as_va_sub(va);
+
+        if self.is_valid(va) {
+            self.dealloc(va);
+            error!("allocating over an already allocated page: {:x}", va.as_usize());
+        }
+
+        let mut entry = RawL3Entry::new(0);
+        entry.set_value(EntryValid::Valid, RawL3Entry::VALID);
+        entry.set_value(EntryType::Table, RawL3Entry::TYPE);
+        entry.set_value(EntryPerm::USER_RW, RawL3Entry::AP);
+
+        entry.set_value(EntrySh::ISh, RawL3Entry::SH);
+        entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
+
+        entry.set_value(1, RawL3Entry::AF);
+        entry.set_value(1, RawL3Entry::NS);
+
+        let alloc = unsafe { ALLOCATOR.alloc(Page::layout()) };
+
+        entry.set_value((alloc as u64) >> 16, RawL3Entry::ADDR);
+
+        self.0.set_entry(va_sub, entry);
+
+        unsafe { core::slice::from_raw_parts_mut(alloc, PAGE_SIZE) }
+    }
+}
+
 impl Deref for KernPageTable {
     type Target = PageTable;
 
@@ -406,25 +441,11 @@ impl Deref for KernPageTable {
     }
 }
 
-// impl Deref for UserPageTable {
-//     type Target = PageTable;
-//
-//     fn deref(&self) -> &Self::Target {
-//         &self.0
-//     }
-// }
-
 impl DerefMut for KernPageTable {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
-
-// impl DerefMut for UserPageTable {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         &mut self.0
-//     }
-// }
 
 impl Drop for UserPageTable {
     fn drop(&mut self) {
@@ -447,3 +468,177 @@ impl fmt::Debug for UserPageTable {
             .finish()
     }
 }
+
+pub struct VirtualizationPageTable(Box<PageTable>);
+
+impl VirtualizationPageTable {
+
+    pub fn iter_mapped_pages<'a>(&'a self) -> impl Iterator<Item=(VirtualAddr, PhysicalAddr)> + 'a {
+        self.0.l3.iter()
+            .flat_map(|l3| l3.entries.iter())
+            .enumerate()
+            .map(|(i, entry)| (VirtualAddr::from(i * PAGE_SIZE), entry.get_page_addr()))
+            .filter_map(|(i, e)| {
+                match e {
+                    Some(s) => Some((i, s)),
+                    None => None,
+                }
+            })
+    }
+
+    fn as_va_sub(va: VirtualAddr) -> VirtualAddr {
+        va
+    }
+
+    fn template_page() -> RawL3Entry {
+        let mut entry = RawL3Entry::new(0);
+        entry.set_value(EntryValid::Valid, RawL3Entry::VALID);
+        entry.set_value(EntryType::Table, RawL3Entry::TYPE);
+
+        // 00 = none, 01 = read-only, 10 = write-only, 11 = R/W
+        entry.set_value(0b11, RawS2L3Entry::S2AP);
+
+        entry.set_value(EntrySh::OSh, RawL3Entry::SH);
+        // entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
+
+        // D4.5.2 : 1111 leaves stage 1 rules unchanged
+        entry.set_value(0b0001, RawS2L3Entry::MEM_ATTR);
+        // entry.set_value(0b1111, RawS2L3Entry::MEM_ATTR);
+
+        entry.set_value(0, RawL3Entry::AF);
+
+        entry
+    }
+
+    pub fn map_direct(&mut self, va: VirtualAddr, pa: PhysicalAddr) -> &mut [u8] {
+        let va_sub = Self::as_va_sub(va);
+
+        if self.is_valid(va) {
+            error!("allocating over an already allocated page: {:x}", va.as_usize());
+        }
+
+        assert_eq!(pa.as_usize() % PAGE_SIZE, 0);
+
+        let mut entry = Self::template_page();
+
+        let alloc = pa.as_usize() as *mut u8;
+
+        entry.set_value((alloc as u64) >> 16, RawL3Entry::ADDR);
+
+        self.0.set_entry(va_sub, entry);
+
+        unsafe { core::slice::from_raw_parts_mut(alloc, PAGE_SIZE) }
+    }
+
+    pub fn mark_accessed(&mut self, va: VirtualAddr) {
+        let va_sub = Self::as_va_sub(va);
+
+        if !self.is_valid(va) {
+            error!("cannot mark page accessed: {:x}", va.as_usize());
+            return;
+        }
+
+        self.0.get_entry_mut(va_sub).0.set_bit(RawL3Entry::AF);
+
+        aarch64::clean_data_cache((&mut self.0.get_entry_mut(va_sub).0) as *mut RawL3Entry as u64);
+
+    }
+
+    pub fn dealloc(&mut self, va: VirtualAddr) -> bool {
+        let entry = self.0.get_entry_mut(Self::as_va_sub(va));
+
+        if entry.is_valid() {
+            let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
+            unsafe { ALLOCATOR.dealloc(addr as *mut u8, Page::layout()) }
+            entry.reset();
+            true
+        } else {
+            false
+        }
+    }
+
+}
+
+impl GuestPageTable for VirtualizationPageTable {
+    /// Returns a new `UserPageTable` containing a `PageTable` created with
+    /// `USER_RW` permission.
+    fn new() -> VirtualizationPageTable {
+        VirtualizationPageTable(PageTable::new(USER_RW))
+    }
+
+    fn get_baddr(&self) -> PhysicalAddr {
+        self.0.get_baddr()
+    }
+
+    unsafe fn get_page_ref(&self, va: VirtualAddr) -> Option<&mut [u8]> {
+        assert_eq!(va.as_usize() % PAGE_SIZE, 0);
+
+        let entry = self.0.get_entry(Self::as_va_sub(va));
+        if !entry.is_valid() {
+            return None;
+        }
+
+        let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
+        Some(unsafe { core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE) })
+    }
+
+    fn is_valid(&self, va: VirtualAddr) -> bool {
+        self.0.is_valid(Self::as_va_sub(va))
+    }
+
+    /// Allocates a page and set an L3 entry translates given virtual address to the
+    /// physical address of the allocated page. Returns the allocated page.
+    ///
+    /// # Panics
+    /// Panics if the virtual address is lower than `USER_IMG_BASE`.
+    /// Panics if the virtual address has already been allocated.
+    /// Panics if allocator fails to allocate a page.
+    ///
+    /// TODO. use Result<T> and make it failurable
+    /// TODO. use perm properly
+    fn alloc(&mut self, va: VirtualAddr, _perm: PagePerm) -> &mut [u8] {
+        let va_sub = Self::as_va_sub(va);
+
+        if self.is_valid(va) {
+            self.dealloc(va);
+            error!("allocating over an already allocated page: {:x}", va.as_usize());
+        }
+
+        let mut entry = Self::template_page();
+
+        let alloc = unsafe { ALLOCATOR.alloc(Page::layout()) };
+
+        entry.set_value((alloc as u64) >> 16, RawL3Entry::ADDR);
+
+        self.0.set_entry(va_sub, entry);
+
+        aarch64::clean_data_cache((&mut self.0.get_entry_mut(va_sub).0) as *mut RawL3Entry as u64);
+
+        unsafe { core::slice::from_raw_parts_mut(alloc, PAGE_SIZE) }
+    }
+
+}
+
+
+impl Drop for VirtualizationPageTable {
+    fn drop(&mut self) {
+
+        for l3 in self.0.l3.iter_mut() {
+            for entry in l3.entries.iter_mut() {
+                if entry.is_valid() {
+                    let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
+                    unsafe { ALLOCATOR.dealloc(addr as *mut u8, Page::layout()) }
+                }
+            }
+        }
+
+    }
+}
+
+impl fmt::Debug for VirtualizationPageTable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UserPageTable")
+            .finish()
+    }
+}
+

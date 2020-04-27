@@ -11,13 +11,12 @@ use pi::interrupt::CoreInterrupt;
 
 use crate::smp;
 use crate::cls::CoreLocal;
-use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
-use crate::process::{Id, Process, State, KernelImpl};
+use crate::process::{Id, Process, State, KernelImpl, HyperImpl};
 use crate::process::snap::SnapProcess;
 use crate::process::state::RunContext;
-use crate::traps::{KernelTrapFrame, Frame};
+use crate::traps::{KernelTrapFrame, Frame, HyperTrapFrame};
 use crate::process::process::ProcessImpl;
 
 /// Process scheduler for the entire machine.
@@ -112,10 +111,6 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         self.switch_to(&mut bootstrap_frame);
 
         let st = (&mut bootstrap_frame) as *mut T::Frame as u64;
-        // let start = bootstrap_frame.sp;
-        // let start = _start as u64;
-
-        // let old_sp = SP.get();
 
         let old_sp = crate::smp::core_stack_top();
         kprintln!("old_sp: {}", old_sp);
@@ -162,8 +157,12 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         self.bootstrap();
     }
 
+}
+
+impl GlobalScheduler<KernelImpl> {
     /// Initializes the scheduler and add userspace processes to the Scheduler
-    pub unsafe fn initialize(&self) {
+    pub unsafe fn initialize_kernel(&self) {
+        use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
         use aarch64::regs::*;
         let lock = &mut m_lock!(self.0);
         if lock.is_none() {
@@ -179,6 +178,78 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         }));
 
     }
+}
+
+impl GlobalScheduler<HyperImpl> {
+    /// Initializes the scheduler and add userspace processes to the Scheduler
+    pub unsafe fn initialize_hyper(&self) {
+        use crate::hyper::{HYPER_IRQ, HYPER_SCHEDULER};
+        use aarch64::regs::*;
+        let lock = &mut m_lock!(self.0);
+        if lock.is_none() {
+            lock.replace(Scheduler::new());
+        }
+
+        let core = crate::smp::core();
+        HYPER_IRQ.register_core(core, CoreInterrupt::CNTVIRQ, Box::new(|tf| {
+            HYPER_SCHEDULER.switch(State::Ready, tf);
+
+            // somewhat redundant, .switch() is suppose to do this.
+            reset_timer();
+        }));
+    }
+
+    pub fn bootstrap_hyper(&self) -> ! {
+        let mut bootstrap_frame: HyperTrapFrame = Default::default();
+        self.switch_to(&mut bootstrap_frame);
+
+        let st = (&mut bootstrap_frame) as *mut HyperTrapFrame as u64;
+
+        let old_sp = crate::smp::core_stack_top();
+        kprintln!("old_sp: {}", old_sp);
+
+        unsafe {
+            asm!("  mov x28, $0
+                    mov x29, $1
+                    mov sp, x28
+                    bl hyper_context_restore
+                    mov sp, x29
+                    mov x28, 0
+                    mov x29, 0
+                    eret"
+                    :: "r"(st), "r"(old_sp)
+                    :: "volatile");
+        }
+
+        loop {}
+    }
+
+    /// Starts executing processes in user space using timer interrupt based
+    /// preemptive scheduling. This method should not return under normal conditions.
+    pub fn start_hyper(&self) -> ! {
+        let el = unsafe { aarch64::current_el() };
+        kprintln!("Current EL: {}", el);
+
+        kprintln!("Enabling timer");
+        // timer::tick_in(TICK);
+        // interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
+
+        use aarch64::regs::*;
+
+        let core = smp::core();
+
+        unsafe { ((0x4000_0040 + 4 * core) as *mut u32).write_volatile(0b1010) };
+        aarch64::dsb();
+
+        // let v = unsafe { CNTVCT_EL0.get() };
+        unsafe { CNTV_TVAL_EL0.set(100000 * 10) };
+        unsafe { CNTV_CTL_EL0.set((CNTV_CTL_EL0.get() & !CNTV_CTL_EL0::IMASK) | CNTV_CTL_EL0::ENABLE) };
+
+        // Bootstrap the first process
+        self.bootstrap_hyper();
+    }
+
+
 }
 
 pub struct Scheduler<T: ProcessImpl> {

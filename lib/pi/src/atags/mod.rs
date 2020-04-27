@@ -1,5 +1,5 @@
 mod atag;
-mod raw;
+pub mod raw;
 
 pub use self::atag::*;
 

@@ -118,7 +118,64 @@ impl VMManager {
 
     pub fn setup_hypervisor(&self) {
 
-        panic!("hypervisor todo");
+        unsafe {
+            assert_eq!(ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::TGran64), 0);
+
+            let ips = ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::PARange);
+            assert!(ips < 8);
+
+            // (ref. D7.2.71: Memory Attribute Indirection Register)
+            MAIR_EL2.set(
+                (0xFF <<  0) |// AttrIdx=0: normal, IWBWA, OWBWA, NTR
+                    (0x04 <<  8) |// AttrIdx=1: device, nGnRE (must be OSH too)
+                    (0x44 << 16), // AttrIdx=2: non cacheable
+            );
+
+            let mut tcr = 0;
+            tcr |= TCR_EL2::RES1;
+            tcr |= TCR_EL2::as_value(0, TCR_EL2::TBI);
+            tcr |= TCR_EL2::as_value(ips, TCR_EL2::PS); // physical address size
+            tcr |= TCR_EL2::as_value(0b01, TCR_EL2::TG0); // 64kb
+            tcr |= TCR_EL2::as_value(0b11, TCR_EL2::SH0); // inner
+            tcr |= TCR_EL2::as_value(0b01, TCR_EL2::ORGN0); // write back
+            tcr |= TCR_EL2::as_value(0b01, TCR_EL2::IRGN0); // write back
+
+            // The size offset of the memory region for TTBR0_EL2
+            tcr |= TCR_EL2::as_value(KERNEL_MASK_BITS as u64, TCR_EL2::T0SZ);
+            TCR_EL2.set(tcr);
+
+            let mut vtcr = 0;
+            vtcr |= VTCR_EL2::RES1;
+            vtcr |= VTCR_EL2::as_value(0, VTCR_EL2::TBI);
+            vtcr |= VTCR_EL2::as_value(ips, VTCR_EL2::PS); // physical address size
+            vtcr |= VTCR_EL2::as_value(0b01, VTCR_EL2::TG0); // 64kb
+            vtcr |= VTCR_EL2::as_value(0b11, VTCR_EL2::SH0); // inner
+            vtcr |= VTCR_EL2::as_value(0b01, VTCR_EL2::ORGN0); // write back
+            vtcr |= VTCR_EL2::as_value(0b01, VTCR_EL2::IRGN0); // write back
+            vtcr |= VTCR_EL2::as_value(0b01, VTCR_EL2::SL0); // starting level = 2
+
+            // The size offset of the memory region for TTBR0_EL2
+            vtcr |= VTCR_EL2::as_value(KERNEL_MASK_BITS as u64, VTCR_EL2::T0SZ);
+            VTCR_EL2.set(vtcr);
+
+            isb();
+
+            let baddr = FOO.load(Ordering::SeqCst);
+            // kprintln!("Reading: {:x}", baddr);
+            TTBR0_EL2.set(baddr);
+
+            VTTBR_EL2.set(baddr);
+
+            asm!("dsb ish");
+            isb();
+
+            SCTLR_EL2.set(SCTLR_EL2.get() | SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M);
+
+            HCR_EL2.set(HCR_EL2.get() | HCR_EL2::VM);
+
+            asm!("dsb sy");
+            isb();
+        }
         
     }
     

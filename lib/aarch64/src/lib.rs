@@ -46,6 +46,43 @@ pub fn affinity() -> usize {
     }
 }
 
+
+pub fn far_ipa() -> u64 {
+    // assumes 64kb pages
+    let offset = 4;
+    unsafe {
+        ((HPFAR_EL2.get_value(HPFAR_EL2::FIPA) & !0xF) << (8 + offset)) + (FAR_EL2.get() & 0xFFFF)
+    }
+}
+
+
+pub fn clean_data_cache(addr: u64) {
+    unsafe {
+        asm!("dc cvac, $0
+              dsb ish
+             " :: "r"(addr) :: "volatile");
+    }
+}
+
+pub fn clean_data_cache_region(mut addr: u64, length: u64) {
+    unsafe {
+        let mut end = addr + length;
+        addr &= !(64 - 1);
+
+        // round end up to the cache line.
+        if end % 64 != 0 {
+            end += 64;
+        }
+        addr &= !(64 - 1);
+
+        for i in (addr..end).step_by(64) {
+            asm!("dc cvac, $0" :: "r"(i) :: "volatile");
+        }
+
+        asm!("dsb ish" :::: "volatile");
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Implementor {
     ARM,

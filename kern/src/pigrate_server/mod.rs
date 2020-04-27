@@ -8,7 +8,7 @@ use shim::{io, ioerr};
 use crate::{NET};
 use crate::iosync::{SyncRead, SyncWrite};
 use crate::net::ipv4;
-use crate::process::{Id, Process};
+use crate::process::{Id, Process, KernelProcess};
 use crate::process::fd::FileDescriptor;
 use crate::sync::Waitable;
 use crate::kernel::KERNEL_SCHEDULER;
@@ -49,7 +49,7 @@ pub fn register_pigrate() {
         let my_ip = net.ip.address();
 
         net.tcp.add_listening_port((my_ip, 200), Box::new(|sink, source| {
-            let mut proc = Process::kernel_process_old(String::from("pigrate server"), pigrate_server)
+            let mut proc = KernelProcess::kernel_process_old(String::from("pigrate server"), pigrate_server)
                 .or(ioerr!(Other, "foo"))?;
 
             proc.detail.file_descriptors.push(FileDescriptor::read(Arc::new(source)));

@@ -9,12 +9,13 @@ use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
 use crate::process::State;
 use crate::traps::Kind::Synchronous;
 
-pub use self::frame::{Frame, KernelTrapFrame};
+pub use self::frame::{Frame, HyperTrapFrame, KernelTrapFrame};
 use self::syndrome::Fault;
 use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
 
 mod frame;
+mod hyper;
 mod kernel;
 // defines kernel_handle_exception
 pub mod syndrome;

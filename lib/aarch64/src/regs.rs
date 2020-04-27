@@ -161,6 +161,11 @@ defreg!(FAR_EL1);
 defreg!(FAR_EL2);
 defreg!(FAR_EL3);
 
+// (ref. D7.2.35 Hypervisor IPA Fault Address Register)
+defreg!(HPFAR_EL2, [
+    FIPA [39-4],
+]);
+
 // (ref. D7.2.88 System Control Register)
 defreg!(SCTLR_EL1, [
     UCI  [26-26], // Traps EL0 execution of cache maintenance instructions to EL1
@@ -183,6 +188,18 @@ defreg!(SCTLR_EL1, [
     M    [00-00], // MMU enable for EL1 and EL0 stage 1 address translation
 
     RES1 [29-28|23-22|20-20|11-11],
+]);
+
+// (ref. D7.2.88 System Control Register)
+defreg!(SCTLR_EL2, [
+
+    I    [12-12], // Instruction access Cacheability control
+
+    SA   [03-03], // SP Alignment check enable.
+    C    [02-02], // Cacheability control
+    A    [01-01], // Alignment check enable
+    M    [00-00], // MMU enable for EL2 stage 1 address translation
+
 ]);
 
 defreg!(SP_EL0);
@@ -216,6 +233,10 @@ defreg!(CurrentEL, [
 ]);
 
 defreg!(VBAR_EL1, [
+    RES0   [10-0],
+]);
+
+defreg!(VBAR_EL2, [
     RES0   [10-0],
 ]);
 
@@ -293,6 +314,19 @@ defreg!(MIDR_EL1, [
     REV    [3-0], // Revision
 ]);
 
+// Debug registers
 
+// (ref. D7.3.20  Monitor Debug System Control Register)
+defreg!(MDSCR_EL1, [
 
+    KDE [13-13], // Kernel debug
 
+    SS [0-0], // Single step.
+    // not all bits ...
+]);
+
+// (ref. D7.3.17  Monitor Debug Configuration Register (EL2) )
+defreg!(MDCR_EL2, [
+    TDE [8-8], // Trap Debug exceptions.
+    // not all bits ...
+]);

@@ -74,6 +74,7 @@ impl fmt::Debug for CoreAffinity {
 pub trait ProcessImpl: Sized {
     type Frame: Frame + Default + Clone + Debug;
     type RegionKind: Debug;
+    type PageTable: GuestPageTable;
 
     fn new() -> OsResult<Self>;
 
@@ -89,7 +90,7 @@ pub struct Process<T: ProcessImpl> {
     /// The memory allocation used for the process's stack.
     pub stack: Stack,
     /// The page table describing the Virtual Memory of the process
-    pub vmap: Box<AddressSpaceManager<T::RegionKind>>,
+    pub vmap: Box<AddressSpaceManager<T>>,
     /// The scheduling state of the process.
     pub(crate) state: State<T>,
 
@@ -154,10 +155,10 @@ impl<T: ProcessImpl> Process<T> {
             writeln!(w, "  {:x?}", region);
         }
 
-        writeln!(w, "Memory Mapping:");
-        for (va, pa) in self.vmap.table.iter_mapped_pages() {
-            writeln!(w, "  {:x?} -> {:x?}", va, pa);
-        }
+        // writeln!(w, "Memory Mapping:");
+        // for (va, pa) in self.vmap.table.iter_mapped_pages() {
+        //     writeln!(w, "  {:x?} -> {:x?}", va, pa);
+        // }
 
         Ok(())
     }
@@ -220,6 +221,14 @@ impl<T: ProcessImpl> Process<T> {
         }
 
         self.state = new_state;
+    }
+
+    pub fn current_cpu_time(&self) -> Duration {
+        let mut amt = self.cpu_time;
+        if let State::Running(ctx) = &self.state {
+            amt += (pi::timer::current_time() - ctx.scheduled_at);
+        }
+        amt
     }
 
 

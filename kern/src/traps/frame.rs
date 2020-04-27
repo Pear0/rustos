@@ -82,3 +82,62 @@ impl Frame for KernelTrapFrame {
         self.tpidr = val;
     }
 }
+
+
+#[repr(C, packed)]
+#[derive(Default, Copy, Clone, Debug)]
+pub struct HyperTrapFrame {
+    pub elr: u64,
+    pub spsr: u64,
+    pub sp: u64,
+    pub tpidr: u64,
+    pub vttbr: u64,
+    pub hcr: u64,
+    pub simd: [u128; 32],
+    pub regs: [u64; 31],
+}
+
+const_assert_size!(HyperTrapFrame, 808);
+
+impl HyperTrapFrame {
+
+    pub fn as_bytes(&self) -> &[u8] {
+        use fat32::util::SliceExt;
+        unsafe { core::slice::from_ref(self).cast() }
+    }
+
+    pub fn dump<T: io::Write>(&self, w: &mut T, full: bool) -> io::Result<()> {
+        writeln!(w, "Hyper Trap Frame:")?;
+
+        writeln!(w, "elr: 0x{:08x}", self.elr)?;
+        writeln!(w, "spsr: 0x{:08x}", self.spsr)?;
+        writeln!(w, "sp: 0x{:08x}", self.sp)?;
+        writeln!(w, "tpidr: 0x{:08x}", self.tpidr)?;
+        writeln!(w, "ttbr0: 0x{:08x}", self.vttbr)?;
+        writeln!(w, "ttbr1: 0x{:08x}", self.hcr)?;
+
+        for (i, num) in self.regs.iter().enumerate() {
+            writeln!(w, "regs[{:02}]: 0x{:08x}", i, *num)?;
+        }
+
+        if full {
+            for (i, num) in self.simd.iter().enumerate() {
+                writeln!(w, "simd[{:02}]: 0x{:032x}", i, *num)?;
+            }
+        }
+
+        Ok(())
+    }
+
+}
+
+impl Frame for HyperTrapFrame {
+    fn get_id(&self) -> u64 {
+        self.tpidr
+    }
+
+    fn set_id(&mut self, val: u64) {
+        self.tpidr = val;
+    }
+}
+

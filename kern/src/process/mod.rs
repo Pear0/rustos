@@ -3,6 +3,7 @@ use core::time::Duration;
 
 mod address_space;
 pub mod fd;
+mod hyper;
 mod kernel;
 mod mailbox;
 mod process;
@@ -13,6 +14,7 @@ mod state;
 
 pub use crate::param::TICK;
 
+pub use self::hyper::*;
 pub use self::kernel::*;
 pub use self::process::{Id, Process, ProcessImpl};
 pub use self::scheduler::GlobalScheduler;

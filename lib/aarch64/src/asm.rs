@@ -82,3 +82,12 @@ macro_rules! svc {
         unsafe { asm!(concat!("svc ", stringify!($num)) :::: "volatile"); }
     }
 }
+
+/// Hypervisor call with an immediate
+#[macro_export]
+macro_rules! hvc {
+    ($num:tt) => {
+        unsafe { asm!(concat!("hvc ", stringify!($num)) :::: "volatile"); }
+    }
+}
+

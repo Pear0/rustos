@@ -69,8 +69,31 @@ defbit!(RawL3Entry, [
     VALID [00-00],
 ]);
 
+defbit!(RawS2L3Entry, [
+    ADDR  [47-16],
+
+    AF        [10-10],
+    SH        [09-08],
+    S2AP      [07-06],
+    MEM_ATTR  [05-02],
+    TYPE      [01-01],
+    VALID     [00-00],
+]);
+
 // (ref. D7.2.70: Memory Attribute Indirection Register)
 defreg!(MAIR_EL1, [
+    Attr7 [63-56],
+    Attr6 [55-48],
+    Attr5 [47-40],
+    Attr4 [39-32],
+    Attr3 [31-24],
+    Attr2 [23-16],
+    Attr1 [15-08],
+    Attr0 [07-00],
+]);
+
+// (ref. D7.2.71: Memory Attribute Indirection Register)
+defreg!(MAIR_EL2, [
     Attr7 [63-56],
     Attr6 [55-48],
     Attr5 [47-40],
@@ -84,6 +107,46 @@ defreg!(MAIR_EL1, [
 // (ref. D7.2.91: Translation Control Register)
 defreg!(TCR_EL1);
 
+
+// (ref. D7.2.92: Translation Control Register)
+defreg!(TCR_EL2, [
+
+    TBI [20-20], // Top bit ignore
+
+    PS [18-16], // Physical Address Size.
+    TG0 [15-14],
+    SH0 [13-12],
+
+    ORGN0 [11-10],
+    IRGN0 [9-8],
+
+    T0SZ [5-0],
+
+    RES1 [31-31|23-23],
+    RES0 [63-32|30-24|22-21|19-19|7-6],
+]);
+
+// (ref. D7.2.109:  Virtualization Translation Control Register)
+defreg!(VTCR_EL2, [
+
+    TBI [20-20], // Top bit ignore
+
+    PS [18-16], // Physical Address Size.
+    TG0 [15-14],
+    SH0 [13-12],
+
+    ORGN0 [11-10],
+    IRGN0 [9-8],
+
+    SL0 [7-6],
+
+    T0SZ [5-0],
+
+    RES1 [31-31|23-23],
+    RES0 [63-32|30-24|22-21|19-19],
+]);
+
+
 // (ref. D7.2.99: Translation Table Base Register 0)
 defreg!(TTBR0_EL1, [
     TTBR_CNP [00-00],
@@ -92,6 +155,22 @@ defreg!(TTBR0_EL1, [
 // (ref. D7.2.102: Translation Table Base Register 1)
 defreg!(TTBR1_EL1, [
     TTBR_CNP [00-00],
+]);
+
+
+// (ref. D7.2.100:  Translation Table Base Register 0)
+defreg!(TTBR0_EL2, [
+    BADDR [47-0],
+
+    RES0 [63-48],
+]);
+
+// (ref. D7.2.110: Virtualization Translation Table Base Register)
+defreg!(VTTBR_EL2, [
+    VMID [55-48],
+    BADDR [47-0],
+
+    RES0 [63-56],
 ]);
 
 // (ref. D7.2.43: AArch64 Memory Model Feature Register 0)
@@ -108,7 +187,7 @@ defreg!(ID_AA64MMFR0_EL1, [
 
 // For Phase5, (ref. 7.2.86: Implementation Defined Registers)
 defreg!(S3_1_C15_C2_1);
-// << 
+// <<
 
 impl fmt::Debug for RawL2Entry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -177,3 +256,4 @@ impl fmt::Debug for RawL3Entry {
                self.get())
     }
 }
+
