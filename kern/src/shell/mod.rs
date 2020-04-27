@@ -39,15 +39,8 @@ use crate::display::Painter;
 
 
 
-pub fn serial_shell(prefix: &'static str) -> Shell<ConsoleSync, TeeingWriter<ConsoleSync, TextPainter<GlobalDisplay>>> {
-
-    let p = Painter::new(GlobalDisplay::new());
-
-    let painter = TextPainter::new(p, 86, 116);
-
-    let writer = TeeingWriter::new(ConsoleSync::new(), painter);
-
-    Shell::new(prefix, ConsoleSync::new(), writer)
+pub fn serial_shell(prefix: &'static str) -> Shell<ConsoleSync, ConsoleSync> {
+    Shell::new(prefix, ConsoleSync::new(), ConsoleSync::new())
 }
 
 /// Starts a shell using `prefix` as the prefix for each line. This function

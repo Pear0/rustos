@@ -90,8 +90,8 @@ pub mod vm;
 #[cfg_attr(not(test), global_allocator)]
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
-pub static VMM: VMManager = VMManager::uninitialized();
 pub static NET: GlobalNetHandler = GlobalNetHandler::uninitialized();
+pub static VMM: VMManager = VMManager::uninitialized();
 
 static BOOT_VARIANT: AtomicUsize = AtomicUsize::new(BootVariant::Unknown as usize);
 

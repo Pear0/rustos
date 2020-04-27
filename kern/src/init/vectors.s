@@ -1,5 +1,5 @@
-.global context_save
-context_save:
+.global kernel_context_save
+kernel_context_save:
     stp     x26, x27, [SP, #-16]!
     stp     x24, x25, [SP, #-16]!
     stp     x22, x23, [SP, #-16]!
@@ -59,15 +59,15 @@ context_save:
     // Save our link register because we need to return here
     stp xzr, lr, [SP, #-16]!
 
-    bl handle_exception
+    bl kernel_handle_exception
 
     ldp xzr, lr, [SP], #16
 
-    b context_restore
+    b kernel_context_restore
 
 
-.global context_restore
-context_restore:
+.global kernel_context_restore
+kernel_context_restore:
     ldp     x0, x1, [SP], #16
     msr     ELR_EL1, x0
     msr     SPSR_EL1, x1
@@ -128,7 +128,7 @@ context_restore:
     
     mov     x29, \source
     movk    x29, \kind, LSL #16
-    bl      context_save
+    bl      kernel_context_save
     
     ldp     x28, x29, [SP], #16
     ldp     lr, xzr, [SP], #16
@@ -136,8 +136,8 @@ context_restore:
 .endm
     
 .align 11
-.global vectors
-vectors:
+.global kernel_vectors
+kernel_vectors:
     HANDLER 0, 0
     HANDLER 0, 1
     HANDLER 0, 2

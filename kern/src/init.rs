@@ -70,7 +70,7 @@ pub unsafe fn switch_to_el2() {
 #[inline(never)]
 pub unsafe fn switch_to_el1() {
     extern "C" {
-        static mut vectors: u64;
+        static mut kernel_vectors: u64;
     }
 
     if current_el() == 2 {
@@ -93,7 +93,7 @@ pub unsafe fn switch_to_el1() {
         SCTLR_EL1.set(SCTLR_EL1::RES1);
 
         // set up exception handlers
-        VBAR_EL1.set((&vectors) as *const u64 as u64);
+        VBAR_EL1.set((&kernel_vectors) as *const u64 as u64);
 
         // change execution level to EL1 (ref: C5.2.19)
         SPSR_EL2.set(

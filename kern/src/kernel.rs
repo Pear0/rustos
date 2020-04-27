@@ -13,6 +13,7 @@ use crate::net::ipv4;
 use crate::process::{GlobalScheduler, Id, KernelImpl, Process};
 use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
+use crate::vm::VMManager;
 
 pub static KERNEL_IRQ: Irq = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -155,7 +156,7 @@ pub fn kernel_main() -> ! {
 
     info!("enabling VMM on all cores!");
     smp::run_on_all_cores(|| {
-        VMM.setup();
+        VMM.setup_kernel();
     });
 
     info!("init Scheduler");

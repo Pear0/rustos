@@ -124,7 +124,7 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
             asm!("  mov x28, $0
                     mov x29, $1
                     mov sp, x28
-                    bl context_restore
+                    bl kernel_context_restore
                     mov sp, x29
                     mov x28, 0
                     mov x29, 0

@@ -49,7 +49,7 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
 /// the value of the exception syndrome register. Finally, `tf` is a pointer to
 /// the trap frame for the exception.
 #[no_mangle]
-pub extern "C" fn handle_exception(info: Info, esr: u32, tf: &mut KernelTrapFrame) {
+pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelTrapFrame) {
     //
     // let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
     // kprintln!("IRQ: {}", core_id);

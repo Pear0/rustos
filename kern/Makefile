@@ -2,7 +2,7 @@ ROOT := $(shell git rev-parse --show-toplevel)
 
 KERN := kernel
 TARGET := target/aarch64-unknown-none/release/${KERN}
-SDCARD ?= $(ROOT)/ext/fat32-imgs/mock1.fat32.img
+SDCARD ?= $(ROOT)/ext/fat32-imgs/hyper.img
 # SDCARD ?= $(ROOT)/user/fs.img
 OBJCPY := $(HOME)/.cargo/bin/rust-objcopy --strip-all -O binary
 TTY_PATH ?= $(shell find /dev -name 'ttyUSB*' -or -name 'cu.usbserial-14*' -maxdepth 1 2>/dev/null | head -n 1)

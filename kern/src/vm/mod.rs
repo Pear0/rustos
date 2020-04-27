@@ -5,7 +5,7 @@ use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS, PAGE_MASK, PAGE_SIZE};
 
 pub use self::address::{PhysicalAddr, VirtualAddr};
 pub use self::pagetable::*;
-use crate::smp;
+use crate::{smp, BootVariant};
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU64;
 
@@ -43,7 +43,7 @@ impl VMManager {
         self.init_only();
         kprintln!("setup()");
 
-        self.setup();
+        self.setup_kernel();
     }
 
     pub unsafe fn mark_page_non_cached(&self, addr: usize) {
@@ -55,8 +55,12 @@ impl VMManager {
         let kern_page_table = lock.as_mut().unwrap();
         kern_page_table.set_entry(VirtualAddr::from(addr),
                                   KernPageTable::create_l3_entry(addr, EntryAttr::Nc));
-
-        self.setup();
+        
+        match BootVariant::get_variant() {
+            BootVariant::Kernel => self.setup_kernel(),
+            BootVariant::Hypervisor =>  self.setup_hypervisor(),
+            e => panic!("unknown variant: {:?}", e),
+        }
     }
 
     /// Set up the virtual memory manager.
@@ -66,18 +70,10 @@ impl VMManager {
     /// # Panics
     ///
     /// Panics if the current system does not support 64KB memory translation granule size.
-    pub fn setup(&self) {
-        // let baddr;
-        // {
-        //     let kern_page_table = self.0.lock();
-        //     baddr = kern_page_table.as_ref().unwrap().get_baddr().as_u64();
-        //     // FOO.store(baddr, Ordering::SeqCst);
-        //     // kprintln!("Writing: {:x}", baddr);
-        // }
+    pub fn setup_kernel(&self) {
 
         unsafe {
             assert_eq!(ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::TGran64), 0);
-
             let ips = ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::PARange);
 
             // (ref. D7.2.70: Memory Attribute Indirection Register)
@@ -120,6 +116,12 @@ impl VMManager {
         }
     }
 
+    pub fn setup_hypervisor(&self) {
+
+        panic!("hypervisor todo");
+        
+    }
+    
     /// Returns the base address of the kernel page table as `PhysicalAddr`.
     pub fn get_baddr(&self) -> PhysicalAddr {
         let lock = m_lock!(self.0);
