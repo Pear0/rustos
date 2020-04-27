@@ -3,7 +3,6 @@ use alloc::vec::Vec;
 use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
 use crate::{debug, shell, smp};
-use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
 use crate::process::State;
 use crate::traps::{Info, IRQ_EL, IRQ_ESR, IRQ_INFO, IRQ_RECURSION_DEPTH, KernelTrapFrame, Kind, HyperTrapFrame, Source};
 use crate::traps::Kind::Synchronous;
@@ -80,10 +79,14 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
     match info.kind {
         Kind::Irq => {
             use aarch64::regs::*;
-            // kprintln!("IRQ: {:?} {:?} (raw=0x{:x}) @ {:#x}", info, Kind::Irq, esr, tf.elr);
-            // kprintln!("FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
-            // kprintln!("EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
-            // kprintln!("SP: {:#x}, ELR_EL1: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() });
+            tf.simd[0] += 1;
+
+            if tf.simd[0] % 100 == 0 {
+                kprintln!("IRQ: {:?} {:?} (raw=0x{:x}) @ {:#x}", info, Kind::Irq, esr, tf.elr);
+                kprintln!("FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
+                kprintln!("EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
+                kprintln!("SP: {:#x}, ELR_EL1: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() });
+            }
 
             handle_irqs(tf);
         }

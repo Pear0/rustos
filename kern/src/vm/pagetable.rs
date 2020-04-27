@@ -498,12 +498,12 @@ impl VirtualizationPageTable {
         // 00 = none, 01 = read-only, 10 = write-only, 11 = R/W
         entry.set_value(0b11, RawS2L3Entry::S2AP);
 
-        entry.set_value(EntrySh::OSh, RawL3Entry::SH);
+        entry.set_value(EntrySh::ISh, RawL3Entry::SH);
         // entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
 
         // D4.5.2 : 1111 leaves stage 1 rules unchanged
-        entry.set_value(0b0001, RawS2L3Entry::MEM_ATTR);
-        // entry.set_value(0b1111, RawS2L3Entry::MEM_ATTR);
+        // entry.set_value(0b0001, RawS2L3Entry::MEM_ATTR);
+        entry.set_value(0b1111, RawS2L3Entry::MEM_ATTR);
 
         entry.set_value(0, RawL3Entry::AF);
 

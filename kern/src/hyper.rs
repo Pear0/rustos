@@ -24,7 +24,8 @@ pub fn hyper_main() -> ! {
     info!("Add kernel process");
 
     {
-        let p = HyperProcess::load("/kernel.bin").expect("failed to find bin");
+        // let p = HyperProcess::load("/kernel.bin").expect("failed to find bin");
+        let p = HyperProcess::load_self().expect("failed to find bin");
 
         let id = HYPER_SCHEDULER.add(p);
         info!("kernel id: {:?}", id);

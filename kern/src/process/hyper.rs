@@ -1,12 +1,14 @@
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::Ordering;
 
 use kernel_api::{OsError, OsResult};
 
-use aarch64::{SPSR_EL1, SPSR_EL2, HCR_EL2};
+use aarch64::{HCR_EL2, SPSR_EL1, SPSR_EL2};
 use pigrate_core::bundle::MemoryBundle;
 use pigrate_core::bundle::ProcessBundle;
 use shim::io;
@@ -14,17 +16,18 @@ use shim::path::Path;
 
 use crate::{FILESYSTEM, VMM};
 use crate::fs::handle::{Sink, Source};
+use crate::hyper::hyper_main;
+use crate::init::{EL2_KERNEL_INIT, EL2_KERNEL_INIT_LEN};
 use crate::kernel::KERNEL_SCHEDULER;
-use crate::param::{PAGE_SIZE, USER_IMG_BASE, PAGE_MASK};
+use crate::param::{PAGE_MASK, PAGE_SIZE, USER_IMG_BASE};
 use crate::process::{Id, Process, ProcessImpl, State};
-use crate::process::address_space::{KernelRegionKind, Region, HyperRegionKind};
+use crate::process::address_space::{HyperRegionKind, KernelRegionKind, Region};
 use crate::process::fd::FileDescriptor;
 use crate::sync::Completion;
-use crate::traps::{Frame, KernelTrapFrame, HyperTrapFrame};
-
-use crate::vm::{VirtualAddr, VirtualizationPageTable, GuestPageTable};
-use alloc::format;
-use crate::virtualization::{IrqController, StackedDevice, HwPassthroughDevice, broadcom, DataAccess, AccessSize, VirtDevice};
+use crate::traps::{Frame, HyperTrapFrame, KernelTrapFrame};
+use crate::virtualization::{AccessSize, broadcom, DataAccess, HwPassthroughDevice, IrqController, StackedDevice, VirtDevice};
+use crate::vm::{GuestPageTable, VirtualAddr, VirtualizationPageTable};
+use core::time::Duration;
 
 pub struct HyperImpl {
     pub irqs: IrqController,
@@ -70,7 +73,6 @@ impl ProcessImpl for HyperImpl {
         }
         idle_tasks
     }
-
 }
 
 pub type HyperProcess = Process<HyperImpl>;
@@ -92,44 +94,7 @@ impl Process<HyperImpl> {
         Ok(p)
     }
 
-    /// Load a program stored in the given path by calling `do_load()` method.
-    /// Set trapframe `context` corresponding to the its page table.
-    /// `sp` - the address of stack top
-    /// `elr` - the address of image base.
-    /// `ttbr0` - the base address of kernel page table
-    /// `ttbr1` - the base address of user page table
-    /// `spsr` - `F`, `A`, `D` bit should be set.
-    ///
-    /// Returns Os Error if do_load fails.
-    pub fn load<P: AsRef<Path>>(pn: P) -> OsResult<Self> {
-        use crate::VMM;
-
-        let mut p = Self::do_load(pn)?;
-
-        p.context.spsr = (SPSR_EL2::M & 0b0101) // EL1h
-        ;
-        // todo route all interrupts to EL2 and use virtual interrupts
-
-        p.context.spsr |= SPSR_EL2::D | SPSR_EL2::A | SPSR_EL2::I | SPSR_EL2::F;
-
-        p.context.sp = 0;
-        p.context.elr = 0x80000;
-
-        p.context.vttbr = p.vmap.get_baddr().as_u64();
-        p.context.hcr = HCR_EL2::RW | HCR_EL2::VM | HCR_EL2::CD | HCR_EL2::IMO | HCR_EL2::RES1;
-
-
-        Ok(p)
-    }
-
-    /// Creates a process and open a file with given path.
-    /// Allocates one page for stack with read/write permission, and N pages with read/write/execute
-    /// permission to load file's contents.
-    fn do_load<P: AsRef<Path>>(pn: P) -> OsResult<Self> {
-        use fat32::traits::*;
-        use shim::io::Read;
-        let mut proc = Self::new(pn.as_ref().to_str().ok_or(OsError::InvalidArgument)?.to_owned())?;
-
+    fn init_guest(proc: &mut Self) {
         let total_size = 8000 * PAGE_SIZE;
 
         // Allocate 512 megabytes
@@ -159,12 +124,84 @@ impl Process<HyperImpl> {
 
             buf[9] = 2;
             buf[10] = raw::Atag::NONE;
-
-
         }
 
         // 257 = ceil( (0x4000_00FC - 0x3f00_0000) / PAGE_SIZE )
         proc.vmap.add_region(Region::new(VirtualAddr::from(0x3f000000), 257 * PAGE_SIZE, HyperRegionKind::Emulated(proc.detail.virt_device.clone())));
+
+
+        // Init context
+
+        proc.context.spsr = (SPSR_EL2::M & 0b0101) // EL1h
+        ;
+        // todo route all interrupts to EL2 and use virtual interrupts
+
+        proc.context.spsr |= SPSR_EL2::D | SPSR_EL2::A | SPSR_EL2::I | SPSR_EL2::F;
+
+        proc.context.sp = 0x420_000;
+        proc.context.elr = 0x80000;
+
+        proc.context.vttbr = proc.vmap.get_baddr().as_u64();
+        proc.context.hcr = HCR_EL2::RW | HCR_EL2::VM | HCR_EL2::ID | HCR_EL2::IMO | HCR_EL2::RES1;
+    }
+
+    pub fn load_self() -> OsResult<Self> {
+        use fat32::traits::*;
+        use shim::io::Read;
+        let mut proc = Self::new(String::from("self-load"))?;
+
+        Self::init_guest(&mut proc);
+
+        let mut hyper_copy = unsafe {
+            core::slice::from_raw_parts(
+                EL2_KERNEL_INIT.load(Ordering::Relaxed) as *const u8,
+                EL2_KERNEL_INIT_LEN.load(Ordering::Relaxed) as usize)
+        };
+
+        let mut base = VirtualAddr::from(0x80_000);
+        'page_loop: loop {
+            let mut buf = proc.vmap.get_page_mut(base).expect("tried to deref bad page");
+            unsafe { VMM.mark_page_non_cached(buf.as_ptr() as usize) };
+
+            let amt = core::cmp::min(buf.len(), hyper_copy.len());
+            buf[..amt].copy_from_slice(&hyper_copy[..amt]);
+            hyper_copy = &hyper_copy[amt..];
+
+            if hyper_copy.len() == 0 {
+                break;
+            }
+
+            base = base + VirtualAddr::from(PAGE_SIZE);
+        }
+
+        Ok(proc)
+    }
+
+    /// Load a program stored in the given path by calling `do_load()` method.
+    /// Set trapframe `context` corresponding to the its page table.
+    /// `sp` - the address of stack top
+    /// `elr` - the address of image base.
+    /// `ttbr0` - the base address of kernel page table
+    /// `ttbr1` - the base address of user page table
+    /// `spsr` - `F`, `A`, `D` bit should be set.
+    ///
+    /// Returns Os Error if do_load fails.
+    pub fn load<P: AsRef<Path>>(pn: P) -> OsResult<Self> {
+        use crate::VMM;
+
+        let mut p = Self::do_load(pn)?;
+        Ok(p)
+    }
+
+    /// Creates a process and open a file with given path.
+    /// Allocates one page for stack with read/write permission, and N pages with read/write/execute
+    /// permission to load file's contents.
+    fn do_load<P: AsRef<Path>>(pn: P) -> OsResult<Self> {
+        use fat32::traits::*;
+        use shim::io::Read;
+        let mut proc = Self::new(pn.as_ref().to_str().ok_or(OsError::InvalidArgument)?.to_owned())?;
+
+        Self::init_guest(&mut proc);
 
         let mut file = FILESYSTEM.open(pn)?.into_file().ok_or(OsError::InvalidArgument)?;
 
@@ -208,18 +245,33 @@ impl Process<HyperImpl> {
                 use aarch64::regs::*;
                 use crate::traps::syndrome::Syndrome;
 
-                kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
+                kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.elr);
 
                 kprintln!("    FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
                 kprintln!("    EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
                 kprintln!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.spsr);
 
                 self.vmap.table.mark_accessed(VirtualAddr::from(addr.as_u64() & PAGE_MASK as u64));
-
             }
             HyperRegionKind::Emulated(_) => {
                 use aarch64::regs::*;
-                let access = DataAccess::parse_esr(esr).expect("ISV not valid");
+                let access = match DataAccess::parse_esr(esr) {
+                    Some(access) => access,
+                    None => {
+                        use aarch64::regs::*;
+                        use crate::traps::syndrome::Syndrome;
+
+
+                        kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.elr);
+
+                        kprintln!("    FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
+                        kprintln!("    EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
+                        kprintln!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.spsr);
+
+                        pi::timer::spin_sleep(Duration::from_secs(5));
+                        return;
+                    }
+                };
                 // kprint!("data access: {:#x?} {:#x?} -> {:?}", unsafe { ELR_EL2.get() }, addr, access);
 
                 let device = self.detail.virt_device.clone();
@@ -276,12 +328,8 @@ impl Process<HyperImpl> {
 
                 // We emulated the instruction so skip it.
                 tf.elr += 4;
-
             }
         }
     }
-
-
-
 }
 

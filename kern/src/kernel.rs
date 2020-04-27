@@ -146,7 +146,7 @@ pub fn kernel_main() -> ! {
     debug!("initing smp");
 
     if true {
-        let cores = 4;
+        let cores = 1;
         unsafe { smp::initialize(cores); }
         smp::wait_for_cores(cores);
     }

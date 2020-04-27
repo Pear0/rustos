@@ -125,7 +125,12 @@ unsafe fn el1_init() {
     #[allow(non_upper_case_globals)]
     extern "C" {
         static mut __text_end: u64;
+        static mut kernel_vectors: u64;
     }
+
+    VBAR_EL1.set((&kernel_vectors) as *const u64 as u64);
+
+    DAIF.set(DAIF::D | DAIF::A | DAIF::I | DAIF::F);
 
     SAFE_ALLOC_START.store((&__text_end) as *const u64 as u64, Ordering::Relaxed);
     aarch64::dmb();
