@@ -1,5 +1,6 @@
 use core::mem::zeroed;
 use core::ptr::write_volatile;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use aarch64::*;
 
@@ -18,6 +19,10 @@ global_asm!(include_str!("init/vectors.s"));
 //
 // so, no debug build support!
 //
+
+pub static SAFE_ALLOC_START: AtomicU64 = AtomicU64::new(0);
+pub static EL2_KERNEL_INIT: AtomicU64 = AtomicU64::new(0);
+pub static EL2_KERNEL_INIT_LEN: AtomicU64 = AtomicU64::new(0);
 
 /// FIXME lmao i needed this
 #[link_section = ".text.init"]
@@ -98,10 +103,10 @@ pub unsafe fn switch_to_el1() {
         // change execution level to EL1 (ref: C5.2.19)
         SPSR_EL2.set(
             (SPSR_EL2::M & 0b0101) // EL1h
-            | SPSR_EL2::F
-            | SPSR_EL2::I
-            | SPSR_EL2::D
-            | SPSR_EL2::A,
+                | SPSR_EL2::F
+                | SPSR_EL2::I
+                | SPSR_EL2::D
+                | SPSR_EL2::A,
         );
 
         ELR_EL2.set(switch_to_el1 as u64);
@@ -112,18 +117,53 @@ pub unsafe fn switch_to_el1() {
 
 #[no_mangle]
 #[inline(never)]
+unsafe fn el1_init() {
+    if current_el() != 1 {
+        return;
+    }
+
+    #[allow(non_upper_case_globals)]
+    extern "C" {
+        static mut __text_end: u64;
+    }
+
+    SAFE_ALLOC_START.store((&__text_end) as *const u64 as u64, Ordering::Relaxed);
+    aarch64::dmb();
+}
+
+#[no_mangle]
+#[inline(never)]
 unsafe fn el2_init() {
     if current_el() != 2 {
         return;
     }
 
+    #[allow(non_upper_case_globals)]
     extern "C" {
+        static mut __text_beg: u64;
+        static mut __text_end: u64;
         static mut hyper_vectors: u64;
     }
 
     // set up exception handlers
     VBAR_EL2.set((&hyper_vectors) as *const u64 as u64);
 
+    // Make a copy of all the code and data very early before and variables
+    // in the data section are touched.
+
+    let text_beg = (&__text_beg) as *const u64 as u64;
+    let text_end = (&__text_end) as *const u64 as u64;
+    let text_len = text_end - text_beg;
+
+    core::ptr::copy_nonoverlapping(text_beg as *const u8, text_end as *mut u8, text_len as usize);
+
+    aarch64::dsb();
+
+    EL2_KERNEL_INIT.store(text_end, Ordering::Relaxed);
+    EL2_KERNEL_INIT_LEN.store(text_len, Ordering::Relaxed);
+    SAFE_ALLOC_START.store(text_end + text_len, Ordering::Relaxed);
+
+    aarch64::dmb();
 }
 
 #[no_mangle]
@@ -137,7 +177,7 @@ unsafe fn kinit() -> ! {
         kmain(true);
     } else {
         switch_to_el1();
+        el1_init();
         kmain(false);
     }
-
 }

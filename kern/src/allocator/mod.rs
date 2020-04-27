@@ -1,12 +1,14 @@
 use core::alloc::{GlobalAlloc, Layout};
 use core::fmt;
+use core::sync::atomic::Ordering;
 
 use pi::atags::Atags;
+use shim::io;
 
+use crate::allocator::tags::{MemTag, TaggingAlloc};
+use crate::init::SAFE_ALLOC_START;
 use crate::mutex::Mutex;
 use crate::smp;
-use shim::io;
-use crate::allocator::tags::{TaggingAlloc, MemTag};
 
 mod linked_list;
 pub mod tags;
@@ -84,7 +86,6 @@ impl Allocator {
                 .dealloc_tag(ptr, layout, tag);
         })
     }
-
 }
 
 unsafe impl GlobalAlloc for Allocator {
@@ -107,7 +108,7 @@ extern "C" {
 /// This function is expected to return `Some` under all normal cirumstances.
 pub fn memory_map() -> Option<(usize, usize)> {
     // let page_size = 1 << 12;
-    let binary_end = unsafe { (&__text_end as *const u8) as usize };
+    let binary_end = SAFE_ALLOC_START.load(Ordering::Relaxed) as usize;
 
     let mut mem_end = 0u32;
 
