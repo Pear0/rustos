@@ -16,7 +16,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{NET, timer, hw};
+use crate::{NET, timer, hw, BootVariant};
 use crate::FILESYSTEM;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
@@ -28,6 +28,7 @@ use crate::smp;
 use super::command_args::{CommandArgs, Error};
 use super::default_commands;
 use pi::atags::{Atag, Atags};
+use crate::hyper::HYPER_IRQ;
 
 pub struct Shell<'a, R: io::Read, W: io::Write> {
     pub prefix: &'a str,
@@ -217,6 +218,8 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
             "pi-info" => {
                 use crate::mbox::with_mbox;
 
+                writeln!(self.writer, "current EL: {:?}", unsafe { aarch64::current_el() })?;
+
                 use aarch64::SPSR_EL1;
                 writeln!(self.writer, "DAIF: {:04b}", unsafe { SPSR_EL1.get_value(SPSR_EL1::D | SPSR_EL1::A | SPSR_EL1::I | SPSR_EL1::F) })?;
 
@@ -403,23 +406,45 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 writeln!(self.writer, "Current EL: {}", el);
             }
             "irqs" => {
-                writeln!(self.writer, "System:");
-                if let Some(stats) = KERNEL_IRQ.get_stats() {
-                    for (i, stat) in stats.iter().enumerate() {
-                        writeln!(self.writer, "{:>6?}: {:?}", Interrupt::from_index(i), stat);
-                    }
-                } else {
-                    writeln!(self.writer, "timed out getting stats");
-                }
-
-                for core in 0..smp::MAX_CORES {
-                    writeln!(self.writer, "Core {}:", core);
-                    if let Some(stats) = KERNEL_IRQ.get_stats_core(core) {
+                if BootVariant::kernel() {
+                    writeln!(self.writer, "System:");
+                    if let Some(stats) = KERNEL_IRQ.get_stats() {
                         for (i, stat) in stats.iter().enumerate() {
-                            writeln!(self.writer, "{:>14?}: {:?}", CoreInterrupt::from_index(i), stat);
+                            writeln!(self.writer, "{:>6?}: {:?}", Interrupt::from_index(i), stat);
                         }
                     } else {
                         writeln!(self.writer, "timed out getting stats");
+                    }
+
+                    for core in 0..smp::MAX_CORES {
+                        writeln!(self.writer, "Core {}:", core);
+                        if let Some(stats) = KERNEL_IRQ.get_stats_core(core) {
+                            for (i, stat) in stats.iter().enumerate() {
+                                writeln!(self.writer, "{:>14?}: {:?}", CoreInterrupt::from_index(i), stat);
+                            }
+                        } else {
+                            writeln!(self.writer, "timed out getting stats");
+                        }
+                    }
+                } else {
+                    writeln!(self.writer, "System:");
+                    if let Some(stats) = HYPER_IRQ.get_stats() {
+                        for (i, stat) in stats.iter().enumerate() {
+                            writeln!(self.writer, "{:>6?}: {:?}", Interrupt::from_index(i), stat);
+                        }
+                    } else {
+                        writeln!(self.writer, "timed out getting stats");
+                    }
+
+                    for core in 0..smp::MAX_CORES {
+                        writeln!(self.writer, "Core {}:", core);
+                        if let Some(stats) = HYPER_IRQ.get_stats_core(core) {
+                            for (i, stat) in stats.iter().enumerate() {
+                                writeln!(self.writer, "{:>14?}: {:?}", CoreInterrupt::from_index(i), stat);
+                            }
+                        } else {
+                            writeln!(self.writer, "timed out getting stats");
+                        }
                     }
                 }
             }
@@ -454,8 +479,9 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
     pub fn shell_loop(&mut self) {
         writeln!(self.writer);
         while !self.dead_shell {
+            let el = unsafe { aarch64::current_el() };
             let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) };
-            write!(self.writer, "{}{}", core_id, self.prefix);
+            write!(self.writer, "{}/{}{}", el, core_id, self.prefix);
             let mut raw_buf = [0u8; 512];
             let mut line_buf = StackVec::new(&mut raw_buf);
 

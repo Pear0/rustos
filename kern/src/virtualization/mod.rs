@@ -59,7 +59,7 @@ impl IrqController {
     }
 
     pub fn is_any_asserted(&self) -> bool {
-        (self.irq_bitmap() & self.mask) != 0
+        self.irq_bitmap_masked() != 0
     }
 
     pub fn irq_bitmap(&self) -> u64 {
@@ -68,6 +68,10 @@ impl IrqController {
             map |= (1 << irq.irq_index());
         }
         map
+    }
+
+    pub fn irq_bitmap_masked(&self) -> u64 {
+        self.irq_bitmap() & self.mask
     }
 
     pub fn set_mask(&mut self, mask: u64) {
@@ -117,32 +121,31 @@ fn assert_size(a: AccessSize, b: AccessSize) -> Result<()> {
 }
 
 #[derive(Debug)]
-pub struct HwPassthroughDevice(bool);
+pub struct HwPassthroughDevice {
+    start: u64,
+    length: u64,
+    verbose: bool,
+}
 
 impl HwPassthroughDevice {
-    pub fn new(verbose: bool) -> Self {
-        Self(verbose)
+    pub fn new(start: u64, length: u64) -> Self {
+        Self { start, length, verbose: false }
+    }
+
+    pub fn new_verbose(start: u64, length: u64) -> Self {
+        Self { start, length, verbose: true }
     }
 }
 
 impl VirtDevice for HwPassthroughDevice {
     fn is_mapped(&self, addr: VirtualAddr) -> bool {
-        true
+        let addr = addr.as_u64();
+        self.start <= addr && (addr - self.start) < self.length
     }
 
     fn read(&self, process: &mut HyperProcess, access: &DataAccess, addr: VirtualAddr) -> Result<u64> {
-
-        if addr.as_u64() == 0x3f215054 {
-            // assert_size(access.access_size, AccessSize::Word)?;
-            let mut lsr = 0;
-            lsr |= 1 << 5; // TxAvailable
-
-            let mut l = m_lock!(CONSOLE);
-            if l.has_byte() {
-                lsr |= 1; // DataReady
-            }
-
-            return Ok(lsr);
+        if !self.is_mapped(addr) {
+            return Err(DeviceError::Unmapped);
         }
 
         let value = unsafe {
@@ -154,7 +157,7 @@ impl VirtDevice for HwPassthroughDevice {
             }
         };
 
-        if self.0 {
+        if self.verbose {
             debug!("read(addr: {:#x?}, size: {:?}) -> {:#x}", addr, access.access_size, value);
         }
 
@@ -162,18 +165,12 @@ impl VirtDevice for HwPassthroughDevice {
     }
 
     fn write(&self, process: &mut HyperProcess, access: &DataAccess, addr: VirtualAddr, val: u64) -> Result<()> {
+        if !self.is_mapped(addr) {
+            return Err(DeviceError::Unmapped);
+        }
 
-        if self.0 {
+        if self.verbose {
             debug!("write(addr: {:#x?}, size: {:?}) <- {:#x}", addr, access.access_size, val);
-        }
-
-        if addr.as_u64() == 0x3f215040 {
-            let mut l = m_lock!(CONSOLE);
-            l.write_byte(val as u8);
-        }
-
-        if addr.as_u64() & 0xFFFF0000 == 0x3f210000 {
-            return Ok(());
         }
 
         unsafe {

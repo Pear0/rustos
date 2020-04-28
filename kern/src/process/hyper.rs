@@ -31,15 +31,27 @@ use core::time::Duration;
 
 pub struct HyperImpl {
     pub irqs: IrqController,
+    pub local_peripherals: broadcom::LocalPeripheralsImpl,
     virt_device: Arc<StackedDevice>,
+    core_id: usize,
 }
 
 fn create_virt_device() -> StackedDevice {
     let mut dev = StackedDevice::new();
 
-    dev.add(Box::new(HwPassthroughDevice::new(false))); // base case
+    dev.add(Box::new(HwPassthroughDevice::new_verbose(u64::min_value(), u64::max_value()))); // base case
+
+    dev.add(Box::new(HwPassthroughDevice::new(0x3f20_0000, 0x100))); // GPIO pass through
+
+    dev.add(Box::new(HwPassthroughDevice::new(0x3f30_0000, 0x100))); // EMMC pass through
+
+    dev.add(Box::new(HwPassthroughDevice::new(0x3f98_0000, 0x1_0000))); // USB pass through
+
+    dev.add(Box::new(broadcom::MiniUart::new()));
     dev.add(Box::new(broadcom::Interrupts::new()));
     dev.add(Box::new(broadcom::SystemTimer::new()));
+
+    dev.add(Box::new(broadcom::LocalPeripherals::new())); // core local timers
 
     dev
 }
@@ -52,7 +64,9 @@ impl ProcessImpl for HyperImpl {
     fn new() -> OsResult<Self> {
         Ok(Self {
             irqs: IrqController::new(),
+            local_peripherals: broadcom::LocalPeripheralsImpl::new(),
             virt_device: Arc::new(create_virt_device()),
+            core_id: 0,
         })
     }
 
@@ -236,6 +250,7 @@ impl Process<HyperImpl> {
             // assert virtual irq flag.
             self.context.hcr |= HCR_EL2::VI;
         }
+
     }
 
     pub fn on_access_fault(&mut self, esr: u32, addr: VirtualAddr, tf: &mut HyperTrapFrame) {
@@ -292,7 +307,7 @@ impl Process<HyperImpl> {
 
                     // kprintln!(", write: r{} <- {:#x}", access.register_idx, normalized);
                     if let Err(e) = device.write(self, &access, addr, normalized) {
-                        error!("write addr: {:#x?}, access: {:?} -> err: {:?}", addr, &access, e);
+                        error!("write addr: {:#x?}, access: {:?}, value: {:#x?} -> err: {:?}", addr, &access, normalized, e);
                         loop {}
                     }
                 } else {

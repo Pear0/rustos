@@ -8,6 +8,8 @@ use shim::io;
 #[cfg(feature = "user-space")]
 pub mod syscall;
 
+pub mod hypercall;
+
 #[macro_use]
 mod hypercall_macros;
 #[macro_use]

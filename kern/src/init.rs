@@ -84,7 +84,7 @@ pub unsafe fn switch_to_el1() {
 
         // enable CNTP for EL1/EL0 (ref: D7.5.2, D7.5.13)
         // NOTE: This doesn't actually enable the counter stream.
-        CNTHCTL_EL2.set(CNTHCTL_EL2.get() | CNTHCTL_EL2::EL0VCTEN | CNTHCTL_EL2::EL0PCTEN);
+        CNTHCTL_EL2.set(CNTHCTL_EL2.get() | CNTHCTL_EL2::EL1PCEN | CNTHCTL_EL2::EL1PCTEN);
         CNTVOFF_EL2.set(0);
 
         // enable AArch64 in EL1 (A53: 4.3.36)

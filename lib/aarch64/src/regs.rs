@@ -240,11 +240,6 @@ defreg!(VBAR_EL2, [
     RES0   [10-0],
 ]);
 
-defreg!(CNTHCTL_EL2, [
-    EL0VCTEN [1-1],
-    EL0PCTEN [0-0],
-]);
-
 defreg!(CNTVOFF_EL2);
 
 
@@ -299,10 +294,26 @@ defreg!(CNTV_CTL_EL0, [
 ]);
 
 defreg!(CNTV_CVAL_EL0);
-
 defreg!(CNTV_TVAL_EL0);
-
 defreg!(CNTVCT_EL0);
+
+// (ref. D7.5.2 Counter-timer Hypervisor Control register)
+defreg!(CNTHCTL_EL2, [
+    EVNTI [7-4],
+    EVNTDIR [3-3],
+    EVNTEN [2-2],
+    EL1PCEN [1-1], // active=0, Traps Non-secure EL0 and EL1 accesses to the physical timer registers to EL2.
+    EL1PCTEN [0-0], // active=0, Traps Non-secure EL0 and EL1 accesses to the physical counter register to EL2.
+]);
+
+defreg!(CNTHP_CTL_EL2, [
+    ISTATUS [2-2], // has interrupt triggered
+    IMASK   [1-1], // mask interrupt
+    ENABLE  [0-0],
+]);
+
+defreg!(CNTHP_CVAL_EL2);
+defreg!(CNTHP_TVAL_EL2);
 
 
 // (ref. D7.2.73 Main ID Register)
@@ -330,3 +341,7 @@ defreg!(MDCR_EL2, [
     TDE [8-8], // Trap Debug exceptions.
     // not all bits ...
 ]);
+
+
+defreg!(ID_AA64PFR0_EL1);
+defreg!(ID_AA64MMFR1_EL1);

@@ -9,7 +9,7 @@ use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
-use crate::smp;
+use crate::{smp, BootVariant};
 use crate::cls::CoreLocal;
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
@@ -30,7 +30,12 @@ extern "C" {
 
 fn reset_timer() {
     use aarch64::regs::*;
-    unsafe { CNTV_TVAL_EL0.set(100000) };
+
+    match BootVariant::get_variant() {
+        BootVariant::Kernel => unsafe { CNTV_TVAL_EL0.set(1000000) },
+        BootVariant::Hypervisor => unsafe { CNTHP_TVAL_EL2.set(1000000) },
+        _ => {},
+    }
 }
 
 impl<T: ProcessImpl> GlobalScheduler<T> {
@@ -191,7 +196,7 @@ impl GlobalScheduler<HyperImpl> {
         }
 
         let core = crate::smp::core();
-        HYPER_IRQ.register_core(core, CoreInterrupt::CNTVIRQ, Box::new(|tf| {
+        HYPER_IRQ.register_core(core, CoreInterrupt::CNTHPIRQ, Box::new(|tf| {
             HYPER_SCHEDULER.switch(State::Ready, tf);
 
             // somewhat redundant, .switch() is suppose to do this.
@@ -238,12 +243,22 @@ impl GlobalScheduler<HyperImpl> {
 
         let core = smp::core();
 
-        unsafe { ((0x4000_0040 + 4 * core) as *mut u32).write_volatile(0b1010) };
+        // Since the Raspberry Pi 3 does not have an ARM GIC that would be able to
+        // re-route a physical interrupt as a virtual one, we need to do something
+        // hacky to enable routing some interrupts to the guest, and some to the
+        // hypervisor. In this case, FIQs are not trapped by the hypervisor and so
+        // affect the guest. It is the job of the hypervisor to ensure that only the
+        // correct guest receives FIQs.
+
+        let mut local_flags = 0;
+        local_flags |= 1 << 7; // nCNTVIRQ FIQ
+        local_flags |= 1 << 5; // nCNTPNSIRQ FIQ
+        local_flags |= 1 << 2; // nCNTHPIRQ IRQ
+        unsafe { ((0x4000_0040 + 4 * core) as *mut u32).write_volatile(local_flags) };
         aarch64::dsb();
 
-        // let v = unsafe { CNTVCT_EL0.get() };
-        unsafe { CNTV_TVAL_EL0.set(100000 * 10) };
-        unsafe { CNTV_CTL_EL0.set((CNTV_CTL_EL0.get() & !CNTV_CTL_EL0::IMASK) | CNTV_CTL_EL0::ENABLE) };
+        unsafe { CNTHP_TVAL_EL2.set(100000 * 10) };
+        unsafe { CNTHP_CTL_EL2.set((CNTHP_CTL_EL2.get() & !CNTV_CTL_EL0::IMASK) | CNTV_CTL_EL0::ENABLE) };
 
         // Bootstrap the first process
         self.bootstrap_hyper();

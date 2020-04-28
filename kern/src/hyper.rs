@@ -12,6 +12,9 @@ pub fn hyper_main() -> ! {
     info!("VMM setup");
     VMM.setup_hypervisor();
 
+    info!("ID_AA64PFR0_EL1: {:#b}", unsafe { ID_AA64PFR0_EL1.get() });
+    info!("ID_AA64MMFR1_EL1: {:#b}", unsafe { ID_AA64MMFR1_EL1.get() });
+
     info!("Making hvc call");
     hvc!(5);
 
@@ -53,7 +56,7 @@ pub fn hyper_main() -> ! {
 
         // enable CNTP for EL1/EL0 (ref: D7.5.2, D7.5.13)
         // NOTE: This doesn't actually enable the counter stream.
-        CNTHCTL_EL2.set(CNTHCTL_EL2.get() | CNTHCTL_EL2::EL0VCTEN | CNTHCTL_EL2::EL0PCTEN);
+        CNTHCTL_EL2.set(CNTHCTL_EL2.get() | CNTHCTL_EL2::EL1PCEN | CNTHCTL_EL2::EL1PCTEN);
         CNTVOFF_EL2.set(0);
 
         // enable AArch64 in EL1 (A53: 4.3.36)

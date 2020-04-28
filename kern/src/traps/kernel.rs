@@ -10,15 +10,26 @@ use crate::traps::Kind::Synchronous;
 use crate::traps::syndrome::Syndrome;
 use crate::traps::syscall::handle_syscall;
 
+#[derive(Debug)]
+enum IrqVariant {
+    Irq(Interrupt),
+    CoreIrq(CoreInterrupt),
+}
+
+
 fn handle_irqs(tf: &mut KernelTrapFrame) {
     let ctl = Controller::new();
     // Invoke any handlers
 
+    let mut pending: Option<IrqVariant> = None;
+
     for _ in 0..20 {
         let mut any_pending = false;
+        pending = None;
         for int in Interrupt::iter() {
             if ctl.is_pending(*int) {
                 any_pending = true;
+                pending = Some(IrqVariant::Irq(*int));
                 KERNEL_IRQ.invoke(*int, tf);
             }
         }
@@ -27,6 +38,7 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
         for _ in 0..CoreInterrupt::MAX {
             if let Some(int) = CoreInterrupt::read(core) {
                 any_pending = true;
+                pending = Some(IrqVariant::CoreIrq(int));
                 KERNEL_IRQ.invoke_core(core, int, tf);
             } else {
                 break;
@@ -38,7 +50,7 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
         }
     }
 
-    kprintln!("irq stuck pending!");
+    kprintln!("irq stuck pending! -> {:?}", pending);
 
     debug_shell(tf);
 }
@@ -65,7 +77,7 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
     IRQ_INFO.set(info);
 
     match info.kind {
-        Kind::Irq => {
+        Kind::Irq | Kind::Fiq => {
             handle_irqs(tf);
         }
         Kind::Synchronous => {
