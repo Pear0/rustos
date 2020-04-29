@@ -33,8 +33,8 @@ fn reset_timer() {
 
     match BootVariant::get_variant() {
         BootVariant::Kernel => unsafe { CNTV_TVAL_EL0.set(1000000) },
-        BootVariant::Hypervisor => unsafe { CNTHP_TVAL_EL2.set(1000000) },
-        _ => {},
+        BootVariant::Hypervisor => { unsafe { CNTHP_TVAL_EL2.set(100000) } },
+        _ => panic!("somehow got unknown boot variant"),
     }
 }
 
@@ -257,8 +257,8 @@ impl GlobalScheduler<HyperImpl> {
         unsafe { ((0x4000_0040 + 4 * core) as *mut u32).write_volatile(local_flags) };
         aarch64::dsb();
 
-        unsafe { CNTHP_TVAL_EL2.set(100000 * 10) };
-        unsafe { CNTHP_CTL_EL2.set((CNTHP_CTL_EL2.get() & !CNTV_CTL_EL0::IMASK) | CNTV_CTL_EL0::ENABLE) };
+        unsafe { CNTHP_TVAL_EL2.set(100000) };
+        unsafe { CNTHP_CTL_EL2.set((CNTHP_CTL_EL2.get() & !CNTHP_CTL_EL2::IMASK) | CNTHP_CTL_EL2::ENABLE) };
 
         // Bootstrap the first process
         self.bootstrap_hyper();

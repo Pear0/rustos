@@ -1,10 +1,65 @@
 use crate::process::{GlobalScheduler, HyperImpl, HyperProcess};
 use crate::traps::irq::Irq;
-use crate::VMM;
+use crate::{VMM, smp, hw};
+use crate::BootVariant::Hypervisor;
+use core::time::Duration;
+use alloc::string::String;
+use aarch64::CNTHP_CTL_EL2;
+use pi::usb::Usb;
+use crate::net::physical::{PhysicalUsb, Physical};
 
 pub static HYPER_IRQ: Irq<HyperImpl> = Irq::uninitialized();
 pub static HYPER_SCHEDULER: GlobalScheduler<HyperImpl> = GlobalScheduler::uninitialized();
 
+
+
+fn net_thread() -> ! {
+    if hw::is_qemu() {
+        error!("detected qemu, not booting network services.");
+        kernel_api::syscall::exit();
+    }
+
+    kernel_api::syscall::sleep(Duration::from_millis(1000));
+
+    crate::mbox::with_mbox(|mbox| {
+        info!( "Serial: {:x?}", mbox.serial_number());
+        info!("MAC: {:x?}", mbox.mac_address());
+        info!( "Board Revision: {:x?}", mbox.board_revision());
+        info!( "Temp: {:?}", mbox.core_temperature());
+    });
+
+    crate::mbox::with_mbox(|mbox| mbox.set_power_state(0x00000003, true));
+    pi::timer::spin_sleep(Duration::from_millis(100));
+
+    let usb = unsafe { Usb::new().expect("failed to init usb") };
+
+    debug!("created usb");
+
+    let usb = PhysicalUsb(usb);
+
+    loop {
+        let status = usb.status();
+        info!("USB status: {:?}", status);
+
+        kernel_api::syscall::sleep(Duration::from_secs(2));
+    }
+
+    error!("net thread exit.");
+    kernel_api::syscall::exit();
+}
+
+fn test_thread() -> ! {
+    use aarch64::regs::*;
+
+    loop {
+        let core = smp::core();
+        info!("I am the hyper thread! {} {}, {:#b}", unsafe { CNTHP_CTL_EL2.get() & CNTHP_CTL_EL2::ISTATUS }, unsafe { DAIF.get() }, unsafe { ((0x4000_0040 + 4 * core) as *mut u32).read_volatile() });
+
+        // pi::timer::spin_sleep(Duration::from_secs(1));
+        kernel_api::syscall::sleep(Duration::from_secs(1));
+
+    }
+}
 
 pub fn hyper_main() -> ! {
     info!("VMM init");
@@ -26,10 +81,22 @@ pub fn hyper_main() -> ! {
 
     info!("Add kernel process");
 
-    {
-        // let p = HyperProcess::load("/kernel.bin").expect("failed to find bin");
-        let p = HyperProcess::load_self().expect("failed to find bin");
+    // {
+    //     // let p = HyperProcess::load("/kernel.bin").expect("failed to find bin");
+    //     let p = HyperProcess::load_self().expect("failed to find bin");
+    //
+    //     let id = HYPER_SCHEDULER.add(p);
+    //     info!("kernel id: {:?}", id);
+    // }
+    //
+    // {
+    //     let p = HyperProcess::hyper_process_old(String::from("hyper proc"), test_thread).expect("failed to create hyper thread");
+    //     let id = HYPER_SCHEDULER.add(p);
+    //     info!("kernel id: {:?}", id);
+    // }
 
+    {
+        let p = HyperProcess::hyper_process_old(String::from("hyper net"), net_thread).expect("failed to create hyper thread");
         let id = HYPER_SCHEDULER.add(p);
         info!("kernel id: {:?}", id);
     }

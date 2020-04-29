@@ -1,6 +1,7 @@
 
 pub mod broadcom;
 mod data_access;
+pub mod nic;
 
 pub use data_access::*;
 use crate::console::CONSOLE;

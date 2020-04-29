@@ -10,6 +10,7 @@ use crate::traps::syndrome::{Syndrome, Fault, AbortInfo};
 use crate::traps::syscall::handle_syscall;
 use crate::hyper::{HYPER_IRQ, HYPER_SCHEDULER};
 use crate::vm::VirtualAddr;
+use crate::traps::hypercall::handle_hyper_syscall;
 
 #[derive(Debug)]
 enum IrqVariant {
@@ -23,12 +24,18 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
 
     let mut pending: Option<IrqVariant> = None;
 
-    for _ in 0..20 {
+    for k in 0..20 {
+        let last = k == 19;
         let mut any_pending = false;
         for int in Interrupt::iter() {
             if ctl.is_pending(*int) {
                 any_pending = true;
-                pending = Some(IrqVariant::Irq(*int));
+                if last {
+                    kprintln!("{} irq stuck pending! -> {:?}", k, IrqVariant::Irq(*int));
+                }
+                if k == 0 {
+                    kprintln!("{:?}", IrqVariant::Irq(*int));
+                }
                 HYPER_IRQ.invoke(*int, tf);
             }
         }
@@ -37,7 +44,12 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
         for _ in 0..CoreInterrupt::MAX {
             if let Some(int) = CoreInterrupt::read(core) {
                 any_pending = true;
-                pending = Some(IrqVariant::CoreIrq(int));
+                if last {
+                    kprintln!("{}@core={} irq stuck pending! -> {:?}", k, core, IrqVariant::CoreIrq(int));
+                }
+                if k == 0 {
+                    kprintln!("{:?}", IrqVariant::CoreIrq(int));
+                }
                 HYPER_IRQ.invoke_core(core, int, tf);
             } else {
                 break;
@@ -49,12 +61,10 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
         }
 
         // todo HACK
-        if let Some(IrqVariant::Irq(Interrupt::Timer1)) = pending {
-            return;
-        }
+        // if let Some(IrqVariant::Irq(Interrupt::Timer1)) = pending {
+        //     return;
+        // }
     }
-
-    kprintln!("irq stuck pending! -> {:?}", pending);
 
     debug_shell(tf);
 }
@@ -88,6 +98,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
             //     kprintln!("SP: {:#x}, ELR_EL1: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() });
             // }
 
+            info!("IRQ: elr={:#x}", tf.elr);
             handle_irqs(tf);
         }
         Kind::Synchronous => {
@@ -99,6 +110,10 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     kprintln!("ELR: 0x{:x}", tf.elr);
 
                     debug_shell(tf);
+                }
+                Syndrome::Svc(svc) => {
+                    // kprintln!("svc #{}", svc);
+                    handle_hyper_syscall(svc, tf);
                 }
                 Syndrome::Hvc(b) => {
                     if b == 8 {
@@ -124,7 +139,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     }
 
                     if is_access_flag {
-                        HYPER_SCHEDULER.crit_process(tf.tpidr, |p| {
+                        HYPER_SCHEDULER.crit_process(tf.tpidr2, |p| {
                             if let Some(p) = p {
                                 // won't work once guest enables virtualization.
 
@@ -173,7 +188,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
     if info.kind == Kind::Irq || (info.kind == Kind::Synchronous && info.source == Source::LowerAArch64) {
         use aarch64::regs::*;
         if tf.hcr & HCR_EL2::VM != 0 {
-            HYPER_SCHEDULER.crit_process(tf.tpidr, |p| {
+            HYPER_SCHEDULER.crit_process(tf.tpidr2, |p| {
                 if let Some(p) = p {
                     // give process a chance to update any virtualized components.
                     *p.context = *tf;

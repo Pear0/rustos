@@ -19,6 +19,7 @@ pub mod buffer;
 pub mod ether;
 pub mod icmp;
 pub mod ipv4;
+pub mod physical;
 pub mod tcp;
 pub mod util;
 

@@ -3,7 +3,7 @@ use core::alloc::Layout;
 use mini_alloc::{LocalAlloc, SyncAlloc, MiniBox};
 use mini_alloc::{BumpAllocator, BumpChunkProvider};
 
-use crate::param::PAGE_SIZE;
+use crate::param::{PAGE_SIZE, PAGE_MASK};
 use crate::{ALLOCATOR, VMM};
 use crate::allocator::tags::MemTag;
 

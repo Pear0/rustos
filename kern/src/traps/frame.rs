@@ -89,15 +89,17 @@ impl Frame for KernelTrapFrame {
 pub struct HyperTrapFrame {
     pub elr: u64,
     pub spsr: u64,
-    pub sp: u64,
-    pub tpidr: u64,
+    pub sp0: u64,
+    pub tpidr0: u64,
+    pub sp1: u64,
+    pub tpidr2: u64,
     pub vttbr: u64,
     pub hcr: u64,
     pub simd: [u128; 32],
     pub regs: [u64; 31],
 }
 
-const_assert_size!(HyperTrapFrame, 808);
+const_assert_size!(HyperTrapFrame, 808 + 16);
 
 impl HyperTrapFrame {
 
@@ -111,8 +113,8 @@ impl HyperTrapFrame {
 
         writeln!(w, "elr: 0x{:08x}", self.elr)?;
         writeln!(w, "spsr: 0x{:08x}", self.spsr)?;
-        writeln!(w, "sp: 0x{:08x}", self.sp)?;
-        writeln!(w, "tpidr: 0x{:08x}", self.tpidr)?;
+        writeln!(w, "sp: 0x{:08x}", self.sp1)?;
+        writeln!(w, "tpidr: 0x{:08x}", self.tpidr2)?;
         writeln!(w, "ttbr0: 0x{:08x}", self.vttbr)?;
         writeln!(w, "ttbr1: 0x{:08x}", self.hcr)?;
 
@@ -133,11 +135,11 @@ impl HyperTrapFrame {
 
 impl Frame for HyperTrapFrame {
     fn get_id(&self) -> u64 {
-        self.tpidr
+        self.tpidr2
     }
 
     fn set_id(&mut self, val: u64) {
-        self.tpidr = val;
+        self.tpidr2 = val;
     }
 }
 

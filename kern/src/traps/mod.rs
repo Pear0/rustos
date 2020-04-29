@@ -16,6 +16,7 @@ use self::syscall::handle_syscall;
 
 mod frame;
 mod hyper;
+mod hypercall;
 mod kernel;
 // defines kernel_handle_exception
 pub mod syndrome;

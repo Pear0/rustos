@@ -2,17 +2,21 @@
 
 use alloc::alloc::{GlobalAlloc, Layout};
 use alloc::boxed::Box;
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 
 use pi::interrupt::{Controller, Interrupt};
 use pi::mbox::MBox;
 use pi::timer;
 
-use crate::{ALLOCATOR};
+use crate::{ALLOCATOR, BootVariant, VMM};
+use crate::allocator::tags::{MemTag, TaggingAlloc};
+use crate::hyper::HYPER_IRQ;
 use crate::kernel::KERNEL_IRQ;
 use crate::mbox::with_mbox;
-use core::sync::atomic::{AtomicBool, Ordering};
-use crate::allocator::tags::{MemTag, TaggingAlloc};
+use crate::param::PAGE_MASK;
+use crate::mini_allocators::NOCACHE_ALLOC;
+use mini_alloc::Alloc;
 
 /// Function implementations for linked C libraries
 
@@ -41,7 +45,6 @@ fn wrap_str(ptr: *const u8) -> &'static str {
 #[no_mangle]
 extern "C" fn uspi_assertion_failed(expr: *const u8, file: *const u8, line: u32) {
     panic!("{}: {}:{}", wrap_str(expr), wrap_str(file), line);
-
 }
 
 // void MsDelay (unsigned nMilliSeconds);
@@ -63,20 +66,24 @@ extern "C" fn usDelay(amt: u32) {
 #[no_mangle]
 extern "C" fn malloc(size: u32) -> *mut u8 {
     unsafe {
-        let l = Layout::from_size_align_unchecked((size+4) as usize, 4);
-        let p = ALLOCATOR.alloc_tag(l, MemTag::CLib);
-        *(p as *mut u32) = size+4; // store size (to deallocate) in first byte
-        p.offset(4)
+        let l = Layout::from_size_align_unchecked((size + 16) as usize, 16);
+
+        let p = NOCACHE_ALLOC.alloc(l);
+        p
+
+        // let p = ALLOCATOR.alloc_tag(l, MemTag::CLib);
+        // *(p as *mut u32) = size + 16; // store size (to deallocate) in first byte
+        // p.offset(16)
     }
 }
 
 #[no_mangle]
 extern "C" fn free(ptr: *mut u8) {
-    unsafe {
-        let size = *(ptr.offset(-4) as *mut u32);
-        let l = Layout::from_size_align_unchecked(size as usize, 4);
-        ALLOCATOR.dealloc_tag(ptr.offset(-4), l, MemTag::CLib);
-    }
+    // unsafe {
+    //     let size = *(ptr.offset(-16) as *mut u32);
+    //     let l = Layout::from_size_align_unchecked(size as usize, 1 << 16);
+    //     ALLOCATOR.dealloc_tag(ptr.offset(-16), l, MemTag::CLib);
+    // }
 }
 
 // // Severity (change this before building if you want different values)
@@ -117,12 +124,12 @@ extern "C" fn LogWrite(source: *const u8, severity: u32, message: *const u8, arg
     let mut i = 0;
     while i < message.len() {
         if message[i] == b'%' && i < message.len() - 1 {
-            match message[i+1] {
+            match message[i + 1] {
                 b'%' => {
                     kprint!("%");
                     i += 2;
                     continue;
-                },
+                }
                 b's' => {
                     if let Some(arg) = next_arg() {
                         let str = wrap_str(arg as *const u8);
@@ -131,7 +138,7 @@ extern "C" fn LogWrite(source: *const u8, severity: u32, message: *const u8, arg
                         i += 2;
                         continue;
                     }
-                },
+                }
                 b'u' => {
                     if let Some(arg) = next_arg() {
                         kprint!("{}", arg);
@@ -140,9 +147,8 @@ extern "C" fn LogWrite(source: *const u8, severity: u32, message: *const u8, arg
                         continue;
                     }
                 }
-                _ => {},
+                _ => {}
             }
-
         }
 
         kprint!("{}", message[i] as char);
@@ -157,12 +163,13 @@ extern "C" fn StartKernelTimer() {
     kprintln!("StartKernelTimer()");
     unimplemented!();
 }
+
 #[no_mangle]
 extern "C" fn SetPowerStateOn() {
-
+    debug!("Enabling USB subsystem");
     with_mbox(|mbox| mbox.set_power_state(0x00000003, true));
-    pi::timer::spin_sleep(Duration::from_millis(5));
-
+    kernel_api::syscall::sleep(Duration::from_millis(50));
+    // pi::timer::spin_sleep(Duration::from_millis(5));
 }
 
 // typedef void TInterruptHandler (void *pParam);
@@ -170,20 +177,30 @@ extern "C" fn SetPowerStateOn() {
 // // USPi uses USB IRQ 9
 // void ConnectInterrupt (unsigned nIRQ, TInterruptHandler *pHandler, void *pParam);
 
-type TInterruptHandler = extern "C" fn (*mut u8);
+type TInterruptHandler = extern "C" fn(*mut u8);
 
 #[no_mangle]
 extern "C" fn ConnectInterrupt(_irq: u32, func: TInterruptHandler, data: *mut u8) {
     let data = data as usize;
     kprintln!("[net] Connecting USB interrupt");
 
+    // Controller::new().enable(Interrupt::Timer3);
     Controller::new().enable(Interrupt::Usb);
 
-    KERNEL_IRQ.register(Interrupt::Usb, Box::new(move |_| {
-        aarch64::dmb();
-        func(data as *mut u8);
-        aarch64::dsb();
-    }));
+    if BootVariant::kernel() {
+        KERNEL_IRQ.register(Interrupt::Usb, Box::new(move |_| {
+            aarch64::dmb();
+            func(data as *mut u8);
+            aarch64::dsb();
+        }));
+    } else {
+        HYPER_IRQ.register(Interrupt::Usb, Box::new(move |_| {
+            aarch64::dmb();
+            // debug!("usb interrupt");
+            func(data as *mut u8);
+            aarch64::dsb();
+        }));
+    }
 
 }
 
@@ -209,6 +226,5 @@ extern "C" fn GetMACAddress(ptr: &mut [u8; 6]) {
 extern "C" fn CancelKernelTimer() {
     unimplemented!();
 }
-
 
 

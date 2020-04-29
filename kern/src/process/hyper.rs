@@ -75,7 +75,7 @@ impl ProcessImpl for HyperImpl {
         idle_tasks.reserve_exact(count);
         for i in 0..count {
             let name = format!("idle_task{}", i);
-            let proc = Process::<Self>::kernel_process_old(name, || {
+            let proc = Process::<Self>::hyper_process_old(name, || {
                 loop {
                     aarch64::wfe();
                     // trigger context switch immediately after WFE so we dont take a full
@@ -92,18 +92,21 @@ impl ProcessImpl for HyperImpl {
 pub type HyperProcess = Process<HyperImpl>;
 
 impl Process<HyperImpl> {
-    pub fn kernel_process_old(name: String, f: fn() -> !) -> OsResult<Self> {
+    pub fn hyper_process_old(name: String, f: fn() -> !) -> OsResult<Self> {
         use crate::VMM;
 
         let mut p = Self::new(name)?;
 
-        p.context.sp = p.stack.top().as_u64();
+        p.context.sp0 = p.stack.top().as_u64();
         p.context.elr = f as u64;
 
-        p.context.spsr |= SPSR_EL1::M & 0b1001;
+        p.context.spsr = 0;
+        p.context.spsr |= SPSR_EL2::M & 0b1000;
 
         // kernel thread still gets a vmap because it's easy
         p.context.vttbr = p.vmap.get_baddr().as_u64();
+
+        p.context.hcr = HCR_EL2::RW | HCR_EL2::IMO | HCR_EL2::CD | HCR_EL2::ID | HCR_EL2::RES1;
 
         Ok(p)
     }
@@ -152,7 +155,7 @@ impl Process<HyperImpl> {
 
         proc.context.spsr |= SPSR_EL2::D | SPSR_EL2::A | SPSR_EL2::I | SPSR_EL2::F;
 
-        proc.context.sp = 0x420_000;
+        proc.context.sp1 = 0x420_000;
         proc.context.elr = 0x80000;
 
         proc.context.vttbr = proc.vmap.get_baddr().as_u64();

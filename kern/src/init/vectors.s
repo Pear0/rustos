@@ -198,16 +198,12 @@ hyper_context_save:
     mrs     x0, VTTBR_EL2
     stp     x0, x1, [SP, #-16]!
 
-    // FIXME qemu doesn't like this rn, maybe it'll be happy later
-    // magic code
-    dsb     ishst
-    tlbi    alle1
-    tlbi    alle2
-    dsb     ish
-    isb
-
     mrs     x1, TPIDR_EL2
     mrs     x0, SP_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, TPIDR_EL0
+    mrs     x0, SP_EL0
     stp     x0, x1, [SP, #-16]!
 
     mrs     x1, SPSR_EL2
@@ -236,6 +232,10 @@ hyper_context_restore:
     msr     SPSR_EL2, x1
 
     ldp     x0, x1, [SP], #16
+    msr     SP_EL0, x0
+    msr     TPIDR_EL0, x1
+
+    ldp     x0, x1, [SP], #16
     msr     SP_EL1, x0
     msr     TPIDR_EL2, x1
 
@@ -244,10 +244,10 @@ hyper_context_restore:
     msr     HCR_EL2, x1
 
     // reload page tables
-    dsb     ishst
-    tlbi    alle1
+    dsb     sy
+    tlbi    vmalls12e1
     tlbi    alle2
-    dsb     ish
+    dsb     sy
     isb
 
     // ic iallu

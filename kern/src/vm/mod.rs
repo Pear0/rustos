@@ -55,12 +55,21 @@ impl VMManager {
         let kern_page_table = lock.as_mut().unwrap();
         kern_page_table.set_entry(VirtualAddr::from(addr),
                                   KernPageTable::create_l3_entry(addr, EntryAttr::Nc));
-        
-        match BootVariant::get_variant() {
-            BootVariant::Kernel => self.setup_kernel(),
-            BootVariant::Hypervisor =>  self.setup_hypervisor(),
-            e => panic!("unknown variant: {:?}", e),
+
+        unsafe {
+            asm!("dsb     sy
+                  tlbi    alle2
+                  tlbi    vmalls12e1
+                  dsb     sy
+                  isb" ::: "memory" : "volatile");
+
         }
+
+        // match BootVariant::get_variant() {
+        //     BootVariant::Kernel => self.setup_kernel(),
+        //     BootVariant::Hypervisor =>  self.setup_hypervisor(),
+        //     e => panic!("unknown variant: {:?}", e),
+        // }
     }
 
     /// Set up the virtual memory manager.
@@ -178,6 +187,17 @@ impl VMManager {
 
             asm!("dsb sy");
             isb();
+
+            unsafe {
+                asm!("dsb     sy
+                  tlbi    alle2
+                  tlbi    vmalls12e1
+                  dsb     sy
+                  isb" ::: "memory" : "volatile");
+
+            }
+
+
         }
         
     }

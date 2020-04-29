@@ -13,6 +13,11 @@
 #![cfg_attr(not(test), no_main)]
 
 #![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(safe_packed_borrows)]
+#![allow(dead_code)]
+#![allow(unused_must_use)]
+
 
 #[macro_use]
 extern crate aarch64;
@@ -69,6 +74,7 @@ mod init;
 
 pub mod allocator;
 pub mod cls;
+pub mod collections;
 mod compat;
 pub mod debug;
 pub mod display;

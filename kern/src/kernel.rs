@@ -178,11 +178,11 @@ pub fn kernel_main() -> ! {
         KERNEL_SCHEDULER.add(proc);
     }
 
-    if !hw::is_qemu() {
-        let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
-        proc.affinity.set_only(0);
-        KERNEL_SCHEDULER.add(proc);
-    }
+    // if !hw::is_qemu() {
+    //     let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
+    //     proc.affinity.set_only(0);
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
 
     {
         let proc = KernelProcess::kernel_process_old("led".to_owned(), led_blink).unwrap();
