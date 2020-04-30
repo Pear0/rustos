@@ -156,6 +156,48 @@ impl<T: ProcessImpl> AddressSpaceManager<T> {
         unsafe { self.table.get_page_ref(va) }
     }
 
+    pub fn copy_out(&mut self, va: VirtualAddr, mut buf: &mut [u8]) -> OsResult<()> {
+        let mut base = va & VirtualAddr::from(PAGE_MASK);
+        let mut offset = (va - base).as_usize();
+
+        while buf.len() > 0 {
+            let mut page = self.get_page_mut(base).ok_or(OsError::BadAddress)?;
+            // offset is always less than page size.
+            if offset > 0 {
+                page = &mut page[offset..];
+                offset = 0;
+            }
+
+            let len = core::cmp::min(page.len(), buf.len());
+            buf[..len].copy_from_slice(&page[..len]);
+            buf = &mut buf[len..];
+            base = base + VirtualAddr::from(PAGE_SIZE);
+        }
+
+        Ok(())
+    }
+
+    pub fn copy_in(&mut self, va: VirtualAddr, mut buf: &[u8]) -> OsResult<()> {
+        let mut base = va & VirtualAddr::from(PAGE_MASK);
+        let mut offset = (va - base).as_usize();
+
+        while buf.len() > 0 {
+            let mut page = self.get_page_mut(base).ok_or(OsError::BadAddress)?;
+            // offset is always less than page size.
+            if offset > 0 {
+                page = &mut page[offset..];
+                offset = 0;
+            }
+
+            let len = core::cmp::min(page.len(), buf.len());
+            page[..len].copy_from_slice(&buf[..len]);
+            buf = &buf[len..];
+            base = base + VirtualAddr::from(PAGE_SIZE);
+        }
+
+        Ok(())
+    }
+
     pub fn get_baddr(&self) -> PhysicalAddr {
         self.table.get_baddr()
     }

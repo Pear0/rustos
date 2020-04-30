@@ -1,17 +1,23 @@
-use crate::process::{GlobalScheduler, HyperImpl, HyperProcess};
-use crate::traps::irq::Irq;
-use crate::{VMM, smp, hw};
-use crate::BootVariant::Hypervisor;
-use core::time::Duration;
+use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::sync::Arc;
+use core::time::Duration;
+
 use aarch64::CNTHP_CTL_EL2;
 use pi::usb::Usb;
-use crate::net::physical::{PhysicalUsb, Physical};
+
+use crate::{hw, smp, VMM};
+use crate::BootVariant::Hypervisor;
+use crate::iosync::Global;
+use crate::net::physical::{Physical, PhysicalUsb};
+use crate::process::{GlobalScheduler, HyperImpl, HyperProcess};
+use crate::traps::irq::Irq;
+use crate::virtualization::nic::VirtualSwitch;
 
 pub static HYPER_IRQ: Irq<HyperImpl> = Irq::uninitialized();
 pub static HYPER_SCHEDULER: GlobalScheduler<HyperImpl> = GlobalScheduler::uninitialized();
 
-
+pub static NET_SWITCH: Global<VirtualSwitch> = Global::new(|| VirtualSwitch::new_hub());
 
 fn net_thread() -> ! {
     if hw::is_qemu() {
@@ -22,10 +28,10 @@ fn net_thread() -> ! {
     kernel_api::syscall::sleep(Duration::from_millis(1000));
 
     crate::mbox::with_mbox(|mbox| {
-        info!( "Serial: {:x?}", mbox.serial_number());
+        info!("Serial: {:x?}", mbox.serial_number());
         info!("MAC: {:x?}", mbox.mac_address());
-        info!( "Board Revision: {:x?}", mbox.board_revision());
-        info!( "Temp: {:?}", mbox.core_temperature());
+        info!("Board Revision: {:x?}", mbox.board_revision());
+        info!("Temp: {:?}", mbox.core_temperature());
     });
 
     crate::mbox::with_mbox(|mbox| mbox.set_power_state(0x00000003, true));
@@ -37,11 +43,27 @@ fn net_thread() -> ! {
 
     let usb = PhysicalUsb(usb);
 
-    loop {
-        let status = usb.status();
-        info!("USB status: {:?}", status);
+    while !usb.is_connected() {
+        debug!("waiting for link");
+        kernel_api::syscall::sleep(Duration::from_millis(500));
+    }
 
-        kernel_api::syscall::sleep(Duration::from_secs(2));
+    let usb = Arc::new(usb);
+
+    NET_SWITCH.critical(move |switch| {
+        switch.debug = true;
+
+        // VirtualSwitch holds a weak reference.
+        // For now we always want to have usb ethernet connected,
+        // so just leak the Arc.
+        switch.register(usb.clone());
+        core::mem::forget(usb);
+    });
+
+    loop {
+        if !(NET_SWITCH.critical(|s| s.process(Duration::from_micros(500)))) {
+            kernel_api::syscall::sleep(Duration::from_millis(5));
+        }
     }
 
     error!("net thread exit.");
@@ -57,7 +79,6 @@ fn test_thread() -> ! {
 
         // pi::timer::spin_sleep(Duration::from_secs(1));
         kernel_api::syscall::sleep(Duration::from_secs(1));
-
     }
 }
 
@@ -79,15 +100,19 @@ pub fn hyper_main() -> ! {
         HYPER_SCHEDULER.initialize_hyper();
     }
 
+    for atag in pi::atags::Atags::get() {
+        info!("{:?}", atag);
+    }
+
     info!("Add kernel process");
 
-    // {
-    //     // let p = HyperProcess::load("/kernel.bin").expect("failed to find bin");
-    //     let p = HyperProcess::load_self().expect("failed to find bin");
-    //
-    //     let id = HYPER_SCHEDULER.add(p);
-    //     info!("kernel id: {:?}", id);
-    // }
+    {
+        // let p = HyperProcess::load("/kernel.bin").expect("failed to find bin");
+        let p = HyperProcess::load_self().expect("failed to find bin");
+
+        let id = HYPER_SCHEDULER.add(p);
+        info!("kernel id: {:?}", id);
+    }
     //
     // {
     //     let p = HyperProcess::hyper_process_old(String::from("hyper proc"), test_thread).expect("failed to create hyper thread");
@@ -107,7 +132,6 @@ pub fn hyper_main() -> ! {
     use aarch64::regs::*;
 
     unsafe {
-
         unsafe { ((0x4000_000C) as *mut u32).write_volatile(0b1111) };
         aarch64::dsb();
 
@@ -164,7 +188,6 @@ pub fn hyper_main() -> ! {
     HYPER_SCHEDULER.start_hyper();
 
     info!("looping in HVC");
-    loop {
-    }
+    loop {}
 }
 

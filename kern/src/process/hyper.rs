@@ -5,6 +5,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::Ordering;
+use core::time::Duration;
 
 use kernel_api::{OsError, OsResult};
 
@@ -16,9 +17,10 @@ use shim::path::Path;
 
 use crate::{FILESYSTEM, VMM};
 use crate::fs::handle::{Sink, Source};
-use crate::hyper::hyper_main;
+use crate::hyper::{hyper_main, NET_SWITCH};
 use crate::init::{EL2_KERNEL_INIT, EL2_KERNEL_INIT_LEN};
 use crate::kernel::KERNEL_SCHEDULER;
+use crate::net::physical::Physical;
 use crate::param::{PAGE_MASK, PAGE_SIZE, USER_IMG_BASE};
 use crate::process::{Id, Process, ProcessImpl, State};
 use crate::process::address_space::{HyperRegionKind, KernelRegionKind, Region};
@@ -27,13 +29,14 @@ use crate::sync::Completion;
 use crate::traps::{Frame, HyperTrapFrame, KernelTrapFrame};
 use crate::virtualization::{AccessSize, broadcom, DataAccess, HwPassthroughDevice, IrqController, StackedDevice, VirtDevice};
 use crate::vm::{GuestPageTable, VirtualAddr, VirtualizationPageTable};
-use core::time::Duration;
+use crate::virtualization::nic::{VirtualNIC, RevVirtualNIC};
 
 pub struct HyperImpl {
     pub irqs: IrqController,
     pub local_peripherals: broadcom::LocalPeripheralsImpl,
     virt_device: Arc<StackedDevice>,
     core_id: usize,
+    pub nic: Option<Arc<dyn Physical>>,
 }
 
 fn create_virt_device() -> StackedDevice {
@@ -67,6 +70,7 @@ impl ProcessImpl for HyperImpl {
             local_peripherals: broadcom::LocalPeripheralsImpl::new(),
             virt_device: Arc::new(create_virt_device()),
             core_id: 0,
+            nic: None
         })
     }
 
@@ -145,6 +149,14 @@ impl Process<HyperImpl> {
 
         // 257 = ceil( (0x4000_00FC - 0x3f00_0000) / PAGE_SIZE )
         proc.vmap.add_region(Region::new(VirtualAddr::from(0x3f000000), 257 * PAGE_SIZE, HyperRegionKind::Emulated(proc.detail.virt_device.clone())));
+
+        // Networking
+
+        let mut nic = Arc::new(VirtualNIC::new());
+
+        NET_SWITCH.critical(|net| net.register(RevVirtualNIC::create(nic.clone())));
+
+        proc.detail.nic = Some(nic);
 
 
         // Init context
@@ -253,7 +265,6 @@ impl Process<HyperImpl> {
             // assert virtual irq flag.
             self.context.hcr |= HCR_EL2::VI;
         }
-
     }
 
     pub fn on_access_fault(&mut self, esr: u32, addr: VirtualAddr, tf: &mut HyperTrapFrame) {
@@ -278,7 +289,6 @@ impl Process<HyperImpl> {
                     None => {
                         use aarch64::regs::*;
                         use crate::traps::syndrome::Syndrome;
-
 
                         kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.elr);
 

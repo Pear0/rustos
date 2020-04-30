@@ -71,33 +71,37 @@ impl io::Write for ConsoleSync {
     }
 }
 
-enum GlobalState<T: Clone> {
+enum GlobalState<T> {
     Init(fn() -> T),
     Val(T)
 }
 
-pub struct Global<T: Clone>(Mutex<GlobalState<T>>);
+pub struct Global<T>(Mutex<GlobalState<T>>);
 
-impl<T: Clone> Global<T> {
+impl<T> Global<T> {
     pub const fn new(f: fn() -> T) -> Self {
         Global(mutex_new!(GlobalState::Init(f)))
     }
 
-    pub fn get(&self) -> T {
+    pub fn critical<R, F: FnOnce(&mut T) -> R>(&self, func: F) -> R {
         let mut lock = m_lock!(self.0);
 
-        match lock.deref() {
-            GlobalState::Init(f) => {
-                let t = f();
-                *lock = GlobalState::Val(t.clone());
-                t
-            }
-            GlobalState::Val(t) => {
-                t.clone()
-            }
+        if let GlobalState::Init(f) = lock.deref() {
+            *lock = GlobalState::Val(f());
+        }
+
+        if let GlobalState::Val(val) = lock.deref_mut() {
+            func(val)
+        } else {
+            unreachable!();
         }
     }
+}
 
+impl<T: Clone> Global<T> {
+    pub fn clone(&self) -> T {
+        self.critical(|v| v.clone())
+    }
 }
 
 pub struct ReadWrapper<T: AsRef<dyn SyncRead>>(T);

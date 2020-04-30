@@ -13,6 +13,7 @@ use crate::net::ipv4::IPv4Payload;
 use core::ops::DerefMut;
 use core::ops::Deref;
 use shim::{io, newioerr};
+use crate::net::physical::{VirtNIC, Physical};
 
 pub mod arp;
 pub mod buffer;
@@ -87,7 +88,7 @@ fn get_mac_address() -> Option<ether::Mac> {
 }
 
 pub struct NetHandler {
-    pub usb: Arc<usb::Usb>,
+    pub usb: Arc<dyn Physical>,
     pub eth: Arc<ether::Interface>,
     pub arp: Arc<ArpTable>,
     pub ip: Arc<ipv4::Interface>,
@@ -95,22 +96,21 @@ pub struct NetHandler {
 }
 
 impl NetHandler {
-    pub unsafe fn new(usb: usb::Usb) -> Option<NetHandler> {
-        let usb = Arc::new(usb);
+    pub unsafe fn new(usb: Arc<dyn Physical>) -> Option<NetHandler> {
 
-        while !usb.ethernet_available() {
-            info!("ethernet not available");
-            pi::timer::spin_sleep(Duration::from_millis(2000));
-        }
+        // while !usb.ethernet_available() {
+        //     info!("ethernet not available");
+        //     pi::timer::spin_sleep(Duration::from_millis(2000));
+        // }
+        //
+        // while !usb.ethernet_link_up() {
+        //     debug!("eth DOWN");
+        //     pi::timer::spin_sleep(Duration::from_millis(500));
+        // }
+        //
+        // debug!("eth UP");
 
-        while !usb.ethernet_link_up() {
-            debug!("eth DOWN");
-            pi::timer::spin_sleep(Duration::from_millis(500));
-        }
-
-        debug!("eth UP");
-
-        let mac = get_mac_address()?;
+        let mac = ether::Mac::from(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]);// get_mac_address()?;
         let my_ip = ipv4::Address::from(&[10, 45, 52, 130]);
 
         let eth = Arc::new(ether::Interface::new(usb.clone(), mac));
@@ -261,9 +261,11 @@ impl GlobalNetHandler {
     }
 
     pub unsafe fn initialize(&self) {
-        let usb = Usb::new().expect("failed to init usb");
+        // let usb = Usb::new().expect("failed to init usb");
 
-        debug!("created usb");
+        let usb = Arc::new(VirtNIC());
+
+        debug!("created nic");
 
         let net = NetHandler::new(usb).expect("create net handler");
 

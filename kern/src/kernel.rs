@@ -179,9 +179,9 @@ pub fn kernel_main() -> ! {
     }
 
     // if !hw::is_qemu() {
-    //     let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
-    //     proc.affinity.set_only(0);
-    //     KERNEL_SCHEDULER.add(proc);
+        let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
+        proc.affinity.set_only(0);
+        KERNEL_SCHEDULER.add(proc);
     // }
 
     {

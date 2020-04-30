@@ -4,17 +4,6 @@ use core::time::Duration;
 
 use crate::*;
 
-macro_rules! err_or {
-    ($ecode:expr, $rtn:expr) => {{
-        let e = OsError::from($ecode);
-        if let OsError::Ok = e {
-            Ok($rtn)
-        } else {
-            Err(e)
-        }
-    }};
-}
-
 pub fn sleep(span: Duration) -> OsResult<Duration> {
     if span.as_millis() > core::u64::MAX as u128 {
         panic!("too big!");

@@ -10,7 +10,7 @@ use crate::traps::syndrome::{Syndrome, Fault, AbortInfo};
 use crate::traps::syscall::handle_syscall;
 use crate::hyper::{HYPER_IRQ, HYPER_SCHEDULER};
 use crate::vm::VirtualAddr;
-use crate::traps::hypercall::handle_hyper_syscall;
+use crate::traps::hypercall::{handle_hyper_syscall, handle_hypercall};
 
 #[derive(Debug)]
 enum IrqVariant {
@@ -33,9 +33,9 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
                 if last {
                     kprintln!("{} irq stuck pending! -> {:?}", k, IrqVariant::Irq(*int));
                 }
-                if k == 0 {
-                    kprintln!("{:?}", IrqVariant::Irq(*int));
-                }
+                // if k == 0 {
+                //     kprintln!("{:?}", IrqVariant::Irq(*int));
+                // }
                 HYPER_IRQ.invoke(*int, tf);
             }
         }
@@ -47,9 +47,9 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
                 if last {
                     kprintln!("{}@core={} irq stuck pending! -> {:?}", k, core, IrqVariant::CoreIrq(int));
                 }
-                if k == 0 {
-                    kprintln!("{:?}", IrqVariant::CoreIrq(int));
-                }
+                // if k == 0 {
+                //     kprintln!("{:?}", IrqVariant::CoreIrq(int));
+                // }
                 HYPER_IRQ.invoke_core(core, int, tf);
             } else {
                 break;
@@ -98,7 +98,6 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
             //     kprintln!("SP: {:#x}, ELR_EL1: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() });
             // }
 
-            info!("IRQ: elr={:#x}", tf.elr);
             handle_irqs(tf);
         }
         Kind::Synchronous => {
@@ -116,16 +115,17 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     handle_hyper_syscall(svc, tf);
                 }
                 Syndrome::Hvc(b) => {
-                    if b == 8 {
-                        use aarch64::regs::*;
-                        // kprintln!("returning from hvc({}), {:?}, {:#x?}", b, Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ELR_EL1.get() });
-                    } else if b == 5 {
-                        kprintln!("returning from hvc({})", b);
-                    } else {
-                        kprintln!("{:?} {:?} (raw=0x{:x}) @ {:x}", info, Syndrome::Hvc(b), esr, tf.elr);
-
-                        loop {}
-                    }
+                    handle_hypercall(b, tf);
+                    // if b == 8 {
+                    //     use aarch64::regs::*;
+                    //     // kprintln!("returning from hvc({}), {:?}, {:#x?}", b, Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ELR_EL1.get() });
+                    // } else if b == 5 {
+                    //     kprintln!("returning from hvc({})", b);
+                    // } else {
+                    //     kprintln!("{:?} {:?} (raw=0x{:x}) @ {:x}", info, Syndrome::Hvc(b), esr, tf.elr);
+                    //
+                    //     loop {}
+                    // }
                 }
                 s => {
                     use aarch64::regs::*;

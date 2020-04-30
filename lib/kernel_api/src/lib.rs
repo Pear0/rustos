@@ -39,6 +39,9 @@ pub enum OsError {
     InvalidSocket = 200,
     SocketAlreadyOpen = 201,
     InvalidPort = 202,
+
+    // custom
+    Waiting = 500,
 }
 
 impl core::convert::From<u64> for OsError {
@@ -63,6 +66,8 @@ impl core::convert::From<u64> for OsError {
             201 => OsError::SocketAlreadyOpen,
             202 => OsError::InvalidPort,
 
+            500 => OsError::Waiting,
+
             _ => OsError::Unknown,
         }
     }
@@ -81,6 +86,22 @@ impl core::convert::From<io::Error> for OsError {
     }
 }
 
+#[macro_export]
+macro_rules! err_or {
+    ($ecode:expr, $rtn:expr) => {{
+        let e = OsError::from($ecode);
+        if let OsError::Ok = e {
+            Ok($rtn)
+        } else {
+            Err(e)
+        }
+    }};
+}
+
+/************/
+/* syscalls */
+/************/
+
 pub const NR_SLEEP: usize = 1;
 pub const NR_TIME: usize = 2;
 pub const NR_EXIT: usize = 3;
@@ -89,8 +110,15 @@ pub const NR_GETPID: usize = 5;
 pub const NR_WAITPID: usize = 6;
 pub const NR_SBRK: usize = 7;
 
+/**************/
+/* hypercalls */
+/**************/
 
-
+// Virtualized NIC hypercalls
+pub const HP_VNIC_STATE: usize = 1;
+pub const HP_VNIC_GET_INFO: usize = 2;
+pub const HP_VNIC_SEND: usize = 3;
+pub const HP_VNIC_RECEIVE: usize = 4;
 
 
 

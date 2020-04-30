@@ -60,7 +60,7 @@ impl MBox {
         self.0[0] = 8*4;
         self.0[1] = MBOX_REQUEST;
         self.0[2] = MBOX_TAG_GETMAC;
-        self.0[3] = 6;
+        self.0[3] = 8;
         self.0[4] = 8;
         self.0[5] = 0;
         self.0[6] = 0;

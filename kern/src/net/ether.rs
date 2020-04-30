@@ -10,6 +10,7 @@ use pi::usb::Usb;
 
 use crate::net::{encode_struct, try_parse_struct, NetResult, NetErrorKind};
 use crate::mutex::Mutex;
+use crate::net::physical::{Physical, Frame};
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -18,6 +19,10 @@ pub struct Mac([u8; 6]);
 impl Mac {
     pub fn broadcast() -> Mac {
         Mac([0xFF; 6])
+    }
+
+    pub fn is_broadcast(&self) -> bool {
+        *self == Self::broadcast()
     }
 }
 
@@ -77,7 +82,7 @@ pub type EthHandler<T> = Box<dyn FnMut(&Interface, &EthHeader, &mut T, &[u8]) + 
 type RawEthHandler = Box<dyn FnMut(&Interface, &EthHeader, &[u8]) + Send>;
 
 struct InterfaceImpl {
-    usb: Arc<Usb>,
+    physical: Arc<dyn Physical>,
     handlers: HashMap<u16, Option<RawEthHandler>>,
     address: Mac,
 }
@@ -87,10 +92,10 @@ pub struct Interface {
 }
 
 impl Interface {
-    pub fn new(usb: Arc<Usb>, address: Mac) -> Interface {
+    pub fn new(physical: Arc<dyn Physical>, address: Mac) -> Interface {
         Interface {
             inner: Mutex::new("Interface::new()", InterfaceImpl {
-                usb,
+                physical,
                 handlers: HashMap::new(),
                 address,
             })
@@ -102,9 +107,9 @@ impl Interface {
     }
 
     pub fn send<T: EthPayload>(&self, to: Mac, payload: T) -> NetResult<()> {
-        let mut full_buf = usb::new_frame_buffer();
-        let full_buf_len = full_buf.len();
-        let mut buf: &mut [u8] = &mut full_buf;
+        let mut frame = Frame::default();
+        let full_buf_len = frame.0.len();
+        let mut buf: &mut [u8] = &mut frame.0;
 
         let header = EthHeader {
             mac_sender: self.address(),
@@ -116,10 +121,9 @@ impl Interface {
         buf = payload.encode(buf)?;
 
         // buf is our write pointer, we need to turn it into the valid buffer.
-        let buf_len = full_buf_len - buf.len();
-        let buf = &mut full_buf[0..buf_len];
+        frame.1 = full_buf_len - buf.len();
 
-        unsafe { m_lock!(self.inner).usb.send_frame(buf) }.ok_or(NetErrorKind::EthSendFail)
+        m_lock!(self.inner).physical.send_frame(&frame).ok_or(NetErrorKind::EthSendFail)
     }
 
     pub fn register<T: EthPayload + 'static>(&self, mut handler: EthHandler<T>) {
@@ -135,10 +139,10 @@ impl Interface {
     }
 
     pub fn receive_dispatch(&self) -> Option<()> {
-        let mut frame_buf = usb::new_frame_buffer();
-        let frame = unsafe { m_lock!(self.inner).usb.receive_frame(&mut frame_buf) }?;
+        let mut frame = Frame::default();
+        unsafe { m_lock!(self.inner).physical.receive_frame(&mut frame) }?;
 
-        let (eth, frame) = try_parse_struct::<EthHeader>(frame)?;
+        let (eth, frame) = try_parse_struct::<EthHeader>(frame.as_slice())?;
         let protocol = eth.protocol_type.get();
 
         // kprintln!("[eth] frame: protocol=0x{:x}", protocol);
