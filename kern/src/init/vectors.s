@@ -82,7 +82,7 @@ kernel_context_restore:
 
     // reload page tables
     dsb     ishst
-    tlbi    vmalle1
+    tlbi    vmalle1is
     dsb     ish
     isb
 
@@ -245,8 +245,8 @@ hyper_context_restore:
 
     // reload page tables
     dsb     sy
-    tlbi    vmalls12e1
-    tlbi    alle2
+    tlbi    vmalls12e1is
+    tlbi    alle2is
     dsb     sy
     isb
 

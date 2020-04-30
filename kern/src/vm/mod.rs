@@ -21,13 +21,13 @@ fn flush_tlbs() {
     unsafe {
         if BootVariant::kernel() {
             asm!("dsb     sy
-                  tlbi    vmalle1
+                  tlbi    vmalle1is
                   dsb     sy
                   isb" ::: "memory" : "volatile");
         } else {
             asm!("dsb     sy
-                  tlbi    alle2
-                  tlbi    vmalls12e1
+                  tlbi    alle2is
+                  tlbi    vmalls12e1is
                   dsb     sy
                   isb" ::: "memory" : "volatile");
         }
