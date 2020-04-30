@@ -17,6 +17,23 @@ pub struct VMManager(Mutex<Option<KernPageTable>>);
 
 static FOO: AtomicU64 = AtomicU64::new(0);
 
+fn flush_tlbs() {
+    unsafe {
+        if BootVariant::kernel() {
+            asm!("dsb     sy
+                  tlbi    vmalle1
+                  dsb     sy
+                  isb" ::: "memory" : "volatile");
+        } else {
+            asm!("dsb     sy
+                  tlbi    alle2
+                  tlbi    vmalls12e1
+                  dsb     sy
+                  isb" ::: "memory" : "volatile");
+        }
+    }
+}
+
 impl VMManager {
     /// Returns an uninitialized `VMManager`.
     ///
@@ -56,14 +73,7 @@ impl VMManager {
         kern_page_table.set_entry(VirtualAddr::from(addr),
                                   KernPageTable::create_l3_entry(addr, EntryAttr::Nc));
 
-        unsafe {
-            asm!("dsb     sy
-                  tlbi    alle2
-                  tlbi    vmalls12e1
-                  dsb     sy
-                  isb" ::: "memory" : "volatile");
-
-        }
+        flush_tlbs();
 
         // match BootVariant::get_variant() {
         //     BootVariant::Kernel => self.setup_kernel(),
@@ -124,6 +134,9 @@ impl VMManager {
 
             asm!("dsb sy");
             isb();
+
+            flush_tlbs();
+
 
         }
     }
@@ -188,14 +201,7 @@ impl VMManager {
             asm!("dsb sy");
             isb();
 
-            unsafe {
-                asm!("dsb     sy
-                  tlbi    alle2
-                  tlbi    vmalls12e1
-                  dsb     sy
-                  isb" ::: "memory" : "volatile");
-
-            }
+            flush_tlbs();
 
 
         }
