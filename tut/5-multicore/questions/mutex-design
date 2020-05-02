@@ -1,0 +1,13 @@
+
+You need to create a "box" with your Mutex implementation
+
+At the top there must be a compare_and_swap with Acquire semantics. This is the top of the box and prevents
+loads/stores from wandering before the compare_and_swap succeeds.
+
+At the bottom you need a store with Release semantics. This prevents stores from wandering after the atomic
+store occurs.
+
+
+
+
+

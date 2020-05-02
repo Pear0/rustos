@@ -1,0 +1,9 @@
+
+
+Using indices and re-allocating indices as low as possible allows efficient use of array indexing and Vec-type reallocating.
+
+If a random token were generating a hashmap would need to be used which would be both slower, take up more memory, and probably have worse cache locality.
+
+
+
+

@@ -1,0 +1,18 @@
+
+
+
+/* Thread 1 */
+C = 3;
+A = 1; // (1)
+print!("{}", B); // (2)
+
+/* Thread 2 */
+B = 2; // (3)
+print!("{}", A); // (4)
+print!("{}", C); // (5)
+
+
+SC cannot print 003 and cannot print 000
+TSO cannot print 010 but can print 003 and 000
+ARM can print all of the above
+

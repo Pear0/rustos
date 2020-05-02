@@ -1,0 +1,7 @@
+
+
+My mutex implementation should recover gracefully because it sets the locked state to true before MMU is initialized
+and a unlock operation after MMU is enabled will compare_and_swap it back to false.
+
+(i haven't audited my mutex too closely).
+

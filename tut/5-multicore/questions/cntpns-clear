@@ -1,0 +1,5 @@
+
+The bit is automagically cleared when you set a new timer value that compares false.
+The easiest way to do this is write a value to CNTPNS_TVAL_EL1.
+
+

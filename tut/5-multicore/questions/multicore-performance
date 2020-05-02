@@ -1,0 +1,4 @@
+
+It was around a 3.5x speedup. The issue is that the shell Process is constantly in a UART polling
+loop so it burns CPU time decreasing the available CPU resources for each fib process slightly.
+

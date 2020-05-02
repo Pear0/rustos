@@ -1,0 +1,13 @@
+
+
+
+dsb     ishst - data sync barrier / inner shareable / store barrier (ensure ISh domain can see our writes)
+
+tlbi    vmalle1 - invalidate TLB entries for the current vmid in the stage 1 (not hypervisor) translation tables
+
+dsb     ish - ensure the TLB operation is complete
+
+isb - block prefetching of instruction until dsb is complete.
+
+
+

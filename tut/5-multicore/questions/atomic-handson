@@ -1,0 +1,25 @@
+
+LDADD - Load atomic , no ordering semantics :P
+
+
+/* thread 1 */
+mov x0, #0
+mov x5, 1
+mov x1, addr of counter
+loop:
+    ldadd x1, zxr, [x1]
+    add x0, x0, #1
+    cmp x0, #1000
+    ble loop
+
+/* program 2 */
+mov x0, #0
+mov x5, 1
+mov x1, addr of counter
+loop:
+    ldadd x1, zxr, [x1]
+    add x0, x0, #1
+    cmp x0, #1000
+    ble loop
+
+

@@ -1,0 +1,8 @@
+
+Similar to sleep, you would create a Waiting state that keeps the process de-scheduled until the
+process is has return data from the syscall. Similar to how sleep() works, the syscall data will be written back to the
+trap frame once the process is ready to be scheduled again.
+
+
+
+
