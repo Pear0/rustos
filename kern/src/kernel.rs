@@ -181,9 +181,9 @@ pub fn kernel_main() -> ! {
     }
 
     // if !hw::is_qemu() {
-        let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
-        proc.affinity.set_only(0);
-        KERNEL_SCHEDULER.add(proc);
+    //     let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
+    //     proc.affinity.set_only(0);
+    //     KERNEL_SCHEDULER.add(proc);
     // }
 
     {
@@ -191,8 +191,24 @@ pub fn kernel_main() -> ! {
         KERNEL_SCHEDULER.add(proc);
     }
 
+    // {
+    //     let proc = KernelProcess::kernel_process("display".to_owned(), display_manager::display_process).unwrap();
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
+
     {
-        let proc = KernelProcess::kernel_process("display".to_owned(), display_manager::display_process).unwrap();
+        let proc = KernelProcess::kernel_process("hello TAs".to_owned(), |_| {
+
+            kernel_api::syscall::sleep(Duration::from_millis(1000));
+
+            for _ in 0..3 {
+
+                kprintln!("Hello TAs, there is a `help` command and `proc2` to list processes. Don't run `net tcp`, networking is disabled right now. I did not implement berkeley sockets btw");
+
+                kernel_api::syscall::sleep(Duration::from_millis(5000));
+            }
+
+        }).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
 
