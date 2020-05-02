@@ -136,3 +136,19 @@ impl Physical for VirtNIC {
     }
 }
 
+pub struct NilDevice();
+
+impl Physical for NilDevice {
+    fn status(&self) -> LinkStatus {
+        LinkStatus::Disconnected
+    }
+
+    fn send_frame(&self, frame: &Frame) -> Option<()> {
+        None
+    }
+
+    fn receive_frame(&self, frame: &mut Frame) -> Option<()> {
+        None
+    }
+}
+

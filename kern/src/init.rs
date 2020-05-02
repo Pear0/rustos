@@ -1,6 +1,6 @@
 use core::mem::zeroed;
 use core::ptr::write_volatile;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use aarch64::*;
 
@@ -23,6 +23,8 @@ global_asm!(include_str!("init/vectors.s"));
 pub static SAFE_ALLOC_START: AtomicU64 = AtomicU64::new(0);
 pub static EL2_KERNEL_INIT: AtomicU64 = AtomicU64::new(0);
 pub static EL2_KERNEL_INIT_LEN: AtomicU64 = AtomicU64::new(0);
+
+pub static EL1_IN_HYPERVISOR: AtomicBool = AtomicBool::new(true);
 
 /// FIXME lmao i needed this
 #[link_section = ".text.init"]
@@ -111,6 +113,10 @@ pub unsafe fn switch_to_el1() {
 
         ELR_EL2.set(switch_to_el1 as u64);
         // ELR_EL1.set(switch_to_el1 as u64);
+
+        // We moved from EL2 to EL1 ourselves so we are not in a hypervisor.
+        EL1_IN_HYPERVISOR.store(false, Ordering::Relaxed);
+
         aarch64::eret();
     }
 }
@@ -177,7 +183,7 @@ unsafe fn kinit() -> ! {
     switch_to_el2();
 
     // for now, always boot hypervisor
-    if current_el() == 2 {
+    if current_el() == 2 && false {
         el2_init();
         kmain(true);
     } else {

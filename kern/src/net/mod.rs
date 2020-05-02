@@ -14,6 +14,7 @@ use core::ops::DerefMut;
 use core::ops::Deref;
 use shim::{io, newioerr};
 use crate::net::physical::{VirtNIC, Physical};
+use crate::{BootVariant, hw};
 
 pub mod arp;
 pub mod buffer;
@@ -96,7 +97,7 @@ pub struct NetHandler {
 }
 
 impl NetHandler {
-    pub unsafe fn new(usb: Arc<dyn Physical>) -> Option<NetHandler> {
+    pub fn new(usb: Arc<dyn Physical>) -> Option<NetHandler> {
 
         // while !usb.ethernet_available() {
         //     info!("ethernet not available");
@@ -260,18 +261,34 @@ impl GlobalNetHandler {
         Self(mutex_new!(None))
     }
 
-    pub unsafe fn initialize(&self) {
-        // let usb = Usb::new().expect("failed to init usb");
-
-        let usb = Arc::new(VirtNIC());
-
-        debug!("created nic");
-
+    pub fn initialize_with(&self, usb: Arc<dyn Physical>) {
         let net = NetHandler::new(usb).expect("create net handler");
 
         debug!("created net");
 
         m_lock!(self.0).replace(net);
+    }
+
+    pub unsafe fn initialize(&self) {
+        // let usb = Usb::new().expect("failed to init usb");
+
+        let phys: Arc<dyn Physical>;
+        if BootVariant::kernel_in_hypervisor() {
+            phys = Arc::new(VirtNIC());
+        } else if BootVariant::kernel() {
+            if hw::is_qemu() {
+                phys = Arc::new(physical::NilDevice());
+            } else {
+                let usb = unsafe { Usb::new() }.expect("failed to initialize usb");
+                phys = Arc::new(physical::PhysicalUsb(usb));
+            }
+        } else {
+            panic!("todo, net stack in hypervisor");
+        }
+
+        debug!("created nic");
+
+        self.initialize_with(phys);
     }
 
     pub fn is_initialized(&self) -> bool {

@@ -7,7 +7,7 @@ use alloc::borrow::ToOwned;
 use pi::gpio;
 use shim::{io, ioerr};
 
-use crate::{display_manager, hw, kernel_call, NET, shell, smp, VMM};
+use crate::{display_manager, hw, kernel_call, NET, shell, smp, VMM, BootVariant};
 use crate::fs::handle::{SinkWrapper, SourceWrapper};
 use crate::net::ipv4;
 use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess};
@@ -145,8 +145,10 @@ pub fn kernel_main() -> ! {
 
     debug!("initing smp");
 
+    let enable_many_cores = !BootVariant::kernel_in_hypervisor();
+
     if true {
-        let cores = 1;
+        let cores = if enable_many_cores { 4 } else { 1 };
         unsafe { smp::initialize(cores); }
         smp::wait_for_cores(cores);
     }

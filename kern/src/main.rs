@@ -40,6 +40,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 
 use aarch64::{CNTP_CTL_EL0, SP};
@@ -54,6 +55,7 @@ use shim::{io, ioerr};
 use vm::VMManager;
 
 use crate::fs::handle::{SinkWrapper, SourceWrapper};
+use crate::init::EL1_IN_HYPERVISOR;
 use crate::iosync::{ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::mbox::with_mbox;
 use crate::mutex::Mutex;
@@ -62,7 +64,6 @@ use crate::param::PAGE_SIZE;
 use crate::process::{Id, KernelImpl, Process, Stack};
 use crate::process::fd::FileDescriptor;
 use crate::traps::syndrome::Syndrome;
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 #[macro_use]
 pub mod console;
@@ -122,6 +123,10 @@ impl BootVariant {
 
     pub fn kernel() -> bool {
         Self::get_variant() == BootVariant::Kernel
+    }
+
+    pub fn kernel_in_hypervisor() -> bool {
+        Self::kernel() && EL1_IN_HYPERVISOR.load(Ordering::Relaxed)
     }
 }
 
