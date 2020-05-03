@@ -84,7 +84,7 @@ impl MiniUart {
             registers.CNTL_REG.write(0);
             registers.LCR_REG.write(0b11); // 8 bit mode
 //        registers.MCR_REG.write(0);
-//         registers.IER_REG.write(0b1111_1111); // receive interrupts / no transmit
+            registers.IER_REG.write(0b1111_1111); // receive interrupts / no transmit
 
 //        registers.IIR_REG.write(0xc6); // disable interrupts
 
@@ -111,8 +111,20 @@ impl MiniUart {
         self.timeout = Some(t)
     }
 
-    fn can_send(&self) -> bool {
+    pub fn can_send(&self) -> bool {
         (self.registers.LSR_REG.read() & (TxAvailable as u8)) != 0
+    }
+
+    pub fn set_send_interrupt_enabled(&mut self, enabled: bool) {
+
+        let mut val = self.registers.IER_REG.read();
+        if enabled {
+            val |= 0b10;
+        } else {
+            val &= !0b10;
+        }
+        self.registers.IER_REG.write(val);
+
     }
 
     /// Write the byte `byte`. This method blocks until there is space available

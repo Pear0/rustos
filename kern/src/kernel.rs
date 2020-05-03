@@ -14,6 +14,8 @@ use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess};
 use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
 use crate::vm::VMManager;
+use pi::interrupt::Interrupt;
+use crate::console::{console_interrupt_handler, CONSOLE, console_ext_init};
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -136,6 +138,12 @@ pub fn kernel_main() -> ! {
     debug!("init irq");
     KERNEL_IRQ.initialize();
 
+    //
+    console_ext_init();
+    KERNEL_IRQ.register(Interrupt::Aux, Box::new(|_| {
+        console_interrupt_handler();
+    }));
+
     // initialize local timers for all cores
     unsafe { (0x4000_0008 as *mut u32).write_volatile(0x8000_0000) };
     unsafe { (0x4000_0040 as *mut u32).write_volatile(0b1010) };
@@ -175,6 +183,8 @@ pub fn kernel_main() -> ! {
 
     debug!("start some processes");
 
+    pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
+
     {
         let proc = KernelProcess::kernel_process_old("shell".to_owned(), my_thread).unwrap();
         KERNEL_SCHEDULER.add(proc);
@@ -196,21 +206,21 @@ pub fn kernel_main() -> ! {
     //     KERNEL_SCHEDULER.add(proc);
     // }
 
-    {
-        let proc = KernelProcess::kernel_process("hello TAs".to_owned(), |_| {
-
-            kernel_api::syscall::sleep(Duration::from_millis(1000));
-
-            for _ in 0..3 {
-
-                kprintln!("Hello TAs, there is a `help` command and `proc2` to list processes. Don't run `net tcp`, networking is disabled right now. I did not implement berkeley sockets btw");
-
-                kernel_api::syscall::sleep(Duration::from_millis(5000));
-            }
-
-        }).unwrap();
-        KERNEL_SCHEDULER.add(proc);
-    }
+    // {
+    //     let proc = KernelProcess::kernel_process("hello TAs".to_owned(), |_| {
+    //
+    //         kernel_api::syscall::sleep(Duration::from_millis(1000));
+    //
+    //         for _ in 0..3 {
+    //
+    //             kprintln!("Hello TAs, there is a `help` command and `proc2` to list processes. Don't run `net tcp`, networking is disabled right now. I did not implement berkeley sockets btw");
+    //
+    //             kernel_api::syscall::sleep(Duration::from_millis(5000));
+    //         }
+    //
+    //     }).unwrap();
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
 
     // {
     //     let mut proc = Process::load("/fib.bin").expect("failed to load");

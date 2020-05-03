@@ -61,6 +61,7 @@ impl<T: ProcessImpl> Irq<T> {
         *m_lock!(self.0) = Some([
             IrqEntry::new(), IrqEntry::new(), IrqEntry::new(), IrqEntry::new(),
             IrqEntry::new(), IrqEntry::new(), IrqEntry::new(), IrqEntry::new(),
+            IrqEntry::new(),
         ]);
 
         for core in self.1.handlers.iter() {

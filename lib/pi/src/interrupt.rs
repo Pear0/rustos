@@ -11,6 +11,7 @@ pub enum Interrupt {
     Timer1 = 1,
     Timer3 = 3,
     Usb = 9,
+    Aux = 29,
     Gpio0 = 49,
     Gpio1 = 50,
     Gpio2 = 51,
@@ -19,11 +20,11 @@ pub enum Interrupt {
 }
 
 impl Interrupt {
-    pub const MAX: usize = 8;
+    pub const MAX: usize = 9;
 
-    pub fn iter() -> core::slice::Iter<'static, Interrupt> {
+    pub fn iter() -> impl Iterator<Item=&'static Interrupt>  {
         use Interrupt::*;
-        [Timer1, Timer3, Usb, Gpio0, Gpio1, Gpio2, Gpio3, Uart].into_iter()
+        [Timer1, Timer3, Usb, Gpio0, Gpio1, Gpio2, Gpio3, Uart, Aux].iter()
     }
 
     pub fn to_index(i: Interrupt) -> usize {
@@ -37,6 +38,7 @@ impl Interrupt {
             Gpio2 => 5,
             Gpio3 => 6,
             Uart => 7,
+            Aux => 8,
         }
     }
 
@@ -51,6 +53,7 @@ impl Interrupt {
             5 => Gpio2,
             6 => Gpio3,
             7 => Uart,
+            8 => Aux,
             _ => panic!("Unknown interrupt: {}", i),
         }
     }

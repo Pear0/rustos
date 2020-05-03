@@ -38,20 +38,16 @@ impl ConsoleSync {
 
 impl SyncRead for ConsoleSync {
     fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner().read_nonblocking(buf)
+        let mut lock = m_lock!(CONSOLE);
+        lock.read_nonblocking(buf)
     }
 }
 
 impl SyncWrite for ConsoleSync {
     fn write(&self, buf: &[u8]) -> io::Result<usize> {
         use shim::io::Write;
-        for byte in buf.iter() {
-            if *byte == b'\n' {
-                self.inner().write_byte(b'\r');
-            }
-            self.inner().write_byte(*byte);
-        }
-        Ok(buf.len())
+        let mut lock = m_lock!(CONSOLE);
+        lock.write(buf)
     }
 
 }

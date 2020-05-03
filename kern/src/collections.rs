@@ -18,6 +18,10 @@ impl<T> CapacityRingBuffer<T> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.deque.len()
+    }
+
     pub fn insert(&mut self, item: T) -> bool {
         self.total_queued_items += 1;
         if self.deque.len() >= self.capacity {
