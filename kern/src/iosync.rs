@@ -8,6 +8,7 @@ use core::ops::Deref;
 use core::cell::UnsafeCell;
 use pi::uart::MiniUart;
 use crate::sync::Waitable;
+use crate::smp;
 
 pub trait SyncRead : Sync + Send {
 
@@ -21,35 +22,31 @@ pub trait SyncWrite : Sync + Send {
 
 }
 
-pub struct ConsoleSync(UnsafeCell<MiniUart>);
-
-unsafe impl Sync for ConsoleSync {}
+pub struct ConsoleSync();
 
 impl ConsoleSync {
     pub fn new() -> Self {
-        ConsoleSync(UnsafeCell::new(MiniUart::new_opt_init(false)))
+        ConsoleSync()
     }
-
-    fn inner(&self) -> &mut MiniUart {
-        unsafe { &mut *self.0.get() }
-    }
-
 }
 
 impl SyncRead for ConsoleSync {
     fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut lock = m_lock!(CONSOLE);
-        lock.read_nonblocking(buf)
+        smp::no_interrupt(|| {
+            let mut lock = m_lock!(CONSOLE);
+            lock.read_nonblocking(buf)
+        })
     }
 }
 
 impl SyncWrite for ConsoleSync {
     fn write(&self, buf: &[u8]) -> io::Result<usize> {
-        use shim::io::Write;
-        let mut lock = m_lock!(CONSOLE);
-        lock.write(buf)
+        smp::no_interrupt(|| {
+            use shim::io::Write;
+            let mut lock = m_lock!(CONSOLE);
+            lock.write(buf)
+        })
     }
-
 }
 
 impl io::Read for ConsoleSync {

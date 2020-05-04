@@ -1,8 +1,13 @@
-use crate::net::buffer;
-use crate::iosync::{SyncWrite, SyncRead};
+use alloc::sync::Arc;
+
 use shim::io;
+
 use crate::{smp, sync};
 use crate::console::CONSOLE;
+use crate::iosync::{SyncRead, SyncWrite};
+use crate::kernel_call::syscall;
+use crate::net::buffer;
+use crate::sync::Waitable;
 
 pub enum Source {
     KernSerial,
@@ -15,13 +20,13 @@ impl SyncRead for Source {
             Source::KernSerial => {
                 smp::no_interrupt(|| {
                     use shim::io::Read;
-                    let mut console = CONSOLE.lock("handle::Sink::read()");
+                    let mut console = CONSOLE.lock("handle::Source::read()");
                     console.read(buf)
                 })
-            },
+            }
             Source::Buffer(b) => {
                 b.read(buf).map_err(|e| e.into_io_err())
-            },
+            }
         }
     }
 }
@@ -29,11 +34,16 @@ impl SyncRead for Source {
 impl sync::Waitable for Source {
     fn done_waiting(&self) -> bool {
         match self {
-            Source::KernSerial => true, // TODO
+            Source::KernSerial => {
+                smp::no_interrupt(|| {
+                    let mut console = CONSOLE.lock("handle::Source::done_waiting()");
+                    console.has_byte()
+                })
+            }
             Source::Buffer(b) => {
                 use sync::Waitable;
                 buffer::ReadWaitable(b.clone()).done_waiting()
-            },
+            }
         }
     }
 
@@ -52,14 +62,12 @@ pub enum Sink {
 }
 
 impl Sink {
-
     pub fn estimate_free_capacity(&self) -> Option<usize> {
         match self {
             Sink::KernSerial => None,
             Sink::Buffer(b) => Some(b.free_capacity()),
         }
     }
-
 }
 
 impl SyncWrite for Sink {
@@ -71,10 +79,10 @@ impl SyncWrite for Sink {
                     let mut console = CONSOLE.lock("handle::Sink::write()");
                     console.write(buf)
                 })
-            },
+            }
             Sink::Buffer(b) => {
                 b.write(buf).map_err(|e| e.into_io_err())
-            },
+            }
         }
     }
 }
@@ -86,7 +94,7 @@ impl sync::Waitable for Sink {
             Sink::Buffer(b) => {
                 use sync::Waitable;
                 buffer::WriteWaitable(b.clone()).done_waiting()
-            },
+            }
         }
     }
 
@@ -109,6 +117,23 @@ impl<T: AsRef<Source>> SourceWrapper<T> {
 
 impl<T: AsRef<Source>> io::Read for SourceWrapper<T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.as_ref().read(buf)
+    }
+}
+
+pub struct WaitingSourceWrapper(Arc<Source>);
+
+impl WaitingSourceWrapper {
+    pub fn new(t: Arc<Source>) -> Self {
+        Self(t)
+    }
+}
+
+impl io::Read for WaitingSourceWrapper {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if !self.0.done_waiting() {
+            syscall::wait_waitable(self.0.clone());
+        }
         self.0.as_ref().read(buf)
     }
 }

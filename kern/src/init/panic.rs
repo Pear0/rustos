@@ -6,11 +6,19 @@ use pi::pm::reset;
 use pi::timer::spin_sleep;
 use pi::uart::MiniUart;
 use crate::mutex::Mutex;
+use crate::smp;
 
 static PANIC_LOCK: Mutex<bool> = mutex_new!(false);
 
 #[panic_handler]
+#[inline(never)]
 fn panic(info: &PanicInfo) -> ! {
+    let sp = aarch64::SP.get();
+    do_panic(info, sp);
+}
+
+#[inline(never)]
+fn do_panic(info: &PanicInfo, sp: usize) -> ! {
     let mut uart: MiniUart;
     {
         let guard = m_lock!(PANIC_LOCK);
@@ -53,6 +61,13 @@ fn panic(info: &PanicInfo) -> ! {
         // while uart.has_byte() {
         //     uart.read_byte();
         // }
+
+        let core = smp::core();
+        writeln!(&mut uart, "my trace: core={}", core);
+        for addr in crate::debug::stack_scanner(sp, None) {
+            writeln!(&mut uart, "0x{:08x}", addr);
+        }
+
     }
 
     aarch64::brk!(8);

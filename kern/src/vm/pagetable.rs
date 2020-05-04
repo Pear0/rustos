@@ -336,6 +336,10 @@ impl UserPageTable {
     }
 
     pub fn dealloc(&mut self, va: VirtualAddr) -> bool {
+        if va.as_usize() < USER_IMG_BASE {
+            panic!("[dealloc] Tried to create user page below USER_IMG_BASE: {:x}", va.as_usize());
+        }
+
         let entry = self.0.get_entry_mut(Self::as_va_sub(va));
 
         if entry.is_valid() {
@@ -349,6 +353,10 @@ impl UserPageTable {
     }
 
     pub unsafe fn get_page_ref(&self, va: VirtualAddr) -> Option<&mut [u8]> {
+        if va.as_usize() < USER_IMG_BASE {
+            panic!("[get_page_ref] Tried to create user page below USER_IMG_BASE: {:x}", va.as_usize());
+        }
+
         assert_eq!(va.as_usize() % PAGE_SIZE, 0);
 
         let entry = self.0.get_entry(Self::as_va_sub(va));
@@ -379,6 +387,10 @@ impl GuestPageTable for UserPageTable {
     }
 
     unsafe fn get_page_ref(&self, va: VirtualAddr) -> Option<&mut [u8]> {
+        if va.as_usize() < USER_IMG_BASE {
+            panic!("[GPT:get_page_ref] Tried to create user page below USER_IMG_BASE: {:x}", va.as_usize());
+        }
+
         assert_eq!(va.as_usize() % PAGE_SIZE, 0);
 
         let entry = self.0.get_entry(Self::as_va_sub(va));
@@ -405,6 +417,9 @@ impl GuestPageTable for UserPageTable {
     /// TODO. use Result<T> and make it failurable
     /// TODO. use perm properly
     fn alloc(&mut self, va: VirtualAddr, _perm: PagePerm) -> &mut [u8] {
+        if va.as_usize() < USER_IMG_BASE {
+            panic!("[GPT:alloc] Tried to create user page below USER_IMG_BASE: {:x}", va.as_usize());
+        }
         let va_sub = Self::as_va_sub(va);
 
         if self.is_valid(va) {

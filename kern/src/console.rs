@@ -15,8 +15,8 @@ struct ConsoleImpl {
 impl ConsoleImpl {
     pub fn new() -> Self {
         Self {
-            send_buffer: CapacityRingBuffer::new(200),
-            receive_buffer: CapacityRingBuffer::new(200),
+            send_buffer: CapacityRingBuffer::new(1000),
+            receive_buffer: CapacityRingBuffer::new(1000),
         }
     }
 }
@@ -118,20 +118,33 @@ impl Console {
 
     /// Writes the byte `byte` to the UART device.
     pub fn write_byte(&mut self, byte: u8) {
-        if let Some(ext) = &mut self.ext {
-            // TODO this may drop bytes on the floor.
-            ext.send_buffer.insert(byte);
-            self.send_and_update_interrupts();
-
-        } else {
-            self.inner().write_byte(byte);
+        // TODO inefficient waiting
+        let mut inserted = false;
+        while !inserted {
+            if let Some(ext) = &mut self.ext {
+                inserted = ext.send_buffer.insert(byte);
+                self.send_and_update_interrupts();
+            } else {
+                self.inner().write_byte(byte);
+                return; // MiniUart::write_byte() will wait for us.
+            }
         }
     }
+
+    pub fn flush(&mut self) {
+        if let None = &self.ext {
+            return;
+        }
+        while self.ext.as_ref().unwrap().send_buffer.len() > 0 {
+            self.send_and_update_interrupts();
+        }
+    }
+
 }
 
 impl io::Read for Console {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner().read(buf)
+        self.read_nonblocking(buf)
     }
 }
 

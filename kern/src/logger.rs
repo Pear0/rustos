@@ -1,5 +1,9 @@
+use core::fmt::Write;
 
-use log::{Record, Level, Metadata, set_logger, LevelFilter};
+use log::{Level, LevelFilter, Metadata, Record, set_logger};
+
+use crate::console::CONSOLE;
+use crate::smp;
 
 struct SimpleLogger;
 
@@ -10,7 +14,15 @@ impl log::Log for SimpleLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            kprintln!("[{}:{}] {}", record.level(), record.target(), record.args());
+            smp::no_interrupt(|| {
+                let mut lock = m_lock!(CONSOLE);
+
+                writeln!(&mut lock, "[{}:{}] {}", record.level(), record.target(), record.args()).ok();
+
+                if record.metadata().level() <= Level::Error {
+                    lock.flush();
+                }
+            });
         }
     }
 

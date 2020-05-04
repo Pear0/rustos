@@ -7,6 +7,7 @@ use core::time::Duration;
 use core::fmt::Alignment::Left;
 use core::sync::atomic::AtomicU64;
 use crate::{smp, traps};
+use pi::uart::MiniUart;
 
 #[repr(align(32))]
 pub struct Mutex<T> {
@@ -116,6 +117,7 @@ impl<T> Mutex<T> {
     // need any real synchronization.
     #[inline(always)]
     pub fn lock(&self, name: &'static str) -> MutexGuard<T> {
+        use core::fmt::Write;
         // Wait until we can "aquire" the lock, then "acquire" it.
         // loop {
         //     match self.try_lock() {
@@ -130,16 +132,18 @@ impl<T> Mutex<T> {
         // grab lock
         while ERR_LOCK.compare_and_swap(false, true, Ordering::SeqCst) != false {}
 
+        let mut uart = MiniUart::new_opt_init(false);
+
         let locked_at = Duration::from_millis(self.locked_at.load(Ordering::SeqCst));
         let now = pi::timer::current_time();
-        kprintln!("Lock {} locked for {:?}", self.name, now - locked_at);
+        writeln!(&mut uart, "Lock {} locked for {:?}", self.name, now - locked_at);
 
         let owner = self.owner.load(Ordering::SeqCst);
         let mut locker = unsafe { *self.lock_name.get() };
 
-        kprintln!("locker trace: {} @ {}", owner, locker);
+        writeln!(&mut uart, "locker trace: {} @ {}", owner, locker);
         for addr in unsafe {&*self.lock_trace.get()}.iter().take_while(|x| **x != 0) {
-            kprintln!("0x{:08x}", *addr);
+            writeln!(&mut uart, "0x{:08x}", *addr);
         }
 
         let sp = aarch64::SP.get();
@@ -147,9 +151,9 @@ impl<T> Mutex<T> {
         let core = smp::core();
         let irq = traps::irq_depth();
 
-        kprintln!("my trace: {} @ {}    irqd={}", core, name, irq);
+        writeln!(&mut uart, "my trace: {} @ {}    irqd={}", core, name, irq);
         for addr in crate::debug::stack_scanner(sp, None) {
-            kprintln!("0x{:08x}", addr);
+            writeln!(&mut uart, "0x{:08x}", addr);
         }
 
         if irq > 0 {
@@ -157,7 +161,7 @@ impl<T> Mutex<T> {
             let el = traps::irq_el().unwrap_or(0);
             let esr = traps::irq_esr();
             let info = traps::irq_info();
-            kprintln!("irq: 0x{:x}   {:?}    {:?}", el, esr, info);
+            writeln!(&mut uart, "irq: 0x{:x}   {:?}    {:?}", el, esr, info);
         }
 
         ERR_LOCK.store(false, Ordering::SeqCst);

@@ -98,30 +98,31 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
                 }
                 s => {
 
-                    kprintln!("{:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.elr);
+                    error!("F {:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.elr);
 
-                    KERNEL_SCHEDULER.crit_process(tf.tpidr, |proc| {
-                        if let Some(proc) = proc {
-
-                            info!("A @ {:#x} {:#x} {:?}", tf.elr, USER_IMG_BASE, tf.elr > USER_IMG_BASE as u64);
-                            if tf.elr > USER_IMG_BASE as u64 {
-                                info!("B");
-                                if let Some(page) = proc.vmap.get_page_mut(VirtualAddr::from(tf.elr & PAGE_MASK as u64)) {
-                                    let offset = (((tf.elr as usize % PAGE_SIZE) / 4) * 4);
-
-                                    info!("C");
-                                    kprintln!("value at elr: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
-                                }
-                            } else {
-                                let page = unsafe { core::slice::from_raw_parts(0 as *const u8, 0x10000000) };
-                                let offset = tf.elr as usize;
-                                kprintln!("value at elr: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
-                            }
-
-
-                            proc.request_suspend = true;
-                        }
-                    });
+                    // KERNEL_SCHEDULER.crit_process(tf.tpidr, |proc| {
+                    //     if let Some(proc) = proc {
+                    //
+                    //         let b = tf.elr > USER_IMG_BASE as u64;
+                    //         error!("A @ {:#x} {:#x} {:?}", tf.elr, USER_IMG_BASE, b);
+                    //         if b {
+                    //             error!("B");
+                    //             if let Some(page) = proc.vmap.get_page_mut(VirtualAddr::from(tf.elr & PAGE_MASK as u64)) {
+                    //                 let offset = (((tf.elr as usize % PAGE_SIZE) / 4) * 4);
+                    //
+                    //                 error!("C");
+                    //                 error!("value at elr: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
+                    //             }
+                    //         } else {
+                    //             let page = unsafe { core::slice::from_raw_parts(0 as *const u8, 0x10000000) };
+                    //             let offset = tf.elr as usize;
+                    //             error!("value at elr: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
+                    //         }
+                    //
+                    //
+                    //         proc.request_suspend = true;
+                    //     }
+                    // });
 
                     KERNEL_SCHEDULER.switch(State::Suspended, tf);
                 }

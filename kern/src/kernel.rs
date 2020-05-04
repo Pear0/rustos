@@ -8,9 +8,9 @@ use pi::gpio;
 use shim::{io, ioerr};
 
 use crate::{display_manager, hw, kernel_call, NET, shell, smp, VMM, BootVariant};
-use crate::fs::handle::{SinkWrapper, SourceWrapper};
+use crate::fs::handle::{SinkWrapper, SourceWrapper, Source, Sink, WaitingSourceWrapper};
 use crate::net::ipv4;
-use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess};
+use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess, KernProcessCtx};
 use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
 use crate::vm::VMManager;
@@ -109,16 +109,12 @@ fn my_net_thread2() -> ! {
     kernel_api::syscall::exit();
 }
 
-fn my_thread() -> ! {
-    kprintln!("initializing other threads");
-    // CORE_REGISTER.lock().replace(Vec::new());
+fn my_thread(ctx: KernProcessCtx) {
 
-    kprintln!("all threads initialized");
+    let (source, sink) = ctx.get_stdio_or_panic();
 
+    shell::Shell::new("$ ", WaitingSourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
 
-    shell::shell("$ ");
-
-    kernel_api::syscall::exit();
 }
 
 fn led_blink() -> ! {
@@ -161,15 +157,15 @@ pub fn kernel_main() -> ! {
         smp::wait_for_cores(cores);
     }
 
-    debug!("init VMM data structures");
+    error!("init VMM data structures");
     VMM.init_only();
 
-    info!("enabling VMM on all cores!");
+    error!("enabling VMM on all cores!");
     smp::run_on_all_cores(|| {
         VMM.setup_kernel();
     });
 
-    info!("init Scheduler");
+    error!("init Scheduler");
     unsafe {
         KERNEL_SCHEDULER.initialize_kernel();
     };
@@ -186,7 +182,8 @@ pub fn kernel_main() -> ! {
     pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
 
     {
-        let proc = KernelProcess::kernel_process_old("shell".to_owned(), my_thread).unwrap();
+        let mut proc = KernelProcess::kernel_process("shell".to_owned(), my_thread).unwrap();
+        proc.set_stdio(Arc::new(Source::KernSerial), Arc::new(Sink::KernSerial));
         KERNEL_SCHEDULER.add(proc);
     }
 
