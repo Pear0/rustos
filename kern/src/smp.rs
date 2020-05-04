@@ -212,15 +212,15 @@ pub fn no_interrupt<T, R>(func: T) -> R
     where T: (FnOnce() -> R) {
     use aarch64::regs::*;
 
-    let int = DAIF::F | DAIF::I | DAIF::D | DAIF::A;
+    let int = DAIF::D | DAIF::A | DAIF::I | DAIF::F;
 
     unsafe {
         let orig = DAIF.get_masked(int);
-        DAIF.set(DAIF.get() | int);
+        DAIF.set(int);
         aarch64::dsb();
         let r = func();
         aarch64::dsb();
-        DAIF.set((DAIF.get() & !int) | orig);
+        DAIF.set(orig);
         r
     }
 }
