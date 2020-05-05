@@ -128,9 +128,9 @@ impl VMManager {
             asm!("dsb ish");
             isb();
 
-            debug!("about to enable mmu");
+            trace!("about to enable mmu");
             SCTLR_EL1.set(SCTLR_EL1.get() | SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M);
-            debug!("enabled mmu");
+            trace!("enabled mmu");
 
             asm!("dsb sy");
             isb();

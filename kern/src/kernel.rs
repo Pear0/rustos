@@ -157,15 +157,15 @@ pub fn kernel_main() -> ! {
         smp::wait_for_cores(cores);
     }
 
-    error!("init VMM data structures");
+    // error!("init VMM data structures");
     VMM.init_only();
 
-    error!("enabling VMM on all cores!");
+    // error!("enabling VMM on all cores!");
     smp::run_on_all_cores(|| {
         VMM.setup_kernel();
     });
 
-    error!("init Scheduler");
+    // error!("init Scheduler");
     unsafe {
         KERNEL_SCHEDULER.initialize_kernel();
     };
@@ -238,7 +238,7 @@ pub fn kernel_main() -> ! {
     });
 
     pi::timer::spin_sleep(Duration::from_millis(50));
-    kprintln!("Core 0 starting scheduler");
+    debug!("Core 0 starting scheduler");
 
     KERNEL_SCHEDULER.start();
 }

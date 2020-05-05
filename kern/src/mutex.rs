@@ -102,9 +102,9 @@ impl<T> Mutex<T> {
             }
 
         } else {
-            let this = 0;
-            if !self.lock.load(Ordering::Relaxed) || self.owner.load(Ordering::Relaxed) == this {
-                self.lock.store(true, Ordering::Relaxed);
+            let this = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+            if !self.lock.load(Ordering::SeqCst) {
+                self.lock.store(true, Ordering::SeqCst);
                 self.owner.store(this, Ordering::Relaxed);
                 Some(MutexGuard { lock: &self })
             } else {

@@ -118,7 +118,7 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         let st = (&mut bootstrap_frame) as *mut T::Frame as u64;
 
         let old_sp = crate::smp::core_stack_top();
-        kprintln!("old_sp: {}", old_sp);
+        // kprintln!("old_sp: {}", old_sp);
 
         unsafe {
             asm!("  mov x28, $0
@@ -139,10 +139,10 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
     /// Starts executing processes in user space using timer interrupt based
     /// preemptive scheduling. This method should not return under normal conditions.
     pub fn start(&self) -> ! {
-        let el = unsafe { aarch64::current_el() };
-        kprintln!("Current EL: {}", el);
-
-        kprintln!("Enabling timer");
+        // let el = unsafe { aarch64::current_el() };
+        // kprintln!("Current EL: {}", el);
+        //
+        // kprintln!("Enabling timer");
         // timer::tick_in(TICK);
         // interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
 
@@ -211,7 +211,7 @@ impl GlobalScheduler<HyperImpl> {
         let st = (&mut bootstrap_frame) as *mut HyperTrapFrame as u64;
 
         let old_sp = crate::smp::core_stack_top();
-        kprintln!("old_sp: {}", old_sp);
+        // kprintln!("old_sp: {}", old_sp);
 
         unsafe {
             asm!("  mov x28, $0
@@ -232,10 +232,9 @@ impl GlobalScheduler<HyperImpl> {
     /// Starts executing processes in user space using timer interrupt based
     /// preemptive scheduling. This method should not return under normal conditions.
     pub fn start_hyper(&self) -> ! {
-        let el = unsafe { aarch64::current_el() };
-        kprintln!("Current EL: {}", el);
+        // let el = unsafe { aarch64::current_el() };
+        // kprintln!("Current EL: {}", el);
 
-        kprintln!("Enabling timer");
         // timer::tick_in(TICK);
         // interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
 

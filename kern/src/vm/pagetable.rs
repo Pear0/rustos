@@ -130,6 +130,11 @@ impl PageTable {
             table.l2.entries[i].set_value(1, RawL3Entry::NS);
         }
 
+        aarch64::clean_data_cache_obj(&table.l2);
+        for i in 0..L2_PAGES {
+            aarch64::clean_data_cache_obj(table.l3[i].as_ref());
+        }
+
         table
     }
 
@@ -180,6 +185,7 @@ impl PageTable {
     pub fn set_entry(&mut self, va: VirtualAddr, entry: RawL3Entry) -> &mut Self {
         let (l2, l3) = PageTable::locate(va);
         self.l3[l2].entries[l3].0 = entry;
+        aarch64::clean_data_cache_obj(&self.l3[l2].entries[l3].0);
         self
     }
 

@@ -63,6 +63,8 @@ pub unsafe fn switch_to_el2() {
         // set up Secure Configuration Register (D13.2.10)
         SCR_EL3.set(SCR_EL3::NS | SCR_EL3::SMD | SCR_EL3::HCE | SCR_EL3::RW | SCR_EL3::RES1);
 
+        SCTLR_EL2.set(SCTLR_EL2::RES1);
+
         // set up Saved Program Status Register (C5.2.19)
         SPSR_EL3
             .set((SPSR_EL3::M & 0b1001) | SPSR_EL3::F | SPSR_EL3::I | SPSR_EL3::A | SPSR_EL3::D);

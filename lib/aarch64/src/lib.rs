@@ -57,6 +57,7 @@ pub fn far_ipa() -> u64 {
 
 
 pub fn clean_data_cache(addr: u64) {
+    dsb();
     unsafe {
         asm!("dc cvac, $0
               dsb ish
@@ -65,6 +66,7 @@ pub fn clean_data_cache(addr: u64) {
 }
 
 pub fn clean_data_cache_region(mut addr: u64, length: u64) {
+    dsb();
     unsafe {
         let mut end = addr + length;
         addr &= !(64 - 1);
@@ -81,6 +83,10 @@ pub fn clean_data_cache_region(mut addr: u64, length: u64) {
 
         asm!("dsb ish" :::: "volatile");
     }
+}
+
+pub fn clean_data_cache_obj<T: ?Sized>(item: &T) {
+    clean_data_cache_region(item as *const T as *const () as u64, core::mem::size_of_val(item) as u64);
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

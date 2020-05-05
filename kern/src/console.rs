@@ -6,6 +6,7 @@ use shim::io;
 use crate::mutex::Mutex;
 use crate::smp;
 use crate::collections::CapacityRingBuffer;
+use aarch64::SCTLR_EL1;
 
 struct ConsoleImpl {
     send_buffer: CapacityRingBuffer<u8>,
@@ -118,6 +119,7 @@ impl Console {
 
     /// Writes the byte `byte` to the UART device.
     pub fn write_byte(&mut self, byte: u8) {
+
         // TODO inefficient waiting
         let mut inserted = false;
         while !inserted {
@@ -180,16 +182,28 @@ impl fmt::Write for Console {
 pub static CONSOLE: Mutex<Console> = Mutex::new("CONSOLE", Console::new());
 
 pub fn console_ext_init() {
-    let mut lock = CONSOLE.lock("console_interrupt_handler");
-    if lock.ext.is_none() {
-        lock.ext = Some(ConsoleImpl::new());
-    }
+    smp::no_interrupt(|| {
+        let mut lock = CONSOLE.lock("console_interrupt_handler");
+        if lock.ext.is_none() {
+            lock.ext = Some(ConsoleImpl::new());
+        }
+    });
 }
 
 pub fn console_interrupt_handler() {
-    let mut lock = CONSOLE.lock("console_interrupt_handler");
-    lock.interrupt_handle();
+    smp::no_interrupt(|| {
+        let mut lock = CONSOLE.lock("console_interrupt_handler");
+        lock.interrupt_handle();
+    });
 }
+
+pub fn console_flush() {
+    smp::no_interrupt(|| {
+        let mut lock = CONSOLE.lock("console_flush");
+        lock.flush();
+    });
+}
+
 
 /// Internal function called by the `kprint[ln]!` macros.
 #[doc(hidden)]

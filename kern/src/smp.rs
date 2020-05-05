@@ -5,17 +5,26 @@ use aarch64::{MPIDR_EL1, SP};
 
 use crate::init;
 use crate::mutex::Mutex;
+use crate::console::{CONSOLE, console_flush};
 
 pub const MAX_CORES: usize = 4;
 
 // utilities to handle secondary cores initialization.
 
-const stack_size: usize = 1024 * 32;
+const STACK_SIZE: usize = 32 * 1024;
 
-type ParkingSpot = (AtomicU64, [u8; stack_size], AtomicBool);
+struct ParkingSpot {
+    addr: AtomicU64,
+    enabled: AtomicBool,
+    stack: [u8; STACK_SIZE],
+}
 
 const fn parking() -> ParkingSpot {
-    (AtomicU64::new(0), [0; stack_size], AtomicBool::new(false))
+    ParkingSpot {
+        addr: AtomicU64::new(0),
+        enabled: AtomicBool::new(false),
+        stack: [0; STACK_SIZE],
+    }
 }
 
 static PARKING: [ParkingSpot; 4] = [parking(), parking(), parking(), parking()];
@@ -25,7 +34,7 @@ static PARKING: [ParkingSpot; 4] = [parking(), parking(), parking(), parking()];
 pub unsafe fn core_bootstrap() -> ! {
     let core_id = MPIDR_EL1.get_value(MPIDR_EL1::Aff0);
 
-    let mut stack_top = ((PARKING[core_id as usize].1.as_ptr() as usize) + stack_size);
+    let mut stack_top = ((PARKING[core_id as usize].stack.as_ptr() as usize) + STACK_SIZE);
     stack_top -= stack_top % 16; // align to 16
     SP.set(stack_top);
 
@@ -38,7 +47,6 @@ pub fn core() -> usize {
 
 #[inline(never)]
 unsafe fn core_bootstrap_stack() -> ! {
-
     init::switch_to_el2();
     init::switch_to_el1();
     //
@@ -48,37 +56,24 @@ unsafe fn core_bootstrap_stack() -> ! {
 
     let core_id = MPIDR_EL1.get_value(MPIDR_EL1::Aff0);
 
-    PARKING[core_id as usize].2.store(true, Ordering::SeqCst);
+    PARKING[core_id as usize].enabled.store(true, Ordering::SeqCst);
 
     pi::timer::spin_sleep(Duration::from_millis(10 * core_id));
     // kprintln!("bootstrap @ {} {}", core_id, MPIDR_EL1.get_value(MPIDR_EL1::Aff0));
 
     loop {
-        unsafe { asm!("dsb sy" ::: "memory"); }
+        aarch64::dsb();
         let core_id = MPIDR_EL1.get_value(MPIDR_EL1::Aff0);
 
-        let func = PARKING[core_id as usize].0.load(Ordering::SeqCst);
+        let func = PARKING[core_id as usize].addr.load(Ordering::SeqCst);
         if func != 0 {
             core::mem::transmute::<u64, fn()>(func)();
-            unsafe { asm!("dsb sy" ::: "memory"); }
-            PARKING[core_id as usize].0.store(0, Ordering::SeqCst);
-            unsafe { asm!("dsb sy" ::: "memory"); }
+            aarch64::dsb();
+            PARKING[core_id as usize].addr.store(0, Ordering::SeqCst);
+            aarch64::dsb();
             aarch64::sev();
         }
 
-        // let mut did_work = false;
-        // if let Some(mut lock) = PARKING[core_id as usize].0.try_lock() {
-        //     if let Some(func) = lock.as_ref() {
-        //         func();
-        //         lock.take();
-        //         did_work = true;
-        //         unsafe { asm!("dsb sy" ::: "memory"); }
-        //     }
-        // }
-        // if did_work {
-        //     unsafe { asm!("dsb sy"); }
-        //     aarch64::sev();
-        // }
         aarch64::wfe();
     }
 }
@@ -86,7 +81,7 @@ unsafe fn core_bootstrap_stack() -> ! {
 pub fn core_stack_top() -> u64 {
     let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) };
 
-    let mut stack_top = ((PARKING[core_id as usize].1.as_ptr() as usize) + stack_size);
+    let mut stack_top = ((PARKING[core_id as usize].stack.as_ptr() as usize) + STACK_SIZE);
     stack_top -= stack_top % 16; // align to 16
     stack_top as u64
 }
@@ -103,7 +98,7 @@ pub unsafe fn initialize(cores: usize) {
 pub fn count_cores() -> usize {
     let mut count = 0;
     for core in PARKING.iter() {
-        if core.2.load(Ordering::SeqCst) {
+        if core.enabled.load(Ordering::SeqCst) {
             count += 1;
         }
     }
@@ -118,94 +113,45 @@ pub fn wait_for_cores(cores: usize) {
 
 pub fn run_no_return(func: fn()) {
     for (id, core) in PARKING.iter().enumerate() {
-        if core.2.load(Ordering::SeqCst) {
-            // let mut lock = core.0.lock();
-            // lock.replace(func);
+        if core.enabled.load(Ordering::SeqCst) {
+            core.addr.store(func as u64, Ordering::SeqCst);
 
-            core.0.store(func as u64, Ordering::SeqCst);
+            // Ensure other cores see our write regardless of our caching state.
+            aarch64::clean_data_cache_obj(&core.addr);
         }
     }
 
-    unsafe { asm!("dsb sy" ::: "memory"); }
+    aarch64::dsb();
     aarch64::sev();
 }
 
 pub fn run_on_secondary_cores(func: fn()) {
-    let mut enables = [false; 4];
-
     for (id, core) in PARKING.iter().enumerate() {
-        if core.2.load(Ordering::SeqCst) {
-            enables[id] = true;
-            // kprintln!("enabled @ {}", id);
-            // let mut lock = core.0.lock();
-            // lock.replace(func);
-            unsafe { asm!("dsb sy" ::: "memory"); }
-            core.0.store(func as u64, Ordering::SeqCst);
-            unsafe { asm!("dsb sy" ::: "memory"); }
-        }
-    }
+        if core.enabled.load(Ordering::SeqCst) {
+            aarch64::dsb();
+            core.addr.store(func as u64, Ordering::SeqCst);
 
-    unsafe { asm!("dsb sy" ::: "memory"); }
-    aarch64::sev();
+            // Ensure other cores see our write regardless of our caching state.
+            aarch64::clean_data_cache_obj(&core.addr);
 
-    'wait: loop {
-        pi::timer::spin_sleep(Duration::from_micros(10));
+            aarch64::sev();
 
-        for (id, core) in PARKING.iter().enumerate() {
-            unsafe { asm!("dsb sy" ::: "memory"); }
-            if enables[id] {
-                if core.0.load(Ordering::SeqCst) != 0 {
-                    unsafe { asm!("dsb sy" ::: "memory"); }
-                    // kprintln!("waiting @ {}", id);
-                    continue 'wait;
+            loop {
+                pi::timer::spin_sleep(Duration::from_micros(10));
+                aarch64::dsb();
+                if core.addr.load(Ordering::SeqCst) == 0 {
+                    break;
                 }
             }
         }
-
-        break;
     }
+
 }
 
 pub fn run_on_all_cores(func: fn()) {
-
-    let mut enables = [false; 4];
-
-    for (id, core) in PARKING.iter().enumerate() {
-        if core.2.load(Ordering::SeqCst) {
-            enables[id] = true;
-            // kprintln!("enabled @ {}", id);
-            // let mut lock = core.0.lock();
-            // lock.replace(func);
-            unsafe { asm!("dsb sy" ::: "memory"); }
-            core.0.store(func as u64, Ordering::SeqCst);
-            unsafe { asm!("dsb sy" ::: "memory"); }
-        }
-    }
-
-    unsafe { asm!("dsb sy" ::: "memory"); }
-    aarch64::sev();
-
     func();
-
-    unsafe { asm!("dsb sy" ::: "memory"); }
-    aarch64::sev();
-
-    'wait: loop {
-        pi::timer::spin_sleep(Duration::from_micros(10));
-
-        for (id, core) in PARKING.iter().enumerate() {
-            unsafe { asm!("dsb sy" ::: "memory"); }
-            if enables[id] {
-                if core.0.load(Ordering::SeqCst) != 0 {
-                    unsafe { asm!("dsb sy" ::: "memory"); }
-                    // kprintln!("waiting @ {}", id);
-                    continue 'wait;
-                }
-            }
-        }
-
-        break;
-    }
+    aarch64::dsb();
+    run_on_secondary_cores(func);
 }
 
 pub fn no_interrupt<T, R>(func: T) -> R

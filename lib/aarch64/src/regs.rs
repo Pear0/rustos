@@ -200,6 +200,7 @@ defreg!(SCTLR_EL2, [
     A    [01-01], // Alignment check enable
     M    [00-00], // MMU enable for EL2 stage 1 address translation
 
+    RES1 [29-28|23-22|18-18|16-16|11-11|5-4],
 ]);
 
 defreg!(SP_EL0);
