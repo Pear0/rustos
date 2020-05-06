@@ -75,7 +75,7 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
 
     IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
     IRQ_ESR.set(esr);
-    IRQ_EL.set(tf.elr);
+    IRQ_EL.set(tf.ELR_EL1);
     IRQ_INFO.set(info);
 
     match info.kind {
@@ -92,31 +92,31 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
                     kprintln!("{:?} {:?}", info, Syndrome::Brk(b));
                     kprintln!("brk #{}", b);
 
-                    kprintln!("ELR: 0x{:x}", tf.elr);
+                    kprintln!("ELR: 0x{:x}", tf.ELR_EL1);
 
                     debug_shell(tf);
                 }
                 s => {
 
-                    error!("F {:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.elr);
+                    error!("F {:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.ELR_EL1);
 
-                    // KERNEL_SCHEDULER.crit_process(tf.tpidr, |proc| {
+                    // KERNEL_SCHEDULER.crit_process(tf.TPIDR_EL0, |proc| {
                     //     if let Some(proc) = proc {
                     //
-                    //         let b = tf.elr > USER_IMG_BASE as u64;
-                    //         error!("A @ {:#x} {:#x} {:?}", tf.elr, USER_IMG_BASE, b);
+                    //         let b = tf.ELR_EL1 > USER_IMG_BASE as u64;
+                    //         error!("A @ {:#x} {:#x} {:?}", tf.ELR_EL1, USER_IMG_BASE, b);
                     //         if b {
                     //             error!("B");
-                    //             if let Some(page) = proc.vmap.get_page_mut(VirtualAddr::from(tf.elr & PAGE_MASK as u64)) {
-                    //                 let offset = (((tf.elr as usize % PAGE_SIZE) / 4) * 4);
+                    //             if let Some(page) = proc.vmap.get_page_mut(VirtualAddr::from(tf.ELR_EL1 & PAGE_MASK as u64)) {
+                    //                 let offset = (((tf.ELR_EL1 as usize % PAGE_SIZE) / 4) * 4);
                     //
                     //                 error!("C");
-                    //                 error!("value at elr: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
+                    //                 error!("value at ELR_EL1: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
                     //             }
                     //         } else {
                     //             let page = unsafe { core::slice::from_raw_parts(0 as *const u8, 0x10000000) };
-                    //             let offset = tf.elr as usize;
-                    //             error!("value at elr: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
+                    //             let offset = tf.ELR_EL1 as usize;
+                    //             error!("value at ELR_EL1: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
                     //         }
                     //
                     //
@@ -138,7 +138,7 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
     if info.kind == Synchronous {
         let syndrome = Syndrome::from(esr);
         if let Syndrome::Brk(_) = syndrome {
-            tf.elr += 4;
+            tf.ELR_EL1 += 4;
         }
     }
 
@@ -149,7 +149,7 @@ fn debug_shell(tf: &mut KernelTrapFrame) {
     let mut snaps = Vec::new();
     KERNEL_SCHEDULER.critical(|s| s.get_process_snaps(&mut snaps));
 
-    let snap = snaps.into_iter().find(|s| s.tpidr == tf.tpidr);
+    let snap = snaps.into_iter().find(|s| s.tpidr == tf.TPIDR_EL0);
 
     match &snap {
         Some(snap) => {
@@ -186,13 +186,13 @@ fn debug_shell(tf: &mut KernelTrapFrame) {
         .func(|sh, cmd| {
             if let Some(snap) = &snap {
                 writeln!(sh.writer, "sp_top: 0x{:08x}", snap.stack_top);
-                writeln!(sh.writer, "sp: 0x{:08x}", tf.sp);
+                writeln!(sh.writer, "sp: 0x{:08x}", tf.SP_EL0);
                 if snap.stack_top % 8 != 0 {
                     writeln!(sh.writer, "dude stack_top is not aligned. I'm out");
                     return;
                 }
 
-                let mut sp = tf.sp;
+                let mut sp = tf.SP_EL0;
                 if sp % 8 != 0 {
                     writeln!(sh.writer, "stack not aligned! aligning up...");
                     sp = sp.wrapping_add(8).wrapping_sub(sp % 8);

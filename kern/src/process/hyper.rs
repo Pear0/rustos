@@ -101,16 +101,16 @@ impl Process<HyperImpl> {
 
         let mut p = Self::new(name)?;
 
-        p.context.sp0 = p.stack.top().as_u64();
-        p.context.elr = f as u64;
+        p.context.SP_EL0 = p.stack.top().as_u64();
+        p.context.ELR_EL2 = f as u64;
 
-        p.context.spsr = 0;
-        p.context.spsr |= SPSR_EL2::M & 0b1000;
+        p.context.SPSR_EL2 = 0;
+        p.context.SPSR_EL2 |= SPSR_EL2::M & 0b1000;
 
         // kernel thread still gets a vmap because it's easy
-        p.context.vttbr = p.vmap.get_baddr().as_u64();
+        p.context.VTTBR_EL2 = p.vmap.get_baddr().as_u64();
 
-        p.context.hcr = HCR_EL2::RW | HCR_EL2::IMO | HCR_EL2::CD | HCR_EL2::ID | HCR_EL2::RES1;
+        p.context.HCR_EL2 = HCR_EL2::RW | HCR_EL2::IMO | HCR_EL2::CD | HCR_EL2::ID | HCR_EL2::RES1;
 
         Ok(p)
     }
@@ -161,17 +161,17 @@ impl Process<HyperImpl> {
 
         // Init context
 
-        proc.context.spsr = (SPSR_EL2::M & 0b0101) // EL1h
+        proc.context.SPSR_EL2 = (SPSR_EL2::M & 0b0101) // EL1h
         ;
         // todo route all interrupts to EL2 and use virtual interrupts
 
-        proc.context.spsr |= SPSR_EL2::D | SPSR_EL2::A | SPSR_EL2::I | SPSR_EL2::F;
+        proc.context.SPSR_EL2 |= SPSR_EL2::D | SPSR_EL2::A | SPSR_EL2::I | SPSR_EL2::F;
 
-        proc.context.sp1 = 0x420_000;
-        proc.context.elr = 0x80000;
+        proc.context.SP_EL1 = 0x420_000;
+        proc.context.ELR_EL2 = 0x80000;
 
-        proc.context.vttbr = proc.vmap.get_baddr().as_u64();
-        proc.context.hcr = HCR_EL2::RW | HCR_EL2::VM | HCR_EL2::ID | HCR_EL2::IMO | HCR_EL2::RES1;
+        proc.context.VTTBR_EL2 = proc.vmap.get_baddr().as_u64();
+        proc.context.HCR_EL2 = HCR_EL2::RW | HCR_EL2::VM | HCR_EL2::ID | HCR_EL2::IMO | HCR_EL2::RES1;
     }
 
     pub fn load_self() -> OsResult<Self> {
@@ -260,10 +260,10 @@ impl Process<HyperImpl> {
         device.update(self);
 
         // clear virtual irq flag.
-        self.context.hcr &= !HCR_EL2::VI;
+        self.context.HCR_EL2 &= !HCR_EL2::VI;
         if self.detail.irqs.is_any_asserted() {
             // assert virtual irq flag.
-            self.context.hcr |= HCR_EL2::VI;
+            self.context.HCR_EL2 |= HCR_EL2::VI;
         }
     }
 
@@ -274,11 +274,11 @@ impl Process<HyperImpl> {
                 use aarch64::regs::*;
                 use crate::traps::syndrome::Syndrome;
 
-                kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.elr);
+                kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.ELR_EL2);
 
                 kprintln!("    FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
                 kprintln!("    EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
-                kprintln!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.spsr);
+                kprintln!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.SPSR_EL2);
 
                 self.vmap.table.mark_accessed(VirtualAddr::from(addr.as_u64() & PAGE_MASK as u64));
             }
@@ -290,11 +290,11 @@ impl Process<HyperImpl> {
                         use aarch64::regs::*;
                         use crate::traps::syndrome::Syndrome;
 
-                        kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.elr);
+                        kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.ELR_EL2);
 
                         kprintln!("    FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
                         kprintln!("    EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
-                        kprintln!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.spsr);
+                        kprintln!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.SPSR_EL2);
 
                         pi::timer::spin_sleep(Duration::from_secs(5));
                         return;
@@ -355,7 +355,7 @@ impl Process<HyperImpl> {
                 }
 
                 // We emulated the instruction so skip it.
-                tf.elr += 4;
+                tf.ELR_EL2 += 4;
             }
         }
     }

@@ -83,7 +83,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
 
     IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
     IRQ_ESR.set(esr);
-    IRQ_EL.set(tf.elr);
+    IRQ_EL.set(tf.ELR_EL2);
     IRQ_INFO.set(info);
 
     match info.kind {
@@ -106,7 +106,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     kprintln!("{:?} {:?}", info, Syndrome::Brk(b));
                     kprintln!("brk #{}", b);
 
-                    kprintln!("ELR: 0x{:x}", tf.elr);
+                    kprintln!("ELR: 0x{:x}", tf.ELR_EL2);
 
                     debug_shell(tf);
                 }
@@ -139,7 +139,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     }
 
                     if is_access_flag {
-                        HYPER_SCHEDULER.crit_process(tf.tpidr2, |p| {
+                        HYPER_SCHEDULER.crit_process(tf.TPIDR_EL2, |p| {
                             if let Some(p) = p {
                                 // won't work once guest enables virtualization.
 
@@ -152,7 +152,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                         kprintln!("FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
                     } else if let Syndrome::InstructionAbort(_) = s {
                         use aarch64::regs::*;
-                        kprintln!("IRQ: {:?} {:?} (raw=0x{:x}) @ {:#x}", info, Kind::Irq, esr, tf.elr);
+                        kprintln!("IRQ: {:?} {:?} (raw=0x{:x}) @ {:#x}", info, Kind::Irq, esr, tf.ELR_EL2);
                         kprintln!("FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
                         kprintln!("EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
                         kprintln!("SP: {:#x}, ELR_EL1: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() });
@@ -161,7 +161,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     }
 
                     if !is_access_flag {
-                        kprintln!("{:?} {:?} (raw=0x{:x}) @ {:#x}", info, s, esr, tf.elr);
+                        kprintln!("{:?} {:?} (raw=0x{:x}) @ {:#x}", info, s, esr, tf.ELR_EL2);
 
 
                         // SCHEDULER.crit_process(tf.tpidr, |p| {
@@ -187,8 +187,8 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
 
     if info.kind == Kind::Irq || (info.kind == Kind::Synchronous && info.source == Source::LowerAArch64) {
         use aarch64::regs::*;
-        if tf.hcr & HCR_EL2::VM != 0 {
-            HYPER_SCHEDULER.crit_process(tf.tpidr2, |p| {
+        if tf.HCR_EL2 & HCR_EL2::VM != 0 {
+            HYPER_SCHEDULER.crit_process(tf.TPIDR_EL2, |p| {
                 if let Some(p) = p {
                     // give process a chance to update any virtualized components.
                     *p.context = *tf;
@@ -203,7 +203,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
     if info.kind == Synchronous {
         let syndrome = Syndrome::from(esr);
         if let Syndrome::Brk(_) = syndrome {
-            tf.elr += 4;
+            tf.ELR_EL2 += 4;
         }
     }
 

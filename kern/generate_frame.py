@@ -1,4 +1,5 @@
-// Auto-generated. Do not edit
+
+template = '''// Auto-generated. Do not edit
 
 .global kernel_context_save
 kernel_context_save:
@@ -34,18 +35,7 @@ kernel_context_save:
     stp     q2, q3, [SP, #-32]!
     stp     q0, q1, [SP, #-32]!
     
-    mrs     x1, TTBR1_EL1
-    mrs     x0, TTBR0_EL1
-    stp     x0, x1, [SP, #-16]!
-
-    mrs     x1, TPIDR_EL0
-    mrs     x0, SP_EL0
-    stp     x0, x1, [SP, #-16]!
-
-    mrs     x1, SPSR_EL1
-    mrs     x0, ELR_EL1
-    stp     x0, x1, [SP, #-16]!
-
+{kernel_save}
 
     // Set up arguments to exception handler
     mov x2, sp
@@ -64,18 +54,7 @@ kernel_context_save:
 
 .global kernel_context_restore
 kernel_context_restore:
-    ldp     x0, x1, [SP], #16
-    msr     ELR_EL1, x0
-    msr     SPSR_EL1, x1
-
-    ldp     x0, x1, [SP], #16
-    msr     SP_EL0, x0
-    msr     TPIDR_EL0, x1
-
-    ldp     x0, x1, [SP], #16
-    msr     TTBR0_EL1, x0
-    msr     TTBR1_EL1, x1
-
+{kernel_restore}
 
     // reload page tables
     dsb     ishst
@@ -191,22 +170,7 @@ hyper_context_save:
     stp     q2, q3, [SP, #-32]!
     stp     q0, q1, [SP, #-32]!
     
-    mrs     x1, HCR_EL2
-    mrs     x0, VTTBR_EL2
-    stp     x0, x1, [SP, #-16]!
-
-    mrs     x1, TPIDR_EL2
-    mrs     x0, SP_EL1
-    stp     x0, x1, [SP, #-16]!
-
-    mrs     x1, TPIDR_EL0
-    mrs     x0, SP_EL0
-    stp     x0, x1, [SP, #-16]!
-
-    mrs     x1, SPSR_EL2
-    mrs     x0, ELR_EL2
-    stp     x0, x1, [SP, #-16]!
-
+{hyper_save}
 
     // Set up arguments to exception handler
     mov x2, sp
@@ -225,22 +189,7 @@ hyper_context_save:
 
 .global hyper_context_restore
 hyper_context_restore:
-    ldp     x0, x1, [SP], #16
-    msr     ELR_EL2, x0
-    msr     SPSR_EL2, x1
-
-    ldp     x0, x1, [SP], #16
-    msr     SP_EL0, x0
-    msr     TPIDR_EL0, x1
-
-    ldp     x0, x1, [SP], #16
-    msr     SP_EL1, x0
-    msr     TPIDR_EL2, x1
-
-    ldp     x0, x1, [SP], #16
-    msr     VTTBR_EL2, x0
-    msr     HCR_EL2, x1
-
+{hyper_restore}
 
     // reload page tables
     dsb     sy
@@ -324,3 +273,123 @@ hyper_vectors:
     HYPER_HANDLER 3, 2
     HYPER_HANDLER 3, 3
 
+'''
+
+frames = '''// Auto-generated. Do not edit
+#![allow(non_snake_case)]
+
+#[repr(C)]
+#[derive(Default, Copy, Clone, Debug)]
+pub struct KernelTrapFrame {{
+{kernel}
+    pub simd: [u128; 32],
+    pub regs: [u64; 31],
+    __res1: u64,
+}}
+
+const_assert_size!(KernelTrapFrame, {kernel_size});
+
+#[repr(C)]
+#[derive(Default, Copy, Clone, Debug)]
+pub struct HyperTrapFrame {{
+{hyper}
+    pub simd: [u128; 32],
+    pub regs: [u64; 31],
+    __res1: u64,
+}}
+
+const_assert_size!(HyperTrapFrame, {hyper_size});
+
+'''
+
+
+def chunk_pairs(item_list):
+    result = []
+    for i in range(0, len(item_list), 2):
+        if i == len(item_list) - 1:
+            result.append((item_list[i],))
+        else:
+            result.append((item_list[i], item_list[i + 1]))
+    return result
+
+
+def stack_save_system(registers):
+    lines = []
+
+    for pair in chunk_pairs(registers)[::-1]:
+        if len(pair) == 2:
+            lines.append('    mrs     x1, {}'.format(pair[1]))
+            lines.append('    mrs     x0, {}'.format(pair[0]))
+            lines.append('    stp     x0, x1, [SP, #-16]!')
+            lines.append('')
+        else:
+            lines.append('    mrs     x0, {}'.format(pair[0]))
+            lines.append('    stp     x0, zxr, [SP, #-16]!')
+            lines.append('')
+
+    return '\n'.join(lines)
+
+
+def stack_restore_system(registers):
+    lines = []
+
+    for pair in chunk_pairs(registers):
+        if len(pair) == 2:
+            lines.append('    ldp     x0, x1, [SP], #16')
+            lines.append('    msr     {}, x0'.format(pair[0]))
+            lines.append('    msr     {}, x1'.format(pair[1]))
+            lines.append('')
+        else:
+            lines.append('    ldp     x0, zxr, [SP], #16')
+            lines.append('    msr     {}, x0'.format(pair[0]))
+            lines.append('')
+
+    return '\n'.join(lines)
+
+
+def frame_registers(registers):
+    lines = []
+
+    for reg in registers:
+        lines.append('    pub {}: u64,'.format(reg))
+
+    if len(registers) % 2 != 0:
+        lines.append('    __res0: u64,')
+
+    return '\n'.join(lines)
+
+
+def frame_size(registers):
+    size = 0
+    size += 16 * 32  # SIMD
+    size += 8 * 31  # general registers
+    size += 8  # after general regs padding
+
+    size += 8 * len(registers)
+    if len(registers) % 2 != 0:
+        size += 8
+
+    return size
+
+
+kernel_registers = ['ELR_EL1', 'SPSR_EL1', 'SP_EL0', 'TPIDR_EL0', 'TTBR0_EL1', 'TTBR1_EL1']
+
+hyper_registers = ['ELR_EL2', 'SPSR_EL2', 'SP_EL0', 'TPIDR_EL0', 'SP_EL1', 'TPIDR_EL2', 'VTTBR_EL2', 'HCR_EL2']
+
+# src/traps/frame_gen.rs
+
+with open('src/init/vectors.s', 'w') as f:
+    f.write(template.format(
+        kernel_save=stack_save_system(kernel_registers),
+        kernel_restore=stack_restore_system(kernel_registers),
+        hyper_save=stack_save_system(hyper_registers),
+        hyper_restore=stack_restore_system(hyper_registers),
+    ))
+
+with open('src/traps/frame/gen.rs', 'w') as f:
+    f.write(frames.format(
+        kernel=frame_registers(kernel_registers),
+        kernel_size=frame_size(kernel_registers),
+        hyper=frame_registers(hyper_registers),
+        hyper_size=frame_size(hyper_registers),
+    ))

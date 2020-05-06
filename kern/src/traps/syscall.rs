@@ -100,7 +100,7 @@ pub fn sys_write(b: u8, _tf: &mut KernelTrapFrame) {
 /// parameter: the current process's ID.
 pub fn sys_getpid(tf: &mut KernelTrapFrame) {
 
-    tf.regs[0] = tf.tpidr;
+    tf.regs[0] = tf.TPIDR_EL0;
 
 }
 

@@ -59,7 +59,7 @@ impl From<&KernelProcess> for SnapProcess {
         }
 
         SnapProcess {
-            tpidr: proc.context.tpidr,
+            tpidr: proc.context.TPIDR_EL0,
             state: proc.get_state().into(),
             name: proc.name.clone(),
             stack_top: proc.stack.top().as_u64(),
@@ -70,7 +70,7 @@ impl From<&KernelProcess> for SnapProcess {
             avg_run_slice: proc.running_slices.average(),
             task_switches: proc.task_switches,
             affinity: proc.affinity,
-            lr: proc.context.elr,
+            lr: proc.context.ELR_EL1,
         }
     }
 }

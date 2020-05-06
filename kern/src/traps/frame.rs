@@ -1,6 +1,8 @@
-use shim::io;
 use fat32::util::SliceExt;
+pub use gen::*;
+use shim::io;
 
+mod gen;
 
 pub trait Frame {
     fn get_id(&self) -> u64;
@@ -8,24 +10,7 @@ pub trait Frame {
     fn set_id(&mut self, val: u64);
 }
 
-
-#[repr(C, packed)]
-#[derive(Default, Copy, Clone, Debug)]
-pub struct KernelTrapFrame {
-    pub elr: u64,
-    pub spsr: u64,
-    pub sp: u64,
-    pub tpidr: u64,
-    pub ttbr0: u64,
-    pub ttbr1: u64,
-    pub simd: [u128; 32],
-    pub regs: [u64; 31],
-}
-
-const_assert_size!(KernelTrapFrame, 808);
-
 impl KernelTrapFrame {
-
     pub fn as_bytes(&self) -> &[u8] {
         use fat32::util::SliceExt;
         unsafe { core::slice::from_ref(self).cast() }
@@ -42,7 +27,7 @@ impl KernelTrapFrame {
 
     pub fn get_el(&self) -> u8 {
         use aarch64::regs::SPSR_EL1;
-        (SPSR_EL1::get_value(self.spsr, SPSR_EL1::M) >> 2) as u8
+        (SPSR_EL1::get_value(self.SPSR_EL1, SPSR_EL1::M) >> 2) as u8
     }
 
     pub fn is_el1(&self) -> bool {
@@ -52,12 +37,12 @@ impl KernelTrapFrame {
     pub fn dump<T: io::Write>(&self, w: &mut T, full: bool) -> io::Result<()> {
         writeln!(w, "Trap Frame:")?;
 
-        writeln!(w, "elr: 0x{:08x}", self.elr)?;
-        writeln!(w, "spsr: 0x{:08x}", self.spsr)?;
-        writeln!(w, "sp: 0x{:08x}", self.sp)?;
-        writeln!(w, "tpidr: 0x{:08x}", self.tpidr)?;
-        writeln!(w, "ttbr0: 0x{:08x}", self.ttbr0)?;
-        writeln!(w, "ttbr1: 0x{:08x}", self.ttbr1)?;
+        writeln!(w, "ELR_EL1: 0x{:08x}", self.ELR_EL1)?;
+        writeln!(w, "SPSR_EL1: 0x{:08x}", self.SPSR_EL1)?;
+        writeln!(w, "SP_EL0: 0x{:08x}", self.SP_EL0)?;
+        writeln!(w, "TPIDR_EL0: 0x{:08x}", self.TPIDR_EL0)?;
+        writeln!(w, "TTBR0_EL1: 0x{:08x}", self.TTBR0_EL1)?;
+        writeln!(w, "TTBR1_EL1: 0x{:08x}", self.TTBR1_EL1)?;
 
         for (i, num) in self.regs.iter().enumerate() {
             writeln!(w, "regs[{:02}]: 0x{:08x}", i, *num)?;
@@ -75,34 +60,15 @@ impl KernelTrapFrame {
 
 impl Frame for KernelTrapFrame {
     fn get_id(&self) -> u64 {
-        self.tpidr
+        self.TPIDR_EL0
     }
 
     fn set_id(&mut self, val: u64) {
-        self.tpidr = val;
+        self.TPIDR_EL0 = val;
     }
 }
 
-
-#[repr(C, packed)]
-#[derive(Default, Copy, Clone, Debug)]
-pub struct HyperTrapFrame {
-    pub elr: u64,
-    pub spsr: u64,
-    pub sp0: u64,
-    pub tpidr0: u64,
-    pub sp1: u64,
-    pub tpidr2: u64,
-    pub vttbr: u64,
-    pub hcr: u64,
-    pub simd: [u128; 32],
-    pub regs: [u64; 31],
-}
-
-const_assert_size!(HyperTrapFrame, 808 + 16);
-
 impl HyperTrapFrame {
-
     pub fn as_bytes(&self) -> &[u8] {
         use fat32::util::SliceExt;
         unsafe { core::slice::from_ref(self).cast() }
@@ -111,12 +77,12 @@ impl HyperTrapFrame {
     pub fn dump<T: io::Write>(&self, w: &mut T, full: bool) -> io::Result<()> {
         writeln!(w, "Hyper Trap Frame:")?;
 
-        writeln!(w, "elr: 0x{:08x}", self.elr)?;
-        writeln!(w, "spsr: 0x{:08x}", self.spsr)?;
-        writeln!(w, "sp: 0x{:08x}", self.sp1)?;
-        writeln!(w, "tpidr: 0x{:08x}", self.tpidr2)?;
-        writeln!(w, "ttbr0: 0x{:08x}", self.vttbr)?;
-        writeln!(w, "ttbr1: 0x{:08x}", self.hcr)?;
+        writeln!(w, "ELR_EL2: 0x{:08x}", self.ELR_EL2)?;
+        writeln!(w, "SPSR_EL2: 0x{:08x}", self.SPSR_EL2)?;
+        writeln!(w, "SP_EL1: 0x{:08x}", self.SP_EL1)?;
+        writeln!(w, "TPIDR_EL2: 0x{:08x}", self.TPIDR_EL2)?;
+        writeln!(w, "VTTBR_EL2: 0x{:08x}", self.VTTBR_EL2)?;
+        writeln!(w, "HCR_EL2: 0x{:08x}", self.HCR_EL2)?;
 
         for (i, num) in self.regs.iter().enumerate() {
             writeln!(w, "regs[{:02}]: 0x{:08x}", i, *num)?;
@@ -130,16 +96,15 @@ impl HyperTrapFrame {
 
         Ok(())
     }
-
 }
 
 impl Frame for HyperTrapFrame {
     fn get_id(&self) -> u64 {
-        self.tpidr2
+        self.TPIDR_EL2
     }
 
     fn set_id(&mut self, val: u64) {
-        self.tpidr2 = val;
+        self.TPIDR_EL2 = val;
     }
 }
 

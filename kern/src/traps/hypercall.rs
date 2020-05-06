@@ -143,6 +143,6 @@ pub fn handle_hypercall(num: u16, tf: &mut HyperTrapFrame) {
         HP_VNIC_RECEIVE => {
             hyper_vnic_receive(tf);
         }
-        _ => kprintln!("Unknown hypercall: {} @ {:#x}", num, tf.elr),
+        _ => kprintln!("Unknown hypercall: {} @ {:#x}", num, tf.ELR_EL2),
     }
 }

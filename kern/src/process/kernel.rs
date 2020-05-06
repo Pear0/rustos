@@ -96,14 +96,14 @@ impl Process<KernelImpl> {
 
         let mut p = Self::new(name)?;
 
-        p.context.sp = p.stack.top().as_u64();
-        p.context.elr = f as u64;
+        p.context.SP_EL0 = p.stack.top().as_u64();
+        p.context.ELR_EL1 = f as u64;
 
-        p.context.spsr |= SPSR_EL1::M & 0b0100;
+        p.context.SPSR_EL1 |= SPSR_EL1::M & 0b0100;
 
-        p.context.ttbr0 = VMM.get_baddr().as_u64();
+        p.context.TTBR0_EL1 = VMM.get_baddr().as_u64();
         // kernel thread still gets a vmap because it's easy
-        p.context.ttbr1 = p.vmap.get_baddr().as_u64();
+        p.context.TTBR1_EL1 = p.vmap.get_baddr().as_u64();
 
         Ok(p)
     }
@@ -155,11 +155,11 @@ impl Process<KernelImpl> {
 
         let mut p = Self::do_load(pn)?;
 
-        p.context.sp = Self::get_stack_top().as_u64();
-        p.context.elr = USER_IMG_BASE as u64;
+        p.context.SP_EL0 = Self::get_stack_top().as_u64();
+        p.context.ELR_EL1 = USER_IMG_BASE as u64;
 
-        p.context.ttbr0 = VMM.get_baddr().as_u64();
-        p.context.ttbr1 = p.vmap.get_baddr().as_u64();
+        p.context.TTBR0_EL1 = VMM.get_baddr().as_u64();
+        p.context.TTBR1_EL1 = p.vmap.get_baddr().as_u64();
 
         Ok(p)
     }
@@ -208,9 +208,9 @@ impl Process<KernelImpl> {
         proc.context.decode_from_bytes(&bundle.frame).map_err(|_| OsError::InvalidArgument)?;
 
         // set kernel specific values that don't make sense to use from the bundle.
-        proc.context.tpidr = 0; // will get a new process id when scheduled.
-        proc.context.ttbr0 = VMM.get_baddr().as_u64();
-        proc.context.ttbr1 = proc.vmap.get_baddr().as_u64();
+        proc.context.TPIDR_EL0 = 0; // will get a new process id when scheduled.
+        proc.context.TTBR0_EL1 = VMM.get_baddr().as_u64();
+        proc.context.TTBR1_EL1 = proc.vmap.get_baddr().as_u64();
 
         for (raw_va, data) in bundle.memory.generic_pages.iter() {
             let va = VirtualAddr::from(*raw_va);
