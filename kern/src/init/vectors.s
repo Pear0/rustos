@@ -191,20 +191,87 @@ hyper_context_save:
     stp     q2, q3, [SP, #-32]!
     stp     q0, q1, [SP, #-32]!
     
-    mrs     x1, HCR_EL2
-    mrs     x0, VTTBR_EL2
-    stp     x0, x1, [SP, #-16]!
+    mrs     x0, TPIDR_EL2
+    stp     x0, xzr, [SP, #-16]!
 
-    mrs     x1, TPIDR_EL2
-    mrs     x0, SP_EL1
-    stp     x0, x1, [SP, #-16]!
-
-    mrs     x1, TPIDR_EL0
-    mrs     x0, SP_EL0
+    mrs     x1, VTTBR_EL2
+    mrs     x0, HCR_EL2
     stp     x0, x1, [SP, #-16]!
 
     mrs     x1, SPSR_EL2
     mrs     x0, ELR_EL2
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, CNTVOFF_EL2
+    mrs     x0, CNTV_CVAL_EL0
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, CNTV_CTL_EL0
+    mrs     x0, CNTP_CVAL_EL0
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, CNTP_CTL_EL0
+    mrs     x0, CNTKCTL_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, VBAR_EL1
+    mrs     x0, TTBR1_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, TTBR0_EL1
+    mrs     x0, TPIDRRO_EL0
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, TPIDR_EL1
+    mrs     x0, TPIDR_EL0
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, TCR_EL1
+    mrs     x0, SCTLR_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, PAR_EL1
+    mrs     x0, MAIR_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, FAR_EL1
+    mrs     x0, ESR_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, CSSELR_EL1
+    mrs     x0, CPTR_EL2
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, CPACR_EL1
+    mrs     x0, CONTEXTIDR_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, AMAIR_EL1
+    mrs     x0, AFSR1_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, AFSR0_EL1
+    mrs     x0, ACTLR_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, SPSR_und
+    mrs     x0, SPSR_irq
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, SPSR_fiq
+    mrs     x0, SPSR_abt
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, SPSR_EL1
+    mrs     x0, SP_EL1
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, SP_EL0
+    mrs     x0, FPSR
+    stp     x0, x1, [SP, #-16]!
+
+    mrs     x1, FPCR
+    mrs     x0, ELR_EL1
     stp     x0, x1, [SP, #-16]!
 
 
@@ -226,20 +293,87 @@ hyper_context_save:
 .global hyper_context_restore
 hyper_context_restore:
     ldp     x0, x1, [SP], #16
+    msr     ELR_EL1, x0
+    msr     FPCR, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     FPSR, x0
+    msr     SP_EL0, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     SP_EL1, x0
+    msr     SPSR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     SPSR_abt, x0
+    msr     SPSR_fiq, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     SPSR_irq, x0
+    msr     SPSR_und, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     ACTLR_EL1, x0
+    msr     AFSR0_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     AFSR1_EL1, x0
+    msr     AMAIR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     CONTEXTIDR_EL1, x0
+    msr     CPACR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     CPTR_EL2, x0
+    msr     CSSELR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     ESR_EL1, x0
+    msr     FAR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     MAIR_EL1, x0
+    msr     PAR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     SCTLR_EL1, x0
+    msr     TCR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     TPIDR_EL0, x0
+    msr     TPIDR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     TPIDRRO_EL0, x0
+    msr     TTBR0_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     TTBR1_EL1, x0
+    msr     VBAR_EL1, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     CNTKCTL_EL1, x0
+    msr     CNTP_CTL_EL0, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     CNTP_CVAL_EL0, x0
+    msr     CNTV_CTL_EL0, x1
+
+    ldp     x0, x1, [SP], #16
+    msr     CNTV_CVAL_EL0, x0
+    msr     CNTVOFF_EL2, x1
+
+    ldp     x0, x1, [SP], #16
     msr     ELR_EL2, x0
     msr     SPSR_EL2, x1
 
     ldp     x0, x1, [SP], #16
-    msr     SP_EL0, x0
-    msr     TPIDR_EL0, x1
+    msr     HCR_EL2, x0
+    msr     VTTBR_EL2, x1
 
-    ldp     x0, x1, [SP], #16
-    msr     SP_EL1, x0
-    msr     TPIDR_EL2, x1
-
-    ldp     x0, x1, [SP], #16
-    msr     VTTBR_EL2, x0
-    msr     HCR_EL2, x1
+    ldp     x0, xzr, [SP], #16
+    msr     TPIDR_EL2, x0
 
 
     // reload page tables

@@ -9,7 +9,7 @@ use core::time::Duration;
 
 use kernel_api::{OsError, OsResult};
 
-use aarch64::{HCR_EL2, SPSR_EL1, SPSR_EL2};
+use aarch64::{HCR_EL2, SPSR_EL1, SPSR_EL2, SCTLR_EL1};
 use pigrate_core::bundle::MemoryBundle;
 use pigrate_core::bundle::ProcessBundle;
 use shim::io;
@@ -158,7 +158,6 @@ impl Process<HyperImpl> {
 
         proc.detail.nic = Some(nic);
 
-
         // Init context
 
         proc.context.SPSR_EL2 = (SPSR_EL2::M & 0b0101) // EL1h
@@ -172,6 +171,22 @@ impl Process<HyperImpl> {
 
         proc.context.VTTBR_EL2 = proc.vmap.get_baddr().as_u64();
         proc.context.HCR_EL2 = HCR_EL2::RW | HCR_EL2::VM | HCR_EL2::ID | HCR_EL2::IMO | HCR_EL2::RES1;
+
+        proc.context.CNTVOFF_EL2 = 0;
+
+        // enable floating point and SVE (SIMD) (A53: 4.3.38, 4.3.34)
+        proc.context.CPTR_EL2 = 0;
+        proc.context.CPACR_EL1 = (0b11 << 20);
+
+        // Set SCTLR to known state (A53: 4.3.30)
+        proc.context.SCTLR_EL1 = SCTLR_EL1::RES1;
+
+        proc.context.SP_EL1 = 0x60_000;
+
+        // we don't want an exception in EL1 to try and use SP0 stack.
+        proc.context.SPSR_EL1 = SPSR_EL1::M & 0b0101;
+
+
     }
 
     pub fn load_self() -> OsResult<Self> {

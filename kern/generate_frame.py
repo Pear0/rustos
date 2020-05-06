@@ -324,7 +324,7 @@ def stack_save_system(registers):
             lines.append('')
         else:
             lines.append('    mrs     x0, {}'.format(pair[0]))
-            lines.append('    stp     x0, zxr, [SP, #-16]!')
+            lines.append('    stp     x0, xzr, [SP, #-16]!')
             lines.append('')
 
     return '\n'.join(lines)
@@ -340,7 +340,7 @@ def stack_restore_system(registers):
             lines.append('    msr     {}, x1'.format(pair[1]))
             lines.append('')
         else:
-            lines.append('    ldp     x0, zxr, [SP], #16')
+            lines.append('    ldp     x0, xzr, [SP], #16')
             lines.append('    msr     {}, x0'.format(pair[0]))
             lines.append('')
 
@@ -372,9 +372,58 @@ def frame_size(registers):
     return size
 
 
-kernel_registers = ['ELR_EL1', 'SPSR_EL1', 'SP_EL0', 'TPIDR_EL0', 'TTBR0_EL1', 'TTBR1_EL1']
+def parse_regs(string):
+    return string.strip().split()
 
-hyper_registers = ['ELR_EL2', 'SPSR_EL2', 'SP_EL0', 'TPIDR_EL0', 'SP_EL1', 'TPIDR_EL2', 'VTTBR_EL2', 'HCR_EL2']
+
+kernel_registers = ['ELR_EL1', 'SPSR_EL1', 'SP_EL0', 'TPIDR_EL0', 'TTBR0_EL1', 'TTBR1_EL1']
+hyper_registers = parse_regs('''
+ELR_EL1
+FPCR
+FPSR
+SP_EL0
+SP_EL1
+SPSR_EL1
+SPSR_abt
+SPSR_fiq
+SPSR_irq
+SPSR_und
+ACTLR_EL1
+AFSR0_EL1
+AFSR1_EL1
+AMAIR_EL1
+CONTEXTIDR_EL1
+CPACR_EL1
+CPTR_EL2
+CSSELR_EL1
+ESR_EL1
+FAR_EL1
+MAIR_EL1
+PAR_EL1
+SCTLR_EL1
+TCR_EL1
+TPIDR_EL0
+TPIDR_EL1
+TPIDRRO_EL0
+TTBR0_EL1
+TTBR1_EL1
+VBAR_EL1
+
+CNTKCTL_EL1
+CNTP_CTL_EL0
+CNTP_CVAL_EL0
+CNTV_CTL_EL0
+CNTV_CVAL_EL0
+
+CNTVOFF_EL2
+
+ELR_EL2
+SPSR_EL2
+HCR_EL2
+VTTBR_EL2
+TPIDR_EL2
+''')
+
 
 # src/traps/frame_gen.rs
 
