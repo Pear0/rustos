@@ -16,6 +16,7 @@ use crate::traps::irq::Irq;
 use crate::vm::VMManager;
 use pi::interrupt::Interrupt;
 use crate::console::{console_interrupt_handler, CONSOLE, console_ext_init};
+use crate::mutex::Mutex;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();

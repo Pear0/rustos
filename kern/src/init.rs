@@ -185,7 +185,7 @@ unsafe fn kinit() -> ! {
     switch_to_el2();
 
     // for now, always boot hypervisor
-    if current_el() == 2 {
+    if current_el() == 2 && false {
         el2_init();
         kmain(true);
     } else {

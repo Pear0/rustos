@@ -9,6 +9,7 @@ use crate::kernel_call::syscall;
 use crate::net::buffer;
 use crate::sync::Waitable;
 
+#[derive(Clone)]
 pub enum Source {
     KernSerial,
     Buffer(buffer::BufferHandle),
@@ -56,6 +57,7 @@ impl sync::Waitable for Source {
 }
 
 
+#[derive(Clone)]
 pub enum Sink {
     KernSerial,
     Buffer(buffer::BufferHandle),

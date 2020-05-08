@@ -187,6 +187,16 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
+        .name("connect")
+        .help("connect to running process TTYs.")
+        .func_result(|sh, cmd| {
+
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
         .name("lsd")
         .help("")
         .func(|sh, cmd| {

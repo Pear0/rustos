@@ -3,14 +3,19 @@ use core::fmt;
 use pi::uart::MiniUart;
 use shim::io;
 
-use crate::mutex::Mutex;
+use crate::mutex::{Mutex, MutexGuard};
 use crate::smp;
 use crate::collections::CapacityRingBuffer;
 use aarch64::SCTLR_EL1;
+use crate::fs::handle::{Sink, Source};
 
 struct ConsoleImpl {
     send_buffer: CapacityRingBuffer<u8>,
     receive_buffer: CapacityRingBuffer<u8>,
+
+    callback: Option<(u8, fn())>,
+
+    redirect: Option<(Sink, Source)>,
 }
 
 impl ConsoleImpl {
@@ -18,6 +23,12 @@ impl ConsoleImpl {
         Self {
             send_buffer: CapacityRingBuffer::new(1000),
             receive_buffer: CapacityRingBuffer::new(1000),
+            callback: Some((0x02, || {
+                info!("pressed Ctrl+B");
+                let mut lock = CONSOLE.lock("callback");
+                lock.ext.as_mut().unwrap().redirect = None;
+            })),
+            redirect: None,
         }
     }
 }
@@ -33,7 +44,9 @@ impl Console {
     const fn new() -> Console {
         Console { inner: None, ext: None }
     }
+}
 
+impl MutexGuard<'_, Console> {
     /// Initializes the console if it's not already initialized.
     #[inline]
     fn initialize(&mut self) {
@@ -71,7 +84,6 @@ impl Console {
             }
         }
 
-        read += self.inner().read_nonblocking(buf).expect("MiniUart io::Error");
         Ok(read)
     }
 
@@ -142,15 +154,37 @@ impl Console {
         }
     }
 
+    fn interrupt_handle(&mut self) {
+        if let None = &self.ext {
+            return;
+        }
+
+        'read: while self.inner().has_byte() {
+            // TODO may drop bytes on ground.
+            let byte = self.inner().read_byte();
+
+            if let Some((expected, func)) = self.ext.as_ref().unwrap().callback {
+                if byte == expected {
+                    self.recursion(|| func());
+                    continue 'read;
+                }
+            }
+
+            self.ext.as_mut().unwrap().receive_buffer.insert(byte);
+        }
+
+        self.send_and_update_interrupts();
+
+    }
 }
 
-impl io::Read for Console {
+impl io::Read for MutexGuard<'_, Console> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.read_nonblocking(buf)
     }
 }
 
-impl io::Write for Console {
+impl io::Write for MutexGuard<'_, Console> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         for byte in buf.iter() {
             if *byte == b'\n' {
@@ -166,7 +200,7 @@ impl io::Write for Console {
     }
 }
 
-impl fmt::Write for Console {
+impl fmt::Write for MutexGuard<'_, Console> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for byte in s.as_bytes().iter() {
             if *byte == b'\n' {
@@ -183,7 +217,7 @@ pub static CONSOLE: Mutex<Console> = Mutex::new("CONSOLE", Console::new());
 
 pub fn console_ext_init() {
     smp::no_interrupt(|| {
-        let mut lock = CONSOLE.lock("console_interrupt_handler");
+        let mut lock = CONSOLE.lock("console_ext_init");
         if lock.ext.is_none() {
             lock.ext = Some(ConsoleImpl::new());
         }
