@@ -6,11 +6,13 @@ use kernel_api::*;
 use kernel_api::OsError;
 
 use crate::hyper::HYPER_SCHEDULER;
+use crate::kernel_call::*;
+use crate::net::physical;
 use crate::net::physical::Physical;
-use crate::process::{EventPollFn, HyperImpl, State, HyperProcess};
+use crate::process::{EventPollFn, HyperImpl, HyperProcess, State};
+use crate::sync::Waitable;
 use crate::traps::{Frame, HyperTrapFrame};
 use crate::vm::VirtualAddr;
-use crate::net::physical;
 
 fn set_result(tf: &mut HyperTrapFrame, regs: &[u64]) {
     for (i, v) in regs.iter().enumerate() {
@@ -48,6 +50,12 @@ fn sys_exit(tf: &mut HyperTrapFrame) {
     HYPER_SCHEDULER.kill(tf).expect("killed");
     // we need to schedule a new process otherwise things will be very bad
     HYPER_SCHEDULER.switch_to(tf);
+}
+
+pub fn sys_wait_waitable(tf: &mut HyperTrapFrame) {
+    // TODO insecure (can be called from userspace)
+    let arc: Arc<dyn Waitable> = unsafe { core::mem::transmute([tf.regs[0], tf.regs[1]]) };
+    HYPER_SCHEDULER.switch(State::WaitingObj(arc), tf);
 }
 
 fn net_ctx<F: FnOnce(&mut HyperTrapFrame, &mut HyperProcess) -> OsResult<()>>(tf: &mut HyperTrapFrame, func: F) {
@@ -126,6 +134,9 @@ pub fn handle_hyper_syscall(num: u16, tf: &mut HyperTrapFrame) {
         }
         NR_EXIT => {
             sys_exit(tf);
+        }
+        NR_WAIT_WAITABLE => {
+            sys_wait_waitable(tf);
         }
         _ => kprintln!("Unknown syscall in an EL2 context: {}", num),
     }

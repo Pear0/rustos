@@ -10,13 +10,14 @@ use shim::{io, ioerr};
 use crate::{display_manager, hw, kernel_call, NET, shell, smp, VMM, BootVariant};
 use crate::fs::handle::{SinkWrapper, SourceWrapper, Source, Sink, WaitingSourceWrapper};
 use crate::net::ipv4;
-use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess, KernProcessCtx};
+use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess, KernProcessCtx, Priority};
 use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
 use crate::vm::VMManager;
 use pi::interrupt::Interrupt;
 use crate::console::{console_interrupt_handler, CONSOLE, console_ext_init};
 use crate::mutex::Mutex;
+use crate::fs::service::PipeService;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -114,6 +115,7 @@ fn my_thread(ctx: KernProcessCtx) {
 
     let (source, sink) = ctx.get_stdio_or_panic();
 
+    // WaitingSourceWrapper::new(source)
     shell::Shell::new("$ ", WaitingSourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
 
 }
@@ -185,6 +187,12 @@ pub fn kernel_main() -> ! {
     {
         let mut proc = KernelProcess::kernel_process("shell".to_owned(), my_thread).unwrap();
         proc.set_stdio(Arc::new(Source::KernSerial), Arc::new(Sink::KernSerial));
+        KERNEL_SCHEDULER.add(proc);
+    }
+
+    {
+        let mut proc = KernelProcess::kernel_process_old("pipe".to_owned(), PipeService::task_func).unwrap();
+        proc.priority = Priority::Highest;
         KERNEL_SCHEDULER.add(proc);
     }
 

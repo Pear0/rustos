@@ -1,4 +1,4 @@
-use crate::process::{Process, State, KernelProcess};
+use crate::process::{Process, State, KernelProcess, HyperProcess};
 use alloc::string::String;
 use core::time::Duration;
 use crate::process::process::{CoreAffinity, ProcessImpl};
@@ -71,6 +71,31 @@ impl From<&KernelProcess> for SnapProcess {
             task_switches: proc.task_switches,
             affinity: proc.affinity,
             lr: proc.context.ELR_EL1,
+        }
+    }
+}
+
+impl From<&HyperProcess> for SnapProcess {
+    fn from(proc: &HyperProcess) -> Self {
+
+        let mut cpu_time = proc.cpu_time;
+        if let State::Running(ctx) = proc.get_state() {
+            cpu_time += pi::timer::current_time() - ctx.scheduled_at;
+        }
+
+        SnapProcess {
+            tpidr: proc.context.TPIDR_EL2,
+            state: proc.get_state().into(),
+            name: proc.name.clone(),
+            stack_top: proc.stack.top().as_u64(),
+            cpu_time,
+            cpu_usage: proc.running_ratio.get_average(),
+            waiting_usage: proc.waiting_ratio.get_average(),
+            ready_usage: proc.ready_ratio.get_average(),
+            avg_run_slice: proc.running_slices.average(),
+            task_switches: proc.task_switches,
+            affinity: proc.affinity,
+            lr: proc.context.ELR_EL2,
         }
     }
 }

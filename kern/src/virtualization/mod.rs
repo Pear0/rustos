@@ -16,6 +16,7 @@ use crate::vm::VirtualAddr;
 pub enum IrqSource {
     GenericVirt,
     PeripheralTimer1,
+    Aux,
 }
 
 impl IrqSource {
@@ -23,6 +24,7 @@ impl IrqSource {
         match self {
             IrqSource::GenericVirt => 0,
             IrqSource::PeripheralTimer1 => 1,
+            IrqSource::Aux => 29,
         }
     }
 }

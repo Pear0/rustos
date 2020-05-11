@@ -191,8 +191,9 @@ hyper_context_save:
     stp     q2, q3, [SP, #-32]!
     stp     q0, q1, [SP, #-32]!
     
+    mrs     x1, VMPIDR_EL2
     mrs     x0, TPIDR_EL2
-    stp     x0, xzr, [SP, #-16]!
+    stp     x0, x1, [SP, #-16]!
 
     mrs     x1, VTTBR_EL2
     mrs     x0, HCR_EL2
@@ -372,8 +373,9 @@ hyper_context_restore:
     msr     HCR_EL2, x0
     msr     VTTBR_EL2, x1
 
-    ldp     x0, xzr, [SP], #16
+    ldp     x0, x1, [SP], #16
     msr     TPIDR_EL2, x0
+    msr     VMPIDR_EL2, x1
 
 
     // reload page tables

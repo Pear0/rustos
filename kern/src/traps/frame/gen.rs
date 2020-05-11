@@ -61,7 +61,7 @@ pub struct HyperTrapFrame {
     pub HCR_EL2: u64,
     pub VTTBR_EL2: u64,
     pub TPIDR_EL2: u64,
-    __res0: u64,
+    pub VMPIDR_EL2: u64,
     pub simd: [u128; 32],
     pub regs: [u64; 31],
     __res1: u64,

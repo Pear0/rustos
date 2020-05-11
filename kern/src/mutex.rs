@@ -2,7 +2,7 @@ use core::cell::UnsafeCell;
 use core::fmt;
 use core::ops::{Deref, DerefMut, Drop};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use aarch64::{SCTLR_EL1, MPIDR_EL1, SP};
+use aarch64::{SCTLR_EL1, MPIDR_EL1, SP, SCTLR_EL2};
 use core::time::Duration;
 use core::fmt::Alignment::Left;
 use core::sync::atomic::AtomicU64;
@@ -89,7 +89,12 @@ impl<T> Mutex<T> {
     fn has_mmu() -> bool {
         // possibly slightly wrong, not sure exactly what shareability settings
         // enable advanced control
-        unsafe { SCTLR_EL1.get_value(SCTLR_EL1::M) != 0 }
+
+        if unsafe { aarch64::current_el() } == 2 {
+            unsafe { SCTLR_EL2.get_value(SCTLR_EL2::M) != 0 }
+        } else {
+            unsafe { SCTLR_EL1.get_value(SCTLR_EL1::M) != 0 }
+        }
     }
 
     pub fn get_name(&self) -> &'static str {

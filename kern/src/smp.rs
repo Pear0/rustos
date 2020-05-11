@@ -3,9 +3,10 @@ use core::time::Duration;
 
 use aarch64::{MPIDR_EL1, SP};
 
-use crate::init;
+use crate::{init, BootVariant};
 use crate::mutex::Mutex;
 use crate::console::{CONSOLE, console_flush};
+use crate::mbox::EveryTimer;
 
 pub const MAX_CORES: usize = 4;
 
@@ -48,7 +49,14 @@ pub fn core() -> usize {
 #[inline(never)]
 unsafe fn core_bootstrap_stack() -> ! {
     init::switch_to_el2();
-    init::switch_to_el1();
+
+    if BootVariant::kernel() {
+        init::switch_to_el1();
+        init::el1_init();
+    } else {
+        init::el2_init();
+    }
+
     //
     // let el = unsafe { aarch64::current_el() };
     // kprintln!("Big Current EL: {}", el);
@@ -71,6 +79,7 @@ unsafe fn core_bootstrap_stack() -> ! {
             aarch64::dsb();
             PARKING[core_id as usize].addr.store(0, Ordering::SeqCst);
             aarch64::dsb();
+            aarch64::clean_data_cache_obj(& PARKING[core_id as usize].addr);
             aarch64::sev();
         }
 
@@ -92,6 +101,7 @@ pub unsafe fn initialize(cores: usize) {
     for core_id in 1..cores {
         unsafe { ((parking_base + core_id * 8) as *mut u64).write_volatile(core_bootstrap as u64) };
     }
+    aarch64::clean_data_cache_region(parking_base as u64, 4 * 8);
     aarch64::sev();
 }
 
@@ -106,7 +116,10 @@ pub fn count_cores() -> usize {
 }
 
 pub fn wait_for_cores(cores: usize) {
+    let mut every = EveryTimer::new(Duration::from_secs(1));
     while count_cores() < cores - 1 {
+        let count = count_cores();
+        every.every(|| error!("waiting for cores, have: {}", count));
         aarch64::sev();
     }
 }

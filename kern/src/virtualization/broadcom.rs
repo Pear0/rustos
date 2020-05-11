@@ -6,6 +6,8 @@ use crate::mutex::Mutex;
 use crate::process::{HyperProcess, Process};
 use crate::virtualization::{DataAccess, DeviceError, IrqSource, Result, VirtDevice};
 use crate::vm::VirtualAddr;
+use crate::iosync::{SyncWrite, SyncRead};
+use crate::sync::Waitable;
 
 #[derive(Debug)]
 pub struct Interrupts();
@@ -272,12 +274,13 @@ impl VirtDevice for MiniUart {
         match addr {
             // data in
             0x40 => {
-                let mut l = m_lock!(CONSOLE);
-                Ok(if l.has_byte() {
-                    l.read_byte() as u64
-                } else {
-                    0
-                })
+                let mut value: u8 = 0;
+
+                if let Some((_, source)) = &mut process.detail.serial {
+                    source.read(core::slice::from_mut(&mut value)); // TODO handle error?
+                }
+
+                Ok(value as u64)
             }
             // status register
             0x54 => {
@@ -285,9 +288,10 @@ impl VirtDevice for MiniUart {
                 let mut lsr = 0;
                 lsr |= 1 << 5; // TxAvailable
 
-                let mut l = m_lock!(CONSOLE);
-                if l.has_byte() {
-                    lsr |= 1; // DataReady
+                if let Some((_, source)) = &mut process.detail.serial {
+                    if source.done_waiting() {
+                        lsr |= 1; // DataReady
+                    }
                 }
 
                 return Ok(lsr);
@@ -308,8 +312,11 @@ impl VirtDevice for MiniUart {
         match addr {
             // data out
             0x40 => {
-                let mut l = m_lock!(CONSOLE);
-                l.write_byte(val as u8);
+
+                if let Some((sink, _)) = &mut process.detail.serial {
+                    sink.write(&[val as u8]); // TODO do something if we can't write?
+                }
+
                 Ok(())
             }
             e if lock.by_addr(e).is_some() => {
@@ -318,6 +325,27 @@ impl VirtDevice for MiniUart {
             }
             _ => Err(DeviceError::NotImplemented),
         }
+    }
+
+    fn update(&self, process: &mut HyperProcess) {
+        let mut lock = m_lock!(self.0);
+
+        let mut do_assert = false;
+
+        let (send, receive) = ((lock.ier & 0b10) != 0, (lock.ier & 0b1) != 0);
+
+        if let Some((sink, source)) = &mut process.detail.serial {
+
+            if send && sink.done_waiting() {
+                do_assert = true;
+            }
+            if receive && source.done_waiting() {
+                do_assert = true;
+            }
+        }
+
+        process.detail.irqs.set_asserted(IrqSource::Aux, do_assert);
+
     }
 }
 

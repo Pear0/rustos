@@ -69,6 +69,12 @@ impl fmt::Debug for CoreAffinity {
     }
 }
 
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Priority {
+    Normal = 50,
+    Highest = 100,
+}
 
 
 pub trait ProcessImpl: Sized {
@@ -111,6 +117,8 @@ pub struct Process<T: ProcessImpl> {
     pub request_suspend: bool,
     request_kill: bool,
 
+    pub priority: Priority,
+
     pub detail: T,
 }
 
@@ -140,6 +148,7 @@ impl<T: ProcessImpl> Process<T> {
             task_switches: 0,
             request_suspend: false,
             request_kill: false,
+            priority: Priority::Normal,
             detail: T::new()?,
         })
     }

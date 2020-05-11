@@ -28,6 +28,7 @@ pub mod command_args;
 pub mod command;
 mod default_commands;
 mod shell;
+pub mod shortcut;
 
 pub use command_args::CommandArgs as CommandArgs;
 pub use shell::Shell as Shell;

@@ -1,3 +1,4 @@
+use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -6,13 +7,16 @@ use core::time::Duration;
 use aarch64::CNTHP_CTL_EL2;
 use pi::usb::Usb;
 
-use crate::{hw, smp, VMM};
+use crate::{hw, shell, smp, VMM};
 use crate::BootVariant::Hypervisor;
+use crate::fs::handle::{Sink, SinkWrapper, Source, WaitingSourceWrapper, SourceWrapper};
 use crate::iosync::Global;
 use crate::net::physical::{Physical, PhysicalUsb};
 use crate::process::{GlobalScheduler, HyperImpl, HyperProcess};
 use crate::traps::irq::Irq;
 use crate::virtualization::nic::VirtualSwitch;
+use pi::interrupt::Interrupt;
+use crate::console::{console_interrupt_handler, console_ext_init};
 
 pub static HYPER_IRQ: Irq<HyperImpl> = Irq::uninitialized();
 pub static HYPER_SCHEDULER: GlobalScheduler<HyperImpl> = GlobalScheduler::uninitialized();
@@ -82,6 +86,16 @@ fn test_thread() -> ! {
     }
 }
 
+fn my_thread() -> ! {
+    let pid = kernel_api::syscall::getpid();
+
+    shell::Shell::new("$ ",
+                      WaitingSourceWrapper::new(Arc::new(Source::KernSerial)),
+                      SinkWrapper::new(Arc::new(Sink::KernSerial))).shell_loop();
+
+    kernel_api::syscall::exit();
+}
+
 pub fn hyper_main() -> ! {
     info!("VMM init");
     VMM.init_only();
@@ -94,25 +108,72 @@ pub fn hyper_main() -> ! {
     info!("Making hvc call");
     hvc!(5);
 
-    unsafe {
-        HYPER_IRQ.initialize();
+    HYPER_IRQ.initialize();
 
+    console_ext_init();
+    HYPER_IRQ.register(Interrupt::Aux, Box::new(|_| {
+        console_interrupt_handler();
+    }));
+
+    pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
+
+    error!("init cores");
+
+    let cores = 4;
+    unsafe { smp::initialize(cores); }
+
+    error!("waiting cores");
+
+
+    smp::wait_for_cores(cores);
+
+    error!("cores vmm");
+
+    smp::run_on_secondary_cores(|| {
+        unsafe {
+            VMM.setup_hypervisor();
+        };
+    });
+
+
+    unsafe {
         HYPER_SCHEDULER.initialize_hyper();
     }
+
+    error!("cores scheduler");
+
+
+    smp::run_on_secondary_cores(|| {
+        unsafe {
+            HYPER_SCHEDULER.initialize_hyper();
+        };
+    });
+
 
     for atag in pi::atags::Atags::get() {
         info!("{:?}", atag);
     }
 
-    info!("Add kernel process");
+    error!("Add kernel process");
 
     {
-        // let p = HyperProcess::load("/kernel.bin").expect("failed to find bin");
-        let p = HyperProcess::load_self().expect("failed to find bin");
+        let mut proc = HyperProcess::hyper_process_old("shell".to_owned(), my_thread).unwrap();
+        HYPER_SCHEDULER.add(proc);
+    }
 
+    {
+        let p = HyperProcess::load_self().expect("failed to find bin");
         let id = HYPER_SCHEDULER.add(p);
         info!("kernel id: {:?}", id);
     }
+
+    // {
+    //     // let p = HyperProcess::load("/kernel.bin").expect("failed to find bin");
+    //     let p = HyperProcess::load_self().expect("failed to find bin");
+    //
+    //     let id = HYPER_SCHEDULER.add(p);
+    //     info!("kernel id: {:?}", id);
+    // }
     //
     // {
     //     let p = HyperProcess::hyper_process_old(String::from("hyper proc"), test_thread).expect("failed to create hyper thread");
@@ -144,8 +205,21 @@ pub fn hyper_main() -> ! {
 
         // don't trap CNTP for EL1/EL0 (ref: D7.5.2, D7.5.13)
         CNTHCTL_EL2.set(CNTHCTL_EL2.get() | CNTHCTL_EL2::EL1PCEN | CNTHCTL_EL2::EL1PCTEN);
-
     }
+
+    smp::run_no_return(|| {
+        let core = smp::core();
+        pi::timer::spin_sleep(Duration::from_millis(4 * core as u64));
+        debug!("Core {} starting scheduler", core);
+
+        unsafe { CNTHCTL_EL2.set(CNTHCTL_EL2.get() | CNTHCTL_EL2::EL1PCEN | CNTHCTL_EL2::EL1PCTEN) };
+        HYPER_SCHEDULER.start_hyper();
+
+        error!("RIP RIP");
+    });
+
+    pi::timer::spin_sleep(Duration::from_millis(50));
+    debug!("Core 0 starting scheduler");
 
     HYPER_SCHEDULER.start_hyper();
 

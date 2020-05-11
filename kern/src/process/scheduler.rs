@@ -376,9 +376,19 @@ impl<T: ProcessImpl> Scheduler<T> {
         // is_ready() is &mut so it doesn't work with .find() 😡😡😡
         let mut proc: Option<(usize, &mut Process<T>)> = None;
         for entry in self.processes.iter_mut().enumerate() {
-            if entry.1.affinity.check(core) && entry.1.is_ready() {
+            if !entry.1.affinity.check(core) {
+                continue;
+            }
+
+            // if our currently selected process has a better priority, keep it.
+            if let Some((_, proc)) = &proc {
+                if proc.priority >= entry.1.priority {
+                    continue;
+                }
+            }
+
+            if entry.1.is_ready() {
                 proc = Some(entry);
-                break;
             }
         }
 
@@ -419,6 +429,18 @@ impl<T: ProcessImpl> Scheduler<T> {
 }
 
 impl Scheduler<KernelImpl> {
+    pub fn get_process_snaps(&mut self, snaps: &mut Vec<SnapProcess>) {
+        for core in &self.idle_task {
+            snaps.push(SnapProcess::from(core));
+        }
+
+        for proc in self.processes.iter() {
+            snaps.push(SnapProcess::from(proc));
+        }
+    }
+}
+
+impl Scheduler<HyperImpl> {
     pub fn get_process_snaps(&mut self, snaps: &mut Vec<SnapProcess>) {
         for core in &self.idle_task {
             snaps.push(SnapProcess::from(core));

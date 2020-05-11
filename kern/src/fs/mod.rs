@@ -10,6 +10,7 @@ use crate::mutex::Mutex;
 
 pub mod handle;
 pub mod sd;
+pub mod service;
 
 #[derive(Clone)]
 pub struct PiVFatHandle(Rc<Mutex<VFat<Self>>>);

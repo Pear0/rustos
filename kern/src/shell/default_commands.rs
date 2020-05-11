@@ -19,7 +19,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, NET, timer};
+use crate::{ALLOCATOR, NET, timer, BootVariant};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
 use crate::fs::sd;
@@ -34,6 +34,10 @@ use crate::smp;
 
 use super::shell::Shell;
 use crate::kernel::KERNEL_SCHEDULER;
+use crate::fs::service::PipeService;
+use crate::fs::handle::{Sink, Source};
+use crate::shell::shortcut::sleep_until_key;
+use crate::hyper::HYPER_SCHEDULER;
 
 mod net;
 
@@ -191,6 +195,29 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .help("connect to running process TTYs.")
         .func_result(|sh, cmd| {
 
+            if cmd.args.len() < 2 {
+                writeln!(sh.writer, "usage: connect <pid>");
+                return Ok(())
+            }
+
+            let pid: u64 = cmd.args[1].parse()?;
+
+            HYPER_SCHEDULER.crit_process(pid, |proc| {
+                if let Some(proc) = proc {
+                    proc.detail.serial = Some((Arc::new(Sink::KernSerial), Arc::new(Source::KernSerial)));
+                    Ok(())
+                } else {
+                    Err("pid not found")
+                }
+            })?;
+
+            sleep_until_key(b'\x03');
+
+            HYPER_SCHEDULER.crit_process(pid, |proc| {
+                if let Some(proc) = proc {
+                    proc.detail.serial = None;
+                }
+            });
 
             Ok(())
         })
@@ -292,7 +319,11 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 table.print_header()?;
 
                 let mut snaps = Vec::new();
-                KERNEL_SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+                if BootVariant::kernel() {
+                    KERNEL_SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+                } else {
+                    HYPER_SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+                }
 
                 snaps.sort_by(|a, b| a.tpidr.cmp(&b.tpidr));
 

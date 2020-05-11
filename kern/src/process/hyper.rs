@@ -37,6 +37,8 @@ pub struct HyperImpl {
     virt_device: Arc<StackedDevice>,
     core_id: usize,
     pub nic: Option<Arc<dyn Physical>>,
+
+    pub serial: Option<(Arc<Sink>, Arc<Source>)>,
 }
 
 fn create_virt_device() -> StackedDevice {
@@ -70,7 +72,8 @@ impl ProcessImpl for HyperImpl {
             local_peripherals: broadcom::LocalPeripheralsImpl::new(),
             virt_device: Arc::new(create_virt_device()),
             core_id: 0,
-            nic: None
+            nic: None,
+            serial: None,
         })
     }
 
@@ -180,6 +183,8 @@ impl Process<HyperImpl> {
 
         // Set SCTLR to known state (A53: 4.3.30)
         proc.context.SCTLR_EL1 = SCTLR_EL1::RES1;
+
+        proc.context.VMPIDR_EL2 = 0; // say we are core 0
 
         proc.context.SP_EL1 = 0x60_000;
 

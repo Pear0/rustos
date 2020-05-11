@@ -1,21 +1,20 @@
+use alloc::boxed::Box;
 use core::fmt;
 
+use aarch64::SCTLR_EL1;
 use pi::uart::MiniUart;
 use shim::io;
 
-use crate::mutex::{Mutex, MutexGuard};
-use crate::smp;
+use crate::{BootVariant, smp};
 use crate::collections::CapacityRingBuffer;
-use aarch64::SCTLR_EL1;
 use crate::fs::handle::{Sink, Source};
+use crate::mutex::{Mutex, MutexGuard};
 
 struct ConsoleImpl {
     send_buffer: CapacityRingBuffer<u8>,
     receive_buffer: CapacityRingBuffer<u8>,
 
-    callback: Option<(u8, fn())>,
-
-    redirect: Option<(Sink, Source)>,
+    callback: Option<(u8, Box<dyn FnMut() -> bool + Send>)>,
 }
 
 impl ConsoleImpl {
@@ -23,12 +22,10 @@ impl ConsoleImpl {
         Self {
             send_buffer: CapacityRingBuffer::new(1000),
             receive_buffer: CapacityRingBuffer::new(1000),
-            callback: Some((0x02, || {
+            callback: Some((0x02, Box::new(|| {
                 info!("pressed Ctrl+B");
-                let mut lock = CONSOLE.lock("callback");
-                lock.ext.as_mut().unwrap().redirect = None;
-            })),
-            redirect: None,
+                true
+            }))),
         }
     }
 }
@@ -76,14 +73,34 @@ impl MutexGuard<'_, Console> {
         if let Some(ext) = &mut self.ext {
             while let Some(byte) = ext.receive_buffer.remove() {
                 if buf.len() == 0 {
-                    return Ok(read)
+                    return Ok(read);
                 }
                 buf[0] = byte;
                 buf = &mut buf[1..];
                 read += 1;
             }
+
+            self.handle_receive();
+
+            let ext = self.ext.as_mut().unwrap();
+
+            while let Some(byte) = ext.receive_buffer.remove() {
+                if buf.len() == 0 {
+                    return Ok(read);
+                }
+                buf[0] = byte;
+                buf = &mut buf[1..];
+                read += 1;
+            }
+
+        } else {
+            read = self.inner().read_nonblocking(buf).expect("MiniUart io::Error");
         }
 
+
+        // if BootVariant::kernel_in_hypervisor() {
+        //     read += self.inner().read_nonblocking(buf).expect("MiniUart io::Error");
+        // }
         Ok(read)
     }
 
@@ -114,21 +131,6 @@ impl MutexGuard<'_, Console> {
         }
     }
 
-    pub fn interrupt_handle(&mut self) {
-        if let None = &self.ext {
-            return;
-        }
-
-        while self.inner().has_byte() {
-            // TODO may drop bytes on ground.
-            let byte = self.inner().read_byte();
-            self.ext.as_mut().unwrap().receive_buffer.insert(byte);
-        }
-
-        self.send_and_update_interrupts();
-
-    }
-
     /// Writes the byte `byte` to the UART device.
     pub fn write_byte(&mut self, byte: u8) {
 
@@ -154,7 +156,11 @@ impl MutexGuard<'_, Console> {
         }
     }
 
-    fn interrupt_handle(&mut self) {
+    fn set_callback(&mut self, callback: Option<(u8, Box<dyn FnMut() -> bool + Send>)>) {
+        self.ext.as_mut().expect("impl not initialized").callback = callback;
+    }
+
+    fn handle_receive(&mut self) {
         if let None = &self.ext {
             return;
         }
@@ -163,18 +169,28 @@ impl MutexGuard<'_, Console> {
             // TODO may drop bytes on ground.
             let byte = self.inner().read_byte();
 
-            if let Some((expected, func)) = self.ext.as_ref().unwrap().callback {
-                if byte == expected {
-                    self.recursion(|| func());
+            if let Some((expected, func)) = &mut self.ext.as_mut().unwrap().callback {
+                if byte == *expected {
+                    let dont_remove = func();
+                    if !dont_remove {
+                        self.ext.as_mut().unwrap().callback.take();
+                    }
+
                     continue 'read;
                 }
             }
 
             self.ext.as_mut().unwrap().receive_buffer.insert(byte);
         }
+    }
 
+    fn interrupt_handle(&mut self) {
+        if let None = &self.ext {
+            return;
+        }
+
+        self.handle_receive();
         self.send_and_update_interrupts();
-
     }
 }
 
@@ -238,25 +254,32 @@ pub fn console_flush() {
     });
 }
 
+pub fn console_set_callback(callback: Option<(u8, Box<dyn FnMut() -> bool + Send>)>) {
+    smp::no_interrupt(|| {
+        let mut lock = CONSOLE.lock("console_set_callback");
+        lock.set_callback(callback);
+    });
+}
+
 
 /// Internal function called by the `kprint[ln]!` macros.
 #[doc(hidden)]
 #[no_mangle]
 pub fn _print(args: fmt::Arguments) {
     #[cfg(not(test))]
-    {
-        use core::fmt::Write;
-        smp::no_interrupt(|| {
-            let mut console = CONSOLE.lock("_print");
-            // let mut console = unsafe { CONSOLE.unsafe_leak() };
-            console.write_fmt(args).unwrap();
-        });
-    }
+        {
+            use core::fmt::Write;
+            smp::no_interrupt(|| {
+                let mut console = CONSOLE.lock("_print");
+                // let mut console = unsafe { CONSOLE.unsafe_leak() };
+                console.write_fmt(args).unwrap();
+            });
+        }
 
     #[cfg(test)]
-    {
-        print!("{}", args);
-    }
+        {
+            print!("{}", args);
+        }
 }
 
 /// Like `println!`, but for kernel-space.

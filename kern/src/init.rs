@@ -116,8 +116,10 @@ pub unsafe fn switch_to_el1() {
         ELR_EL2.set(switch_to_el1 as u64);
         // ELR_EL1.set(switch_to_el1 as u64);
 
-        // We moved from EL2 to EL1 ourselves so we are not in a hypervisor.
-        EL1_IN_HYPERVISOR.store(false, Ordering::Relaxed);
+        if MPIDR_EL1.get_value(MPIDR_EL1::Aff0) == 0 {
+            // We moved from EL2 to EL1 ourselves so we are not in a hypervisor.
+            EL1_IN_HYPERVISOR.store(false, Ordering::Relaxed);
+        }
 
         aarch64::eret();
     }
@@ -125,7 +127,7 @@ pub unsafe fn switch_to_el1() {
 
 #[no_mangle]
 #[inline(never)]
-unsafe fn el1_init() {
+pub unsafe fn el1_init() {
     if current_el() != 1 {
         return;
     }
@@ -140,13 +142,15 @@ unsafe fn el1_init() {
 
     DAIF.set(DAIF::D | DAIF::A | DAIF::I | DAIF::F);
 
-    SAFE_ALLOC_START.store((&__text_end) as *const u64 as u64, Ordering::Relaxed);
+    if MPIDR_EL1.get_value(MPIDR_EL1::Aff0) == 0 {
+        SAFE_ALLOC_START.store((&__text_end) as *const u64 as u64, Ordering::Relaxed);
+    }
     aarch64::dmb();
 }
 
 #[no_mangle]
 #[inline(never)]
-unsafe fn el2_init() {
+pub unsafe fn el2_init() {
     if current_el() != 2 {
         return;
     }
@@ -161,20 +165,22 @@ unsafe fn el2_init() {
     // set up exception handlers
     VBAR_EL2.set((&hyper_vectors) as *const u64 as u64);
 
-    // Make a copy of all the code and data very early before and variables
-    // in the data section are touched.
+    if MPIDR_EL1.get_value(MPIDR_EL1::Aff0) == 0 {
+        // Make a copy of all the code and data very early before and variables
+        // in the data section are touched.
 
-    let text_beg = (&__text_beg) as *const u64 as u64;
-    let text_end = (&__text_end) as *const u64 as u64;
-    let text_len = text_end - text_beg;
+        let text_beg = (&__text_beg) as *const u64 as u64;
+        let text_end = (&__text_end) as *const u64 as u64;
+        let text_len = text_end - text_beg;
 
-    core::ptr::copy_nonoverlapping(text_beg as *const u8, text_end as *mut u8, text_len as usize);
+        core::ptr::copy_nonoverlapping(text_beg as *const u8, text_end as *mut u8, text_len as usize);
 
-    aarch64::dsb();
+        aarch64::dsb();
 
-    EL2_KERNEL_INIT.store(text_end, Ordering::Relaxed);
-    EL2_KERNEL_INIT_LEN.store(text_len, Ordering::Relaxed);
-    SAFE_ALLOC_START.store(text_end + text_len, Ordering::Relaxed);
+        EL2_KERNEL_INIT.store(text_end, Ordering::Relaxed);
+        EL2_KERNEL_INIT_LEN.store(text_len, Ordering::Relaxed);
+        SAFE_ALLOC_START.store(text_end + text_len, Ordering::Relaxed);
+    }
 
     aarch64::dmb();
 }
@@ -185,7 +191,7 @@ unsafe fn kinit() -> ! {
     switch_to_el2();
 
     // for now, always boot hypervisor
-    if current_el() == 2 && false {
+    if current_el() == 2 {
         el2_init();
         kmain(true);
     } else {
