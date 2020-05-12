@@ -76,6 +76,8 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
 #[no_mangle]
 pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTrapFrame) {
 
+    let exc_start = unsafe { aarch64::CNTPCT_EL0.get() };
+
     if IRQ_RECURSION_DEPTH.get() != 0 {
         kprintln!("Recursive IRQ: {:?}", info);
         shell::shell("#>");
@@ -141,11 +143,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     if is_access_flag {
                         HYPER_SCHEDULER.crit_process(tf.TPIDR_EL2, |p| {
                             if let Some(p) = p {
-                                // won't work once guest enables virtualization.
-
                                 p.on_access_fault(esr, VirtualAddr::from(aarch64::far_ipa()), tf);
-
-                                // p.vmap.table.mark_accessed(VirtualAddr::from(unsafe { FAR_EL2.get() } & PAGE_MASK as u64));
                             }
                         });
                     } else if let Syndrome::DataAbort(_) = s {
@@ -208,6 +206,11 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
     }
 
     IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
+
+    // update offset register to somewhat hide irq time from guest.
+    let exc_end = unsafe { aarch64::CNTPCT_EL0.get() };
+    tf.CNTVOFF_EL2 += exc_end - exc_start;
+
 }
 
 

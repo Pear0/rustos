@@ -13,6 +13,7 @@ use crate::sync::Waitable;
 pub enum Source {
     KernSerial,
     Buffer(buffer::BufferHandle),
+    Nil,
 }
 
 impl SyncRead for Source {
@@ -28,6 +29,7 @@ impl SyncRead for Source {
             Source::Buffer(b) => {
                 b.read(buf).map_err(|e| e.into_io_err())
             }
+            Source::Nil => Ok(0),
         }
     }
 }
@@ -45,6 +47,7 @@ impl sync::Waitable for Source {
                 use sync::Waitable;
                 buffer::ReadWaitable(b.clone()).done_waiting()
             }
+            Source::Nil => false,
         }
     }
 
@@ -52,6 +55,7 @@ impl sync::Waitable for Source {
         match self {
             Source::KernSerial => "Source::KernSerial",
             Source::Buffer(_) => "Source::Buffer",
+            Source::Nil => "Source::Nil",
         }
     }
 }
@@ -61,6 +65,7 @@ impl sync::Waitable for Source {
 pub enum Sink {
     KernSerial,
     Buffer(buffer::BufferHandle),
+    Nil,
 }
 
 impl Sink {
@@ -68,6 +73,7 @@ impl Sink {
         match self {
             Sink::KernSerial => None,
             Sink::Buffer(b) => Some(b.free_capacity()),
+            Sink::Nil => None,
         }
     }
 }
@@ -85,6 +91,7 @@ impl SyncWrite for Sink {
             Sink::Buffer(b) => {
                 b.write(buf).map_err(|e| e.into_io_err())
             }
+            Sink::Nil => Ok(buf.len()),
         }
     }
 }
@@ -97,6 +104,7 @@ impl sync::Waitable for Sink {
                 use sync::Waitable;
                 buffer::WriteWaitable(b.clone()).done_waiting()
             }
+            Sink::Nil => true,
         }
     }
 
@@ -104,6 +112,7 @@ impl sync::Waitable for Sink {
         match self {
             Sink::KernSerial => "Sink::KernSerial",
             Sink::Buffer(_) => "Sink::Buffer",
+            Sink::Nil => "Sink::Nil",
         }
     }
 }

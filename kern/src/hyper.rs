@@ -162,7 +162,8 @@ pub fn hyper_main() -> ! {
     }
 
     {
-        let p = HyperProcess::load_self().expect("failed to find bin");
+        let mut p = HyperProcess::load_self().expect("failed to find bin");
+        p.affinity.set_only(0);
         let id = HYPER_SCHEDULER.add(p);
         info!("kernel id: {:?}", id);
     }

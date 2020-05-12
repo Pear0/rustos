@@ -73,7 +73,7 @@ impl ProcessImpl for HyperImpl {
             virt_device: Arc::new(create_virt_device()),
             core_id: 0,
             nic: None,
-            serial: None,
+            serial: Some((Arc::new(Sink::KernSerial), Arc::new(Source::Nil))),
         })
     }
 
@@ -294,11 +294,11 @@ impl Process<HyperImpl> {
                 use aarch64::regs::*;
                 use crate::traps::syndrome::Syndrome;
 
-                kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.ELR_EL2);
+                trace!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.ELR_EL2);
 
-                kprintln!("    FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
-                kprintln!("    EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
-                kprintln!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.SPSR_EL2);
+                trace!("    FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
+                trace!("    EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
+                trace!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.SPSR_EL2);
 
                 self.vmap.table.mark_accessed(VirtualAddr::from(addr.as_u64() & PAGE_MASK as u64));
             }
@@ -310,11 +310,11 @@ impl Process<HyperImpl> {
                         use aarch64::regs::*;
                         use crate::traps::syndrome::Syndrome;
 
-                        kprintln!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.ELR_EL2);
+                        trace!("access flag: ipa={:#x?} FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x} @ elr = {:#x}", addr, unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() }, tf.ELR_EL2);
 
-                        kprintln!("    FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
-                        kprintln!("    EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
-                        kprintln!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.SPSR_EL2);
+                        trace!("    FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
+                        trace!("    EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
+                        trace!("    SP: {:#x}, ELR_EL1: {:#x}, SPSR: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() }, tf.SPSR_EL2);
 
                         pi::timer::spin_sleep(Duration::from_secs(5));
                         return;
