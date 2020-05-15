@@ -87,6 +87,8 @@ pub trait ProcessImpl: Sized {
     fn create_idle_processes(count: usize) -> Vec<Process<Self>>;
 
     fn on_process_killed(proc: &mut Process<Self>) {}
+
+    fn dump<W: io::Write>(w: &mut W, proc: &Process<Self>) {}
 }
 
 /// A structure that represents the complete state of a process.
@@ -168,6 +170,8 @@ impl<T: ProcessImpl> Process<T> {
         // for (va, pa) in self.vmap.table.iter_mapped_pages() {
         //     writeln!(w, "  {:x?} -> {:x?}", va, pa);
         // }
+
+        T::dump(w, self);
 
         Ok(())
     }

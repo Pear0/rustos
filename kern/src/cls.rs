@@ -1,17 +1,27 @@
 use core::ops::Deref;
 use core::cell::Cell;
 use aarch64::MPIDR_EL1;
+use crate::mutex::{MutexGuard, Mutex};
+use crate::iosync::Global;
 
 const CORE_COUNT: usize = 4;
 
-pub struct CoreLocal<T>([Cell<T>; CORE_COUNT]);
+pub struct CoreLocal<T>([T; CORE_COUNT]);
 
 // nothing is actually shared
 unsafe impl<T> Sync for CoreLocal<T> {}
 
 impl<T> CoreLocal<T> {
     pub fn new_func<F: Fn() -> T>(init: F) -> Self {
-        CoreLocal([Cell::new(init()), Cell::new(init()), Cell::new(init()), Cell::new(init())])
+        CoreLocal([init(), init(), init(), init()])
+    }
+
+    pub const fn new_global(init: fn() -> T) -> CoreLocal<Global<T>> {
+        CoreLocal([Global::new(init), Global::new(init), Global::new(init), Global::new(init)])
+    }
+
+    pub fn cross(&self, core: usize) -> &T {
+        &self.0[core]
     }
 }
 
@@ -23,6 +33,12 @@ impl<T: Clone> CoreLocal<T> {
 
 impl<T: Copy> CoreLocal<T> {
     pub const fn new_copy(init: T) -> Self {
+        CoreLocal([init; CORE_COUNT])
+    }
+}
+
+impl<T: Copy> CoreLocal<Cell<T>> {
+    pub const fn new_cell(init: T) -> Self {
         CoreLocal([Cell::new(init), Cell::new(init), Cell::new(init), Cell::new(init)])
     }
 }
@@ -34,12 +50,56 @@ impl<T: Default> Default for CoreLocal<T> {
 }
 
 impl<T> Deref for CoreLocal<T>  {
-    type Target = Cell<T>;
+    type Target = T;
 
     fn deref(&self) -> &Self::Target {
         let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
         &self.0[core_id]
     }
 }
+
+
+pub struct CoreMutex<T>([Mutex<T>; CORE_COUNT]);
+
+// nothing is actually shared
+unsafe impl<T> Sync for CoreMutex<T> {}
+
+impl<T> CoreMutex<T> {
+    pub fn new_func<F: Fn() -> T>(init: F) -> Self {
+        CoreMutex([mutex_new!(init()), mutex_new!(init()), mutex_new!(init()), mutex_new!(init())])
+    }
+
+    pub fn cross(&self, core: usize) -> &Mutex<T> {
+        &self.0[core]
+    }
+}
+
+impl<T: Clone> CoreMutex<T> {
+    pub fn new(init: T) -> Self {
+        Self::new_func(|| init.clone())
+    }
+}
+
+impl<T: Copy> CoreMutex<T> {
+    pub const fn new_copy(init: T) -> Self {
+        CoreMutex([mutex_new!(init), mutex_new!(init), mutex_new!(init), mutex_new!(init)])
+    }
+}
+
+impl<T: Default> Default for CoreMutex<T> {
+    fn default() -> Self {
+        Self::new_func(|| T::default())
+    }
+}
+
+impl<T> Deref for CoreMutex<T>  {
+    type Target = Mutex<T>;
+
+    fn deref(&self) -> &Self::Target {
+        let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
+        &self.0[core_id]
+    }
+}
+
 
 

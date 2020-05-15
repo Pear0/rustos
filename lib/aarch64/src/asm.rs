@@ -47,6 +47,12 @@ pub fn sev() {
     unsafe { asm!("sev" ::::"volatile") };
 }
 
+/// Set Event Local
+#[inline(always)]
+pub fn sevl() {
+    unsafe { asm!("sevl" ::::"volatile") };
+}
+
 /// Enable (unmask) interrupts
 #[inline(always)]
 pub unsafe fn sti() {

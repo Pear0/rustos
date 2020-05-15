@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cmp::min;
 use core::ops::DerefMut;
 use core::time::Duration;
 
@@ -19,25 +20,26 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, NET, timer, BootVariant};
+use crate::{ALLOCATOR, BootVariant, NET, timer};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
+use crate::fs::handle::{Sink, Source};
 use crate::fs::sd;
+use crate::fs::service::PipeService;
+use crate::hyper::HYPER_SCHEDULER;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::kernel::KERNEL_IRQ;
+use crate::kernel::KERNEL_SCHEDULER;
 use crate::net::arp::ArpResolver;
 use crate::pigrate::bundle::ProcessBundle;
 use crate::pigrate_server::{pigrate_server, register_pigrate};
 use crate::process::Process;
 use crate::shell::command::{Command, CommandBuilder};
+use crate::shell::shortcut::sleep_until_key;
 use crate::smp;
+use crate::traps::coreinfo::exc_ratio;
 
 use super::shell::Shell;
-use crate::kernel::KERNEL_SCHEDULER;
-use crate::fs::service::PipeService;
-use crate::fs::handle::{Sink, Source};
-use crate::shell::shortcut::sleep_until_key;
-use crate::hyper::HYPER_SCHEDULER;
 
 mod net;
 
@@ -194,10 +196,9 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .name("connect")
         .help("connect to running process TTYs.")
         .func_result(|sh, cmd| {
-
             if cmd.args.len() < 2 {
                 writeln!(sh.writer, "usage: connect <pid>");
-                return Ok(())
+                return Ok(());
             }
 
             let pid: u64 = cmd.args[1].parse()?;
@@ -297,13 +298,65 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
+        .name("cores")
+        .func_result(|sh, _cmd| {
+            writeln!(&mut sh.writer, "Cores:")?;
+
+            let exc_ratios = exc_ratio();
+
+            for i in 0..4 {
+                let info = &exc_ratios[i];
+                let usage = info.0.get_average();
+                writeln!(&mut sh.writer, "Core {}: {}.{}%", i, usage / 10, usage % 10)?;
+
+                for j in 0..min(info.1.len(), 20) {
+                    writeln!(&mut sh.writer, "  {:x?}: {:?}", info.1[j].0, info.1[j].1)?;
+                }
+
+                writeln!(&mut sh.writer, "");
+            }
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
         .name("proc2")
         .help("print processes in a table")
         .func_result(|sh, cmd| {
-
             let mut repeat: bool = false;
             if let Some(arg) = cmd.args.get(1) {
                 repeat = *arg == "-w";
+            }
+
+            if !repeat && cmd.args.len() == 2 {
+                let id = cmd.args[1].parse()?;
+
+                if BootVariant::kernel() {
+                    KERNEL_SCHEDULER.crit_process(id, |proc| {
+                        match proc {
+                            Some(proc) => {
+                                proc.dump(&mut sh.writer);
+                            }
+                            None => {
+                                writeln!(sh.writer, "no process found for id");
+                            }
+                        }
+                    });
+                } else {
+                    HYPER_SCHEDULER.crit_process(id, |proc| {
+                        match proc {
+                            Some(proc) => {
+                                proc.dump(&mut sh.writer);
+                            }
+                            None => {
+                                writeln!(sh.writer, "no process found for id");
+                            }
+                        }
+                    });
+                }
+
+                return Ok(());
             }
 
             let cols = [
@@ -352,7 +405,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                     break;
                 }
 
-                write!(sh.writer, "\x1b[{}F", snaps.len()+1)?;
+                write!(sh.writer, "\x1b[{}F", snaps.len() + 1)?;
             }
 
             Ok(())
@@ -363,7 +416,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .name("color-test")
         .help("print small ANSI color grid")
         .func_result(|sh, cmd| {
-
             for i in 0..11 {
                 for j in 0..10 {
                     let n = 10 * i + j;

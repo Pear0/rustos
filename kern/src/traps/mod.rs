@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use aarch64::MPIDR_EL1;
+use ::core::cell::Cell;
 use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
 use crate::{debug, shell, smp};
@@ -14,6 +15,7 @@ use self::syndrome::Fault;
 use self::syndrome::Syndrome;
 use self::syscall::handle_syscall;
 
+pub mod coreinfo;
 mod frame;
 mod hyper;
 mod hypercall;
@@ -51,10 +53,10 @@ pub struct Info {
     kind: Kind,
 }
 
-pub static IRQ_RECURSION_DEPTH: CoreLocal<i32> = CoreLocal::new_copy(0);
-pub static IRQ_ESR: CoreLocal<u32> = CoreLocal::new_copy(0xFF_FF_FF_FF);
-pub static IRQ_EL: CoreLocal<u64> = CoreLocal::new_copy(0xFF_FF_FF_FF);
-pub static IRQ_INFO: CoreLocal<Info> = CoreLocal::new_copy(Info { kind: Kind::None, source: Source::CurrentSpEl0 });
+pub static IRQ_RECURSION_DEPTH: CoreLocal<Cell<i32>> = CoreLocal::new_cell(0);
+pub static IRQ_ESR: CoreLocal<Cell<u32>> = CoreLocal::new_cell(0xFF_FF_FF_FF);
+pub static IRQ_EL: CoreLocal<Cell<u64>> = CoreLocal::new_cell(0xFF_FF_FF_FF);
+pub static IRQ_INFO: CoreLocal<Cell<Info>> = CoreLocal::new_cell(Info { kind: Kind::None, source: Source::CurrentSpEl0 });
 
 pub fn irq_depth() -> i32 {
     IRQ_RECURSION_DEPTH.get()

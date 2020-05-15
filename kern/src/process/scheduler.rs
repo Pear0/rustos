@@ -32,8 +32,8 @@ fn reset_timer() {
     use aarch64::regs::*;
 
     match BootVariant::get_variant() {
-        BootVariant::Kernel => unsafe { CNTV_TVAL_EL0.set(1000000) },
-        BootVariant::Hypervisor => { unsafe { CNTHP_TVAL_EL2.set(100000) } },
+        BootVariant::Kernel => unsafe { CNTV_TVAL_EL0.set(100000) },
+        BootVariant::Hypervisor => { unsafe { CNTHP_TVAL_EL2.set(100000 * 2) } },
         _ => panic!("somehow got unknown boot variant"),
     }
 }

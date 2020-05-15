@@ -1,5 +1,6 @@
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -9,7 +10,7 @@ use core::time::Duration;
 
 use kernel_api::{OsError, OsResult};
 
-use aarch64::{HCR_EL2, SPSR_EL1, SPSR_EL2, SCTLR_EL1};
+use aarch64::{HCR_EL2, SCTLR_EL1, SPSR_EL1, SPSR_EL2};
 use pigrate_core::bundle::MemoryBundle;
 use pigrate_core::bundle::ProcessBundle;
 use shim::io;
@@ -28,8 +29,10 @@ use crate::process::fd::FileDescriptor;
 use crate::sync::Completion;
 use crate::traps::{Frame, HyperTrapFrame, KernelTrapFrame};
 use crate::virtualization::{AccessSize, broadcom, DataAccess, HwPassthroughDevice, IrqController, StackedDevice, VirtDevice};
+use crate::virtualization::nic::{RevVirtualNIC, VirtualNIC};
 use crate::vm::{GuestPageTable, VirtualAddr, VirtualizationPageTable};
-use crate::virtualization::nic::{VirtualNIC, RevVirtualNIC};
+
+const USE_WFE_IDLE: bool = false;
 
 pub struct HyperImpl {
     pub irqs: IrqController,
@@ -39,6 +42,8 @@ pub struct HyperImpl {
     pub nic: Option<Arc<dyn Physical>>,
 
     pub serial: Option<(Arc<Sink>, Arc<Source>)>,
+
+    perf_lrs: BTreeMap<u64, usize>,
 }
 
 fn create_virt_device() -> StackedDevice {
@@ -74,6 +79,7 @@ impl ProcessImpl for HyperImpl {
             core_id: 0,
             nic: None,
             serial: Some((Arc::new(Sink::KernSerial), Arc::new(Source::Nil))),
+            perf_lrs: BTreeMap::new(),
         })
     }
 
@@ -84,15 +90,45 @@ impl ProcessImpl for HyperImpl {
             let name = format!("idle_task{}", i);
             let proc = Process::<Self>::hyper_process_old(name, || {
                 loop {
-                    aarch64::wfe();
-                    // trigger context switch immediately after WFE so we dont take a full
-                    // scheduler slice.
-                    kernel_api::syscall::sched_yield();
+                    if USE_WFE_IDLE {
+                        // this sequence is required because the Cortex-A53 does not clear the
+                        // event register on wake-up.
+                        // See: https://developer.arm.com/docs/103489537/latest/why-do-different-cores-behave-differently-when-executing-a-wfe-instruction
+                        aarch64::sevl();
+                        aarch64::wfe();
+                        aarch64::wfe();
+                        // trigger context switch immediately after WFE so we dont take a full
+                        // scheduler slice.
+                        kernel_api::syscall::sched_yield();
+                    } else {
+                        aarch64::wfi();
+                    }
                 }
             }).expect("failed to create idle task");
             idle_tasks.push(proc);
         }
         idle_tasks
+    }
+
+    fn dump<W: io::Write>(w: &mut W, proc: &Process<Self>) {
+
+        let mut pairs = Vec::new();
+
+        for (k, v) in proc.detail.perf_lrs.iter() {
+            pairs.push((*k, *v));
+        }
+
+        // sort by descending count.
+        pairs.sort_by_key(|(k, v)| usize::max_value() - *v);
+
+        writeln!(w, "Most common lr:").ok();
+
+        for i in 0..core::cmp::min(30, pairs.len()) {
+            let (addr, count) = pairs[i];
+            writeln!(w, "{:#x}: {}", addr, count).ok();
+        }
+
+
     }
 }
 
@@ -190,8 +226,6 @@ impl Process<HyperImpl> {
 
         // we don't want an exception in EL1 to try and use SP0 stack.
         proc.context.SPSR_EL1 = SPSR_EL1::M & 0b0101;
-
-
     }
 
     pub fn load_self() -> OsResult<Self> {
@@ -273,8 +307,14 @@ impl Process<HyperImpl> {
         Ok(proc)
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, is_timer: bool) {
         use crate::virtualization::VirtDevice;
+
+        if is_timer {
+            let lr = self.context.ELR_EL2;
+            let count = self.detail.perf_lrs.get(&lr).map(|x| *x).unwrap_or(0);
+            self.detail.perf_lrs.insert(lr, count + 1);
+        }
 
         let device = self.detail.virt_device.clone();
         device.update(self);

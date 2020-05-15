@@ -11,6 +11,8 @@ use crate::traps::syscall::handle_syscall;
 use crate::hyper::{HYPER_IRQ, HYPER_SCHEDULER};
 use crate::vm::VirtualAddr;
 use crate::traps::hypercall::{handle_hyper_syscall, handle_hypercall};
+use crate::traps::coreinfo::{exc_enter, exc_exit, ExceptionType, exc_record_time};
+use crate::param::PAGE_MASK;
 
 #[derive(Debug)]
 enum IrqVariant {
@@ -77,6 +79,9 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
 pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTrapFrame) {
 
     let exc_start = unsafe { aarch64::CNTPCT_EL0.get() };
+    let time_start = pi::timer::current_time();
+    let mut exc_type = ExceptionType::Unknown;
+    exc_enter();
 
     if IRQ_RECURSION_DEPTH.get() != 0 {
         kprintln!("Recursive IRQ: {:?}", info);
@@ -100,6 +105,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
             //     kprintln!("SP: {:#x}, ELR_EL1: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() });
             // }
 
+            exc_type = ExceptionType::Irq;
             handle_irqs(tf);
         }
         Kind::Synchronous => {
@@ -143,7 +149,9 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     if is_access_flag {
                         HYPER_SCHEDULER.crit_process(tf.TPIDR_EL2, |p| {
                             if let Some(p) = p {
-                                p.on_access_fault(esr, VirtualAddr::from(aarch64::far_ipa()), tf);
+                                let addr = aarch64::far_ipa();
+                                exc_type = ExceptionType::DataAccess(addr & !(0x1000 - 1));
+                                p.on_access_fault(esr, VirtualAddr::from(addr), tf);
                             }
                         });
                     } else if let Syndrome::DataAbort(_) = s {
@@ -190,7 +198,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                 if let Some(p) = p {
                     // give process a chance to update any virtualized components.
                     *p.context = *tf;
-                    p.update();
+                    p.update(info.kind == Kind::Irq);
                     *tf = *p.context;
                 }
             });
@@ -206,6 +214,10 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
     }
 
     IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
+
+    let time_end = pi::timer::current_time();
+    exc_record_time(exc_type, time_end - time_start);
+    exc_exit();
 
     // update offset register to somewhat hide irq time from guest.
     let exc_end = unsafe { aarch64::CNTPCT_EL0.get() };
