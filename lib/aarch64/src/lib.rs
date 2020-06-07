@@ -1,4 +1,4 @@
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(global_asm)]
 
 #![cfg_attr(not(test), no_std)]
@@ -59,7 +59,7 @@ pub fn far_ipa() -> u64 {
 pub fn clean_data_cache(addr: u64) {
     dsb();
     unsafe {
-        asm!("dc cvac, $0
+        llvm_asm!("dc cvac, $0
               dsb ish
              " :: "r"(addr) :: "volatile");
     }
@@ -78,10 +78,10 @@ pub fn clean_data_cache_region(mut addr: u64, length: u64) {
         addr &= !(64 - 1);
 
         for i in (addr..end).step_by(64) {
-            asm!("dc cvac, $0" :: "r"(i) :: "volatile");
+            llvm_asm!("dc cvac, $0" :: "r"(i) :: "volatile");
         }
 
-        asm!("dsb ish" :::: "volatile");
+        llvm_asm!("dsb ish" :::: "volatile");
     }
 }
 

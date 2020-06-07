@@ -18,6 +18,7 @@ use crate::process::snap::SnapProcess;
 use crate::process::state::RunContext;
 use crate::traps::{KernelTrapFrame, Frame, HyperTrapFrame};
 use crate::process::process::ProcessImpl;
+use crate::hyper::HYPER_TIMER;
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler<T: ProcessImpl>(Mutex<Option<Scheduler<T>>>);
@@ -121,7 +122,7 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         // kprintln!("old_sp: {}", old_sp);
 
         unsafe {
-            asm!("  mov x28, $0
+            llvm_asm!("  mov x28, $0
                     mov x29, $1
                     mov sp, x28
                     bl kernel_context_restore
@@ -195,13 +196,11 @@ impl GlobalScheduler<HyperImpl> {
             lock.replace(Scheduler::new());
         }
 
-        let core = crate::smp::core();
-        HYPER_IRQ.register_core(core, CoreInterrupt::CNTHPIRQ, Box::new(|tf| {
-            HYPER_SCHEDULER.switch(State::Ready, tf);
-
-            // somewhat redundant, .switch() is suppose to do this.
-            reset_timer();
-        }));
+        HYPER_TIMER.critical(|timer| {
+            timer.add(100000 * 2, Box::new(|ctx| {
+                HYPER_SCHEDULER.switch(State::Ready, ctx.data);
+            }));
+        });
     }
 
     pub fn bootstrap_hyper(&self) -> ! {
@@ -214,7 +213,7 @@ impl GlobalScheduler<HyperImpl> {
         // kprintln!("old_sp: {}", old_sp);
 
         unsafe {
-            asm!("  mov x28, $0
+            llvm_asm!("  mov x28, $0
                     mov x29, $1
                     mov sp, x28
                     bl hyper_context_restore
@@ -459,7 +458,7 @@ pub extern "C" fn test_user_process() -> ! {
         let elapsed_ms: u64;
 
         unsafe {
-            asm!("mov x0, $2
+            llvm_asm!("mov x0, $2
               brk 7
               svc 1
               mov $0, x0

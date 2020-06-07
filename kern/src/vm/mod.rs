@@ -20,12 +20,12 @@ static FOO: AtomicU64 = AtomicU64::new(0);
 fn flush_tlbs() {
     unsafe {
         if BootVariant::kernel() {
-            asm!("dsb     sy
+            llvm_asm!("dsb     sy
                   tlbi    vmalle1is
                   dsb     sy
                   isb" ::: "memory" : "volatile");
         } else {
-            asm!("dsb     sy
+            llvm_asm!("dsb     sy
                   tlbi    alle2is
                   tlbi    vmalls12e1is
                   dsb     sy
@@ -125,14 +125,14 @@ impl VMManager {
             TTBR0_EL1.set(baddr);
             TTBR1_EL1.set(baddr);
 
-            asm!("dsb ish");
+            llvm_asm!("dsb ish");
             isb();
 
             trace!("about to enable mmu");
             SCTLR_EL1.set(SCTLR_EL1.get() | SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M);
             trace!("enabled mmu");
 
-            asm!("dsb sy");
+            llvm_asm!("dsb sy");
             isb();
 
             flush_tlbs();
@@ -191,14 +191,14 @@ impl VMManager {
 
             VTTBR_EL2.set(baddr);
 
-            asm!("dsb ish");
+            llvm_asm!("dsb ish");
             isb();
 
             SCTLR_EL2.set(SCTLR_EL2.get() | SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M);
 
             HCR_EL2.set(HCR_EL2.get() | HCR_EL2::VM);
 
-            asm!("dsb sy");
+            llvm_asm!("dsb sy");
             isb();
 
             flush_tlbs();

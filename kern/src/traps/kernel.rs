@@ -1,16 +1,17 @@
 use alloc::vec::Vec;
+use core::time::Duration;
 
 use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
 use crate::{debug, shell, smp};
 use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
+use crate::param::{PAGE_MASK, PAGE_SIZE, USER_IMG_BASE};
 use crate::process::State;
 use crate::traps::{Info, IRQ_EL, IRQ_ESR, IRQ_INFO, IRQ_RECURSION_DEPTH, KernelTrapFrame, Kind};
 use crate::traps::Kind::Synchronous;
 use crate::traps::syndrome::Syndrome;
 use crate::traps::syscall::handle_syscall;
 use crate::vm::VirtualAddr;
-use crate::param::{PAGE_MASK, PAGE_SIZE, USER_IMG_BASE};
 
 #[derive(Debug)]
 enum IrqVariant {
@@ -24,8 +25,10 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
     // Invoke any handlers
 
     let mut pending: Option<IrqVariant> = None;
+    let mut diffs = [Duration::from_secs(0); 20];
+    let mut start = pi::timer::current_time();
 
-    for _ in 0..20 {
+    for i in 0..20 {
         let mut any_pending = false;
         pending = None;
         for int in Interrupt::iter() {
@@ -50,9 +53,34 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
         if !any_pending {
             return;
         }
+
+        for _ in 0..5 {
+            pi::timer::current_time();
+        }
+
+        let now = pi::timer::current_time();
+        diffs[i] = now - start;
+        start = now;
     }
 
-    kprintln!("irq stuck pending! -> {:?}", pending);
+    kprintln!("irq stuck pending! -> {:?} @ {:?} per loop", pending, diffs);
+
+    // {
+    //     let mut diffs = [Duration::from_secs(0); 20];
+    //     let mut start = pi::timer::current_time();
+    //
+    //     for i in 0..20 {
+    //         for _ in 0..i {
+    //             pi::timer::current_time();
+    //         }
+    //
+    //         let now = pi::timer::current_time();
+    //         diffs[i] = now - start;
+    //         start = now;
+    //     }
+    //
+    //     kprintln!("foo: {:?}", diffs);
+    // }
 
     debug_shell(tf);
 }
@@ -97,7 +125,6 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
                     debug_shell(tf);
                 }
                 s => {
-
                     error!("F {:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.ELR_EL1);
 
                     // KERNEL_SCHEDULER.crit_process(tf.TPIDR_EL0, |proc| {

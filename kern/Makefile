@@ -2,15 +2,16 @@ ROOT := $(shell git rev-parse --show-toplevel)
 
 KERN := kernel
 TARGET := target/aarch64-unknown-none/release/${KERN}
-SDCARD ?= $(ROOT)/ext/fat32-imgs/hyper.img
-# SDCARD ?= $(ROOT)/user/fs.img
+# SDCARD ?= $(ROOT)/ext/fat32-imgs/hyper.img
+SDCARD ?= kern-image/kern.img
 OBJCPY := $(HOME)/.cargo/bin/rust-objcopy --strip-all -O binary
 TTY_PATH ?= $(shell find /dev -name 'ttyUSB*' -or -name 'cu.usbserial-14*' -maxdepth 1 2>/dev/null | head -n 1)
 QEMU_ARGS ?=
 QEMU_GUI_ARGS ?= -display cocoa
+TRACE_FILE ?= kernel_trace.log
 # -net nic,model=virtio -smp 4
 
-.PHONY: all build qemu transmit objdump nm check clean install test
+.PHONY: all build qemu transmit objdump nm check clean install test img_build
 
 all: build
 
@@ -26,8 +27,16 @@ build:
 check:
 	@cargo xcheck
 
-qemu: build
+img_build: build
+	cp build/$(KERN).elf kern-image/root/
+	cp build/$(KERN).bin kern-image/root/
+	kern-image/build-image.sh
+
+qemu: img_build
 	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS)
+
+qemu-trace: build
+	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd -trace enable=guest_mem_before_exec,file=$(TRACE_FILE) $(QEMU_ARGS)
 
 qemu-gui: build
 	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS) $(QEMU_GUI_ARGS)

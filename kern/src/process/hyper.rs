@@ -57,11 +57,16 @@ fn create_virt_device() -> StackedDevice {
 
     dev.add(Box::new(HwPassthroughDevice::new(0x3f98_0000, 0x1_0000))); // USB pass through
 
-    dev.add(Box::new(broadcom::MiniUart::new()));
+
     dev.add(Box::new(broadcom::Interrupts::new()));
-    dev.add(Box::new(broadcom::SystemTimer::new()));
+
 
     dev.add(Box::new(broadcom::LocalPeripherals::new())); // core local timers
+
+    // dev.add(Box::new(broadcom::SystemTimer::new()));
+    dev.add(Box::new(HwPassthroughDevice::new(0x3F00_3000, 0x1000))); // Timer
+
+    dev.add(Box::new(broadcom::MiniUart::new()));
 
     dev
 }

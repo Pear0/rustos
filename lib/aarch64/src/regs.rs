@@ -315,6 +315,7 @@ defreg!(CNTHP_CTL_EL2, [
 
 defreg!(CNTHP_CVAL_EL2);
 defreg!(CNTHP_TVAL_EL2);
+defreg!(CNTFRQ_EL0);
 
 
 // (ref. D7.2.73 Main ID Register)
@@ -346,3 +347,10 @@ defreg!(MDCR_EL2, [
 
 defreg!(ID_AA64PFR0_EL1);
 defreg!(ID_AA64MMFR1_EL1);
+
+// (ref. D7.2.64  Interrupt Status Register)
+defreg!(ISR_EL1, [
+    A [8-8],
+    I [7-7], // IRQ pending
+    F [6-6],
+]);

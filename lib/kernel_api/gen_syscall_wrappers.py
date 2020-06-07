@@ -27,7 +27,7 @@ def emit_func(has_err, num_outputs):
         if has_err:
             offset += 1
 
-        print('        asm!(')
+        print('        llvm_asm!(')
         print('            "svc ${}"'.format(offset))
 
         suffix = ''

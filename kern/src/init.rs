@@ -28,6 +28,7 @@ pub static EL1_IN_HYPERVISOR: AtomicBool = AtomicBool::new(true);
 
 /// FIXME lmao i needed this
 #[link_section = ".text.init"]
+#[naked]
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
     if MPIDR_EL1.get_value(MPIDR_EL1::Aff0) == 0 {

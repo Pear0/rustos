@@ -6,7 +6,7 @@
 
 unsafe fn do_call(op: u32, param: u64) -> u64 {
     let mut out: u64 = 0;
-    asm!("hlt #0x3C" : "={x0}"(out) : "{w0}"(op), "{x1}"(param) : "memory" : "volatile" );
+    llvm_asm!("hlt #0x3C" : "={x0}"(out) : "{w0}"(op), "{x1}"(param) : "memory" : "volatile" );
     out
 }
 

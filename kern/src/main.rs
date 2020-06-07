@@ -1,14 +1,16 @@
 #![feature(alloc_error_handler)]
 #![feature(const_fn)]
 #![feature(decl_macro)]
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(global_asm)]
 #![feature(coerce_unsized)]
 #![feature(optin_builtin_traits)]
+#![feature(negative_impls)]
 #![feature(ptr_internals)]
 #![feature(raw_vec_internals)]
 #![feature(panic_info_message)]
 #![feature(c_variadic)]
+#![feature(naked_functions)]
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
@@ -74,6 +76,7 @@ pub mod mutex;
 mod init;
 
 pub mod allocator;
+pub mod arm;
 pub mod cls;
 pub mod collections;
 mod compat;
@@ -90,12 +93,14 @@ mod logger;
 pub mod mbox;
 pub mod mini_allocators;
 pub mod net;
+pub mod perf;
 pub mod pigrate_server;
 pub mod shell;
 pub mod smp;
 pub mod sync;
 pub mod param;
 pub mod process;
+pub mod timing;
 pub mod traps;
 pub mod virtualization;
 pub mod vm;

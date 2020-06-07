@@ -2,17 +2,18 @@ use alloc::vec::Vec;
 
 use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
-use crate::{debug, shell, smp};
+use crate::{debug, shell, smp, timing};
 use crate::process::State;
 use crate::traps::{Info, IRQ_EL, IRQ_ESR, IRQ_INFO, IRQ_RECURSION_DEPTH, KernelTrapFrame, Kind, HyperTrapFrame, Source};
 use crate::traps::Kind::Synchronous;
 use crate::traps::syndrome::{Syndrome, Fault, AbortInfo};
 use crate::traps::syscall::handle_syscall;
-use crate::hyper::{HYPER_IRQ, HYPER_SCHEDULER};
+use crate::hyper::{HYPER_IRQ, HYPER_SCHEDULER, HYPER_TIMER};
 use crate::vm::VirtualAddr;
 use crate::traps::hypercall::{handle_hyper_syscall, handle_hypercall};
 use crate::traps::coreinfo::{exc_enter, exc_exit, ExceptionType, exc_record_time};
 use crate::param::PAGE_MASK;
+use crate::arm::{HyperPhysicalCounter, GenericCounterImpl};
 
 #[derive(Debug)]
 enum IrqVariant {
@@ -35,9 +36,7 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
                 if last {
                     kprintln!("{} irq stuck pending! -> {:?}", k, IrqVariant::Irq(*int));
                 }
-                // if k == 0 {
-                //     kprintln!("{:?}", IrqVariant::Irq(*int));
-                // }
+
                 HYPER_IRQ.invoke(*int, tf);
             }
         }
@@ -49,9 +48,7 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
                 if last {
                     kprintln!("{}@core={} irq stuck pending! -> {:?}", k, core, IrqVariant::CoreIrq(int));
                 }
-                // if k == 0 {
-                //     kprintln!("{:?}", IrqVariant::CoreIrq(int));
-                // }
+
                 HYPER_IRQ.invoke_core(core, int, tf);
             } else {
                 break;
@@ -62,48 +59,16 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
             return;
         }
 
-        // todo HACK
-        // if let Some(IrqVariant::Irq(Interrupt::Timer1)) = pending {
-        //     return;
-        // }
     }
 
     debug_shell(tf);
 }
 
-/// This function is called when an exception occurs. The `info` parameter
-/// specifies the source and kind of exception that has occurred. The `esr` is
-/// the value of the exception syndrome register. Finally, `tf` is a pointer to
-/// the trap frame for the exception.
-#[no_mangle]
-pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTrapFrame) {
-
-    let exc_start = unsafe { aarch64::CNTPCT_EL0.get() };
-    let time_start = pi::timer::current_time();
+fn do_hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTrapFrame) -> ExceptionType {
     let mut exc_type = ExceptionType::Unknown;
-    exc_enter();
-
-    if IRQ_RECURSION_DEPTH.get() != 0 {
-        kprintln!("Recursive IRQ: {:?}", info);
-        shell::shell("#>");
-    }
-
-    IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
-    IRQ_ESR.set(esr);
-    IRQ_EL.set(tf.ELR_EL2);
-    IRQ_INFO.set(info);
 
     match info.kind {
         Kind::Irq | Kind::Fiq => {
-            // use aarch64::regs::*;
-            // tf.simd[0] += 1;
-            //
-            // if tf.simd[0] % 100 == 0 {
-            //     kprintln!("IRQ: {:?} {:?} (raw=0x{:x}) @ {:#x}", info, Kind::Irq, esr, tf.elr);
-            //     kprintln!("FAR_EL1 = 0x{:x}, FAR_EL2 = 0x{:x}, HPFAR_EL2 = 0x{:x}", unsafe { FAR_EL1.get() }, unsafe { FAR_EL2.get() }, unsafe { HPFAR_EL2.get() });
-            //     kprintln!("EL1: {:?} (raw=0x{:x})", Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ESR_EL1.get() });
-            //     kprintln!("SP: {:#x}, ELR_EL1: {:#x}", unsafe { SP_EL1.get() }, unsafe { ELR_EL1.get() });
-            // }
 
             exc_type = ExceptionType::Irq;
             handle_irqs(tf);
@@ -119,21 +84,10 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
                     debug_shell(tf);
                 }
                 Syndrome::Svc(svc) => {
-                    // kprintln!("svc #{}", svc);
                     handle_hyper_syscall(svc, tf);
                 }
                 Syndrome::Hvc(b) => {
                     handle_hypercall(b, tf);
-                    // if b == 8 {
-                    //     use aarch64::regs::*;
-                    //     // kprintln!("returning from hvc({}), {:?}, {:#x?}", b, Syndrome::from(unsafe { ESR_EL1.get() } as u32), unsafe { ELR_EL1.get() });
-                    // } else if b == 5 {
-                    //     kprintln!("returning from hvc({})", b);
-                    // } else {
-                    //     kprintln!("{:?} {:?} (raw=0x{:x}) @ {:x}", info, Syndrome::Hvc(b), esr, tf.elr);
-                    //
-                    //     loop {}
-                    // }
                 }
                 s => {
                     use aarch64::regs::*;
@@ -168,18 +122,6 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
 
                     if !is_access_flag {
                         kprintln!("{:?} {:?} (raw=0x{:x}) @ {:#x}", info, s, esr, tf.ELR_EL2);
-
-
-                        // SCHEDULER.crit_process(tf.tpidr, |p| {
-                        //     if let Some(p) = p {
-                        //         // won't work once guest enables virtualization.
-                        //
-                        //         let mut foo = m_lock!(CONSOLE);
-                        //         p.dump(foo.deref_mut());
-                        //     }
-                        // });
-
-
                         loop {}
                     }
                 }
@@ -213,9 +155,74 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
         }
     }
 
-    IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
+    exc_type
+}
 
-    let time_end = pi::timer::current_time();
+/// This function is called when an exception occurs. The `info` parameter
+/// specifies the source and kind of exception that has occurred. The `esr` is
+/// the value of the exception syndrome register. Finally, `tf` is a pointer to
+/// the trap frame for the exception.
+#[no_mangle]
+pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTrapFrame) {
+
+    let exc_start = unsafe { aarch64::CNTPCT_EL0.get() };
+    let time_start = timing::clock_time();
+    let mut exc_type = ExceptionType::Unknown;
+    exc_enter();
+
+    if IRQ_RECURSION_DEPTH.get() > 1 {
+        kprintln!("Recursive IRQ: {:?}", info);
+        shell::shell("#>");
+    }
+
+    // recursive irq for profiling
+    let is_recursive = IRQ_RECURSION_DEPTH.get() == 1;
+    let is_timer = HyperPhysicalCounter::interrupted();
+
+    if is_recursive {
+
+        if is_timer {
+            IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
+
+            // interrupts are disabled here:
+            HYPER_TIMER.critical(|timer| timer.process_timers(tf));
+
+            IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
+        } else {
+            use aarch64::regs::*;
+            // set guest interrupts masked, we don't know what is interrupting us but
+            // it's not the timer.
+            tf.SPSR_EL2 |= SPSR_EL2::D | SPSR_EL2::A | SPSR_EL2::I | SPSR_EL2::F;
+        }
+
+    } else {
+        use aarch64::regs::*;
+
+        IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
+        IRQ_ESR.set(esr);
+        IRQ_EL.set(tf.ELR_EL2);
+        IRQ_INFO.set(info);
+
+        // try to handle timers sooner
+        if is_timer {
+            HYPER_TIMER.critical(|timer| timer.process_timers(tf));
+        }
+
+        {
+            // enable general IRQ, so we can get interrupted by the timer.
+            unsafe { DAIF.set(DAIF::D | DAIF::A | DAIF::F) };
+
+            exc_type = do_hyper_handle_exception(info, esr, tf);
+
+            // disable interrupts again, IRQ_RECURSION_DEPTH will be wrong and a recursive
+            // interrupt won't realize it is recursive.
+            unsafe { DAIF.set(DAIF::D | DAIF::A | DAIF::I | DAIF::F) };
+        }
+
+        IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
+    }
+
+    let time_end = timing::clock_time();
     exc_record_time(exc_type, time_end - time_start);
     exc_exit();
 

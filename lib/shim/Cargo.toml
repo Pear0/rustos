@@ -12,11 +12,17 @@ edition = "2018"
 
 [dependencies]
 cfg-if = "0.1.10"
-core_io = { version = "0.1.20190701", package = "core_io", optional = true }
+# requires: nightly-2019-07-01
+# core_io = { version = "0.1.20190701", package = "core_io", optional = true }
+small_io = { path = "../small_io" }
+
 
 [dev-dependencies]
 hashbrown = "0.6.3"
 
 [features]
-no_std = ["core_io"]
-alloc = ["core_io/alloc", "core_io/collections"]
+no_std = []
+alloc = []
+
+#no_std = ["core_io"]
+#alloc = ["core_io/alloc", "core_io/collections"]

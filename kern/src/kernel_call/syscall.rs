@@ -16,7 +16,7 @@ pub fn wait_waitable(arc: Arc<dyn Waitable>) {
     let arc: [u64; 2] = unsafe { core::mem::transmute(arc) };
 
     unsafe {
-        asm!("mov x0, $2
+        llvm_asm!("mov x0, $2
               mov x1, $3
               svc $4
               mov $0, x0

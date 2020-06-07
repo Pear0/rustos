@@ -101,5 +101,5 @@ impl<T> Deref for CoreMutex<T>  {
     }
 }
 
-
+pub type CoreGlobal<T> = CoreLocal<Global<T>>;
 

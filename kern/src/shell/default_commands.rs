@@ -40,6 +40,7 @@ use crate::smp;
 use crate::traps::coreinfo::exc_ratio;
 
 use super::shell::Shell;
+use xmas_elf::sections::ShType;
 
 mod net;
 
@@ -310,11 +311,45 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 writeln!(&mut sh.writer, "Core {}: {}.{}%", i, usage / 10, usage % 10)?;
 
                 for j in 0..min(info.1.len(), 20) {
-                    writeln!(&mut sh.writer, "  {:x?}: {:?}", info.1[j].0, info.1[j].1)?;
+                    let tuple = info.1[j].1;
+                    writeln!(&mut sh.writer, "  {:x?}: {:?} -> {:?}", info.1[j].0, tuple, (tuple.0) / (tuple.1 as u32))?;
                 }
 
                 writeln!(&mut sh.writer, "");
             }
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
+        .name("elf")
+        .func_result(|sh, _cmd| {
+            writeln!(&mut sh.writer, "ELF time:")?;
+            use fat32::traits::FileSystem;
+            type File = fat32::vfat::File<crate::fs::PiVFatHandle>;
+
+            let mut entry: File = FILESYSTEM.open("/kernel.elf")?.into_file().ok_or("no file")?;
+            writeln!(&mut sh.writer, "opened file: {}", entry.name);
+
+            let mut file_buffer: Vec<u8> = Vec::new();
+
+            use shim::io;
+            io::copy(&mut entry, &mut file_buffer)?;
+
+            writeln!(&mut sh.writer, "Read {} bytes", file_buffer.len());
+
+            let elf = xmas_elf::ElfFile::new(file_buffer.as_slice())?;
+
+            for section in elf.section_iter() {
+                let typ = section.get_type()?;
+                let name = if let ShType::Null = typ { "<null>" } else { section.get_name(&elf)? };
+
+                writeln!(&mut sh.writer, "  S: {} - {:?}", name, typ)?;
+
+            }
+
+
 
             Ok(())
         })

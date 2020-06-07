@@ -2,26 +2,32 @@ use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
+use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 
 use aarch64::CNTHP_CTL_EL2;
+use pi::interrupt::{CoreInterrupt, Interrupt};
 use pi::usb::Usb;
 
-use crate::{hw, shell, smp, VMM};
+use crate::{hw, shell, smp, timing, VMM, perf};
+use crate::arm::{HyperPhysicalCounter, TimerController};
 use crate::BootVariant::Hypervisor;
-use crate::fs::handle::{Sink, SinkWrapper, Source, WaitingSourceWrapper, SourceWrapper};
+use crate::cls::{CoreGlobal, CoreLocal, CoreMutex};
+use crate::console::{console_ext_init, console_interrupt_handler};
+use crate::fs::handle::{Sink, SinkWrapper, Source, SourceWrapper, WaitingSourceWrapper};
 use crate::iosync::Global;
 use crate::net::physical::{Physical, PhysicalUsb};
 use crate::process::{GlobalScheduler, HyperImpl, HyperProcess};
+use crate::traps::{HyperTrapFrame, IRQ_RECURSION_DEPTH};
 use crate::traps::irq::Irq;
 use crate::virtualization::nic::VirtualSwitch;
-use pi::interrupt::Interrupt;
-use crate::console::{console_interrupt_handler, console_ext_init};
 
 pub static HYPER_IRQ: Irq<HyperImpl> = Irq::uninitialized();
 pub static HYPER_SCHEDULER: GlobalScheduler<HyperImpl> = GlobalScheduler::uninitialized();
 
 pub static NET_SWITCH: Global<VirtualSwitch> = Global::new(|| VirtualSwitch::new_hub());
+
+pub static HYPER_TIMER: CoreGlobal<TimerController<HyperTrapFrame, HyperPhysicalCounter>> = CoreLocal::new_global(|| TimerController::new());
 
 fn net_thread() -> ! {
     if hw::is_qemu() {
@@ -96,6 +102,37 @@ fn my_thread() -> ! {
     kernel_api::syscall::exit();
 }
 
+pub static TIMER_EVENTS: AtomicU64 = AtomicU64::new(0);
+pub static TIMER_EVENTS_EXC: AtomicU64 = AtomicU64::new(0);
+
+fn configure_timer() {
+    HYPER_IRQ.register_core(crate::smp::core(), CoreInterrupt::CNTHPIRQ, Box::new(|tf| {
+        smp::no_interrupt(|| {
+            HYPER_TIMER.critical(|timer| timer.process_timers(tf));
+        });
+    }));
+
+    if smp::core() == 0 {
+        perf::prepare();
+
+        HYPER_TIMER.critical(|timer| {
+            timer.add(timing::time_to_cycles(Duration::from_micros(10)), Box::new(|ctx| {
+                perf::record_event(ctx.data);
+                // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);
+                // if IRQ_RECURSION_DEPTH.get() > 1 {
+                //     TIMER_EVENTS_EXC.fetch_add(1, Ordering::Relaxed);
+                // }
+            }));
+
+            timer.add(timing::time_to_cycles(Duration::from_secs(20)), Box::new(|ctx| {
+                ctx.remove_timer();
+                // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
+                perf::dump_events();
+            }));
+        });
+    }
+}
+
 pub fn hyper_main() -> ! {
     info!("VMM init");
     VMM.init_only();
@@ -135,7 +172,7 @@ pub fn hyper_main() -> ! {
         };
     });
 
-
+    configure_timer();
     unsafe {
         HYPER_SCHEDULER.initialize_hyper();
     }
@@ -144,6 +181,7 @@ pub fn hyper_main() -> ! {
 
 
     smp::run_on_secondary_cores(|| {
+        configure_timer();
         unsafe {
             HYPER_SCHEDULER.initialize_hyper();
         };
@@ -153,6 +191,31 @@ pub fn hyper_main() -> ! {
     for atag in pi::atags::Atags::get() {
         info!("{:?}", atag);
     }
+
+    // Ensure timers are set up. Scheduler will also do this on start.
+    // unsafe { CNTHP_CTL_EL2.set((CNTHP_CTL_EL2.get() & !CNTHP_CTL_EL2::IMASK) | CNTHP_CTL_EL2::ENABLE) };
+
+    debug!("ARM Timer Freq: {}", unsafe { CNTFRQ_EL0.get() });
+
+    timing::benchmark("pi::timer", |num| {
+        for _ in 0..num {
+            pi::timer::current_time();
+        }
+    });
+    timing::benchmark("CNTPCT_EL0", |num| {
+        for _ in 0..num {
+            unsafe { CNTPCT_EL0.get() };
+        }
+    });
+
+    timing::benchmark("mutex lock", |num| {
+        let mut mu = mutex_new!(5);
+
+        for _ in 0..num {
+            let mut lock = m_lock!(mu);
+            *lock += 1;
+        }
+    });
 
     error!("Add kernel process");
 
@@ -201,7 +264,7 @@ pub fn hyper_main() -> ! {
         //
         // VTTBR_EL2.set(vm.get_baddr().as_u64());
 
-        asm!("dsb ish");
+        llvm_asm!("dsb ish");
         aarch64::isb();
 
         // don't trap CNTP for EL1/EL0 (ref: D7.5.2, D7.5.13)

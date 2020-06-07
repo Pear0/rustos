@@ -140,8 +140,8 @@ impl<T> Mutex<T> {
             let sp = SP.get();
 
             use crate::debug;
-            debug::read_into_slice_clear(unsafe { &mut *self.lock_trace.get() }, debug::stack_scanner(sp, None));
-            aarch64::dsb();
+            // debug::read_into_slice_clear(unsafe { &mut *self.lock_trace.get() }, debug::stack_scanner(sp, None));
+            // aarch64::dsb();
 
             Some(MutexGuard { lock: &self, recursion_enabled_count: 0 })
 
@@ -209,10 +209,14 @@ impl<T> Mutex<T> {
     #[inline(never)]
     pub fn lock_timeout(&self, name: &'static str, timeout: Duration) -> Option<MutexGuard<T>> {
         let end = pi::timer::current_time() + timeout;
+        let mut wait_amt = Duration::from_micros(1);
         loop {
             match self.try_lock(name) {
                 Some(guard) => return Some(guard),
                 None => {
+                    pi::timer::spin_sleep(wait_amt);
+                    wait_amt += wait_amt; // double wait amt
+
                     if pi::timer::current_time() > end {
                         return None
                     }

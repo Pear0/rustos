@@ -7,7 +7,7 @@ use alloc::borrow::ToOwned;
 use pi::gpio;
 use shim::{io, ioerr};
 
-use crate::{display_manager, hw, kernel_call, NET, shell, smp, VMM, BootVariant};
+use crate::{display_manager, hw, kernel_call, NET, shell, smp, VMM, BootVariant, timing};
 use crate::fs::handle::{SinkWrapper, SourceWrapper, Source, Sink, WaitingSourceWrapper};
 use crate::net::ipv4;
 use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess, KernProcessCtx, Priority};
@@ -168,6 +168,14 @@ pub fn kernel_main() -> ! {
         VMM.setup_kernel();
     });
 
+    if BootVariant::kernel_in_hypervisor() {
+        info!("Making hvc call");
+        let start = pi::timer::current_time();
+        hvc!(0);
+        let end = pi::timer::current_time();
+        info!("hvc took {:?}", end - start);
+    }
+
     // error!("init Scheduler");
     unsafe {
         KERNEL_SCHEDULER.initialize_kernel();
@@ -183,6 +191,22 @@ pub fn kernel_main() -> ! {
     debug!("start some processes");
 
     pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
+
+    // Stable
+
+    timing::benchmark("kernel pi::timer", |num| {
+        for _ in 0..num {
+            pi::timer::current_time();
+        }
+    });
+
+    timing::benchmark("kernel hvc", |num| {
+        for _ in 0..num {
+            hvc!(0);
+        }
+    });
+
+
 
     {
         let mut proc = KernelProcess::kernel_process("shell".to_owned(), my_thread).unwrap();

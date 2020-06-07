@@ -111,7 +111,12 @@ name = "shim"
 version = "0.1.0"
 dependencies = [
  "cfg-if 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "small_io 0.1.0",
 ]
+
+[[package]]
+name = "small_io"
+version = "0.1.0"
 
 [[package]]
 name = "strsim"

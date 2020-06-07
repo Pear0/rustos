@@ -145,6 +145,7 @@ pub fn handle_hyper_syscall(num: u16, tf: &mut HyperTrapFrame) {
 pub fn handle_hypercall(num: u16, tf: &mut HyperTrapFrame) {
     set_err(tf, OsError::Unknown);
     match num as usize {
+        0 => {}, // nop
         HP_VNIC_STATE => {
             hyper_vnic_state(tf);
         }

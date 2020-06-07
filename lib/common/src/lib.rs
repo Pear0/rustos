@@ -1,5 +1,6 @@
 #![feature(decl_macro)]
 #![feature(optin_builtin_traits)]
+#![feature(negative_impls)]
 #![cfg_attr(feature = "no_std", no_std)]
 
 #[cfg(not(feature = "no_std"))]
