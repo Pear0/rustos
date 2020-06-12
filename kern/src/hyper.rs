@@ -21,6 +21,7 @@ use crate::process::{GlobalScheduler, HyperImpl, HyperProcess};
 use crate::traps::{HyperTrapFrame, IRQ_RECURSION_DEPTH};
 use crate::traps::irq::Irq;
 use crate::virtualization::nic::VirtualSwitch;
+use crate::debug::initialize_debug;
 
 pub static HYPER_IRQ: Irq<HyperImpl> = Irq::uninitialized();
 pub static HYPER_SCHEDULER: GlobalScheduler<HyperImpl> = GlobalScheduler::uninitialized();
@@ -124,7 +125,7 @@ fn configure_timer() {
                 // }
             }));
 
-            timer.add(timing::time_to_cycles(Duration::from_secs(20)), Box::new(|ctx| {
+            timer.add(timing::time_to_cycles(Duration::from_secs(50)), Box::new(|ctx| {
                 ctx.remove_timer();
                 // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
                 perf::dump_events();
@@ -195,27 +196,29 @@ pub fn hyper_main() -> ! {
     // Ensure timers are set up. Scheduler will also do this on start.
     // unsafe { CNTHP_CTL_EL2.set((CNTHP_CTL_EL2.get() & !CNTHP_CTL_EL2::IMASK) | CNTHP_CTL_EL2::ENABLE) };
 
+    initialize_debug();
+
     debug!("ARM Timer Freq: {}", unsafe { CNTFRQ_EL0.get() });
 
-    timing::benchmark("pi::timer", |num| {
-        for _ in 0..num {
-            pi::timer::current_time();
-        }
-    });
-    timing::benchmark("CNTPCT_EL0", |num| {
-        for _ in 0..num {
-            unsafe { CNTPCT_EL0.get() };
-        }
-    });
-
-    timing::benchmark("mutex lock", |num| {
-        let mut mu = mutex_new!(5);
-
-        for _ in 0..num {
-            let mut lock = m_lock!(mu);
-            *lock += 1;
-        }
-    });
+    // timing::benchmark("pi::timer", |num| {
+    //     for _ in 0..num {
+    //         pi::timer::current_time();
+    //     }
+    // });
+    // timing::benchmark("CNTPCT_EL0", |num| {
+    //     for _ in 0..num {
+    //         unsafe { CNTPCT_EL0.get() };
+    //     }
+    // });
+    //
+    // timing::benchmark("mutex lock", |num| {
+    //     let mut mu = mutex_new!(5);
+    //
+    //     for _ in 0..num {
+    //         let mut lock = m_lock!(mu);
+    //         *lock += 1;
+    //     }
+    // });
 
     error!("Add kernel process");
 

@@ -9,6 +9,8 @@ rustflags = [
     "-C", "link-arg=--no-dynamic-linker",
     "-C", "link-arg=--no-dynamic-linker",
 
+    "-C", "force-frame-pointers=on",
+
     # link to libsd.a
     "-C", "link-arg=-L.cargo",
     "-C", "link-arg=-lsd",

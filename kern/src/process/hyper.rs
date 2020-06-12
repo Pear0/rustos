@@ -194,6 +194,8 @@ impl Process<HyperImpl> {
         // 257 = ceil( (0x4000_00FC - 0x3f00_0000) / PAGE_SIZE )
         proc.vmap.add_region(Region::new(VirtualAddr::from(0x3f000000), 257 * PAGE_SIZE, HyperRegionKind::Emulated(proc.detail.virt_device.clone())));
 
+        assert!(proc.vmap.get_region(VirtualAddr::from(0x3f003004)).is_some());
+
         // Networking
 
         let mut nic = Arc::new(VirtualNIC::new());
@@ -333,7 +335,12 @@ impl Process<HyperImpl> {
     }
 
     pub fn on_access_fault(&mut self, esr: u32, addr: VirtualAddr, tf: &mut HyperTrapFrame) {
-        let region = self.vmap.get_region(addr).expect("on_access_fault() called on unmapped address");
+        let region = match self.vmap.get_region(addr) {
+            Some(reg) => reg,
+            None => {
+                panic!("on_access_fault() called on unmapped address: {:#x}", addr.as_u64());
+            },
+        };
         match &region.kind {
             HyperRegionKind::Normal => {
                 use aarch64::regs::*;

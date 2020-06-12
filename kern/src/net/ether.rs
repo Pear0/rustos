@@ -94,7 +94,7 @@ pub struct Interface {
 impl Interface {
     pub fn new(physical: Arc<dyn Physical>, address: Mac) -> Interface {
         Interface {
-            inner: Mutex::new("Interface::new()", InterfaceImpl {
+            inner: Mutex::new(InterfaceImpl {
                 physical,
                 handlers: HashMap::new(),
                 address,

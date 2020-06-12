@@ -8,7 +8,7 @@ use core::time::Duration;
 
 use hashbrown::HashMap;
 
-use aarch64::MPIDR_EL1;
+use aarch64::{MPIDR_EL1, LR, SP};
 use fat32::traits::{Dir, Entry, File, Metadata};
 use fat32::traits::FileSystem;
 use fat32::vfat::{DynVFatHandle, DynWrapper, VFat};
@@ -41,6 +41,7 @@ use crate::traps::coreinfo::exc_ratio;
 
 use super::shell::Shell;
 use xmas_elf::sections::ShType;
+use common::fmt::ByteSize;
 
 mod net;
 
@@ -325,30 +326,41 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
     sh.command()
         .name("elf")
         .func_result(|sh, _cmd| {
-            writeln!(&mut sh.writer, "ELF time:")?;
-            use fat32::traits::FileSystem;
-            type File = fat32::vfat::File<crate::fs::PiVFatHandle>;
 
-            let mut entry: File = FILESYSTEM.open("/kernel.elf")?.into_file().ok_or("no file")?;
-            writeln!(&mut sh.writer, "opened file: {}", entry.name);
+            let debug_info = crate::debug::debug_ref().ok_or("Debug info not loaded")?;
 
-            let mut file_buffer: Vec<u8> = Vec::new();
+            let mut lr = crate::debug::base_pointer() as u64;
 
-            use shim::io;
-            io::copy(&mut entry, &mut file_buffer)?;
+            for _ in 0..20 {
+                if lr == 0 {
+                    break;
+                }
 
-            writeln!(&mut sh.writer, "Read {} bytes", file_buffer.len());
+                let addr = unsafe { ((lr + 8) as *const u64).read() };
+                lr = unsafe { (lr as *const u64).read() };
 
-            let elf = xmas_elf::ElfFile::new(file_buffer.as_slice())?;
+                writeln!(&mut sh.writer, "addr: {:#x}, lr: {:#x}", addr, lr)?;
 
-            for section in elf.section_iter() {
-                let typ = section.get_type()?;
-                let name = if let ShType::Null = typ { "<null>" } else { section.get_name(&elf)? };
+                let mut l = debug_info.context.find_frames(addr)?;
 
-                writeln!(&mut sh.writer, "  S: {} - {:?}", name, typ)?;
+                for i in 0..100 {
+                    let elem = match l.next()? {
+                        Some(l) => l,
+                        None => break,
+                    };
 
+                    for _ in 0..i {
+                        write!(&mut sh.writer, " ")?;
+                    }
+
+                    let name = elem.function.as_ref().map(|x| x.demangle());
+
+                    match elem.location {
+                        Some(l) => writeln!(&mut sh.writer, "Loc: {:?} {:?}:{:?} -> {:?}", l.file, l.line, l.column, name)?,
+                        None => writeln!(&mut sh.writer, "Loc: None")?,
+                    }
+                }
             }
-
 
 
             Ok(())

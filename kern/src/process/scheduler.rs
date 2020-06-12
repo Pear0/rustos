@@ -47,6 +47,7 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
 
     /// Enter a critical region and execute the provided closure with the
     /// internal scheduler.
+    #[inline(always)]
     pub fn critical<F, R>(&self, f: F) -> R
         where
             F: FnOnce(&mut Scheduler<T>) -> R,
@@ -59,6 +60,7 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         })
     }
 
+    #[inline(always)]
     pub fn crit_process<F, R>(&self, id: Id, f: F) -> R
         where
             F: FnOnce(Option<&mut Process<T>>) -> R,

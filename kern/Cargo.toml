@@ -17,6 +17,7 @@ memcpy = true
 debug = true
 
 [dependencies]
+common = { path = "../lib/common" }
 mini-alloc = { path = "../lib/mini-alloc" }
 pi = { path = "../lib/pi" }
 shutil = { path = "../lib/shutil" }
@@ -27,10 +28,13 @@ mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
 aarch64 = { path = "../lib/aarch64/" }
 kernel_api = { path = "../lib/kernel_api" }
 pigrate-core = { path = "../lib/pigrate-core" }
+
+addr2line = { version = "0.12.1", default-features = false, features = ["rustc-demangle"] }
 compression = { version = "0.1", default-features = false, features = ["gzip", "bzip2", "deflate", "lzss"] }
 # elfloader = "0.10.0"
 enumset = "1.0.0"
 font8x8 = { version = "0.2.5", default-features = false, features = ["unicode"] }
+gimli = { version = "0.21.0", default-features = false, features = ["read"] }
 hex = { version = "0.4.2", default-features = false }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 log = { version = "0.4.8", features = [] }

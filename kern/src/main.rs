@@ -2,6 +2,7 @@
 #![feature(const_fn)]
 #![feature(decl_macro)]
 #![feature(llvm_asm)]
+#![feature(track_caller)]
 #![feature(global_asm)]
 #![feature(coerce_unsized)]
 #![feature(optin_builtin_traits)]

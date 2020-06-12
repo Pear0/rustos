@@ -32,6 +32,7 @@ static PARKING: [ParkingSpot; 4] = [parking(), parking(), parking(), parking()];
 
 // must not use stack
 #[inline(never)]
+#[naked]
 pub unsafe fn core_bootstrap() -> ! {
     let core_id = MPIDR_EL1.get_value(MPIDR_EL1::Aff0);
 
@@ -167,6 +168,7 @@ pub fn run_on_all_cores(func: fn()) {
     run_on_secondary_cores(func);
 }
 
+#[inline(always)]
 pub fn no_interrupt<T, R>(func: T) -> R
     where T: (FnOnce() -> R) {
     use aarch64::regs::*;

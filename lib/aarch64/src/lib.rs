@@ -13,7 +13,7 @@ pub mod regs;
 pub mod semi;
 pub mod vmsa;
 
-pub use sp::SP;
+pub use sp::{SP, LR};
 pub use regs::*;
 pub use vmsa::*;
 pub use asm::*;

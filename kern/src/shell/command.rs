@@ -17,6 +17,7 @@ pub enum CommandError {
     Os(kernel_api::OsError),
     Str(&'static str),
     Io(io::Error),
+    Gimli(gimli::read::Error),
 }
 
 impl From<core::num::ParseIntError> for CommandError {
@@ -58,6 +59,12 @@ impl From<&'static str> for CommandError {
 impl From<io::Error> for CommandError {
     fn from(e: io::Error) -> Self {
         CommandError::Io(e)
+    }
+}
+
+impl From<gimli::read::Error> for CommandError {
+    fn from(e: gimli::read::Error) -> Self {
+        CommandError::Gimli(e)
     }
 }
 

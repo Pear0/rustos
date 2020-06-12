@@ -1,23 +1,24 @@
+use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
+use core::panic::Location;
 use core::time::Duration;
-use alloc::borrow::ToOwned;
 
 use pi::gpio;
+use pi::interrupt::Interrupt;
 use shim::{io, ioerr};
 
-use crate::{display_manager, hw, kernel_call, NET, shell, smp, VMM, BootVariant, timing};
-use crate::fs::handle::{SinkWrapper, SourceWrapper, Source, Sink, WaitingSourceWrapper};
+use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM};
+use crate::console::{CONSOLE, console_ext_init, console_interrupt_handler};
+use crate::fs::handle::{Sink, SinkWrapper, Source, SourceWrapper, WaitingSourceWrapper};
+use crate::fs::service::PipeService;
+use crate::mutex::Mutex;
 use crate::net::ipv4;
-use crate::process::{GlobalScheduler, Id, KernelImpl, Process, KernelProcess, KernProcessCtx, Priority};
+use crate::process::{GlobalScheduler, Id, KernelImpl, KernelProcess, KernProcessCtx, Priority, Process};
 use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
 use crate::vm::VMManager;
-use pi::interrupt::Interrupt;
-use crate::console::{console_interrupt_handler, CONSOLE, console_ext_init};
-use crate::mutex::Mutex;
-use crate::fs::service::PipeService;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -112,12 +113,10 @@ fn my_net_thread2() -> ! {
 }
 
 fn my_thread(ctx: KernProcessCtx) {
-
     let (source, sink) = ctx.get_stdio_or_panic();
 
     // WaitingSourceWrapper::new(source)
     shell::Shell::new("$ ", WaitingSourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
-
 }
 
 fn led_blink() -> ! {
@@ -206,6 +205,10 @@ pub fn kernel_main() -> ! {
         }
     });
 
+    {
+        let loc = Location::caller();
+        info!("Hello: {:?}", loc);
+    }
 
 
     {

@@ -30,8 +30,12 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
     for k in 0..20 {
         let last = k == 19;
         let mut any_pending = false;
+
+        // only read registers once per loop.
+        let snap = ctl.snap();
+
         for int in Interrupt::iter() {
-            if ctl.is_pending(*int) {
+            if snap.is_pending(*int) {
                 any_pending = true;
                 if last {
                     kprintln!("{} irq stuck pending! -> {:?}", k, IrqVariant::Irq(*int));

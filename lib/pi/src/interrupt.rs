@@ -172,4 +172,16 @@ impl Controller {
     pub fn is_pending(&self, int: Interrupt) -> bool {
         (self.registers.irq_pending[(int as usize) / 32].read() & (1 << ((int as usize) % 32))) != 0
     }
+
+    pub fn snap(&self) -> InterruptSnap {
+        InterruptSnap([self.registers.irq_pending[0].read(), self.registers.irq_pending[1].read()])
+    }
+}
+
+pub struct InterruptSnap([u32; 2]);
+
+impl InterruptSnap {
+    pub fn is_pending(&self, int: Interrupt) -> bool {
+        (self.0[(int as usize) / 32] & (1 << ((int as usize) % 32))) != 0
+    }
 }

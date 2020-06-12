@@ -229,11 +229,11 @@ impl fmt::Write for MutexGuard<'_, Console> {
 }
 
 /// Global `Console` singleton.
-pub static CONSOLE: Mutex<Console> = Mutex::new("CONSOLE", Console::new());
+pub static CONSOLE: Mutex<Console> = Mutex::new(Console::new());
 
 pub fn console_ext_init() {
     smp::no_interrupt(|| {
-        let mut lock = CONSOLE.lock("console_ext_init");
+        let mut lock = CONSOLE.lock();
         if lock.ext.is_none() {
             lock.ext = Some(ConsoleImpl::new());
         }
@@ -242,21 +242,21 @@ pub fn console_ext_init() {
 
 pub fn console_interrupt_handler() {
     smp::no_interrupt(|| {
-        let mut lock = CONSOLE.lock("console_interrupt_handler");
+        let mut lock = CONSOLE.lock();
         lock.interrupt_handle();
     });
 }
 
 pub fn console_flush() {
     smp::no_interrupt(|| {
-        let mut lock = CONSOLE.lock("console_flush");
+        let mut lock = CONSOLE.lock();
         lock.flush();
     });
 }
 
 pub fn console_set_callback(callback: Option<(u8, Box<dyn FnMut() -> bool + Send>)>) {
     smp::no_interrupt(|| {
-        let mut lock = CONSOLE.lock("console_set_callback");
+        let mut lock = CONSOLE.lock();
         lock.set_callback(callback);
     });
 }
@@ -270,7 +270,7 @@ pub fn _print(args: fmt::Arguments) {
         {
             use core::fmt::Write;
             smp::no_interrupt(|| {
-                let mut console = CONSOLE.lock("_print");
+                let mut console = CONSOLE.lock();
                 // let mut console = unsafe { CONSOLE.unsafe_leak() };
                 console.write_fmt(args).unwrap();
             });

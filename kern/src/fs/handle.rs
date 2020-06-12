@@ -22,7 +22,7 @@ impl SyncRead for Source {
             Source::KernSerial => {
                 smp::no_interrupt(|| {
                     use shim::io::Read;
-                    let mut console = CONSOLE.lock("handle::Source::read()");
+                    let mut console = CONSOLE.lock();
                     console.read(buf)
                 })
             }
@@ -39,7 +39,7 @@ impl sync::Waitable for Source {
         match self {
             Source::KernSerial => {
                 smp::no_interrupt(|| {
-                    let mut console = CONSOLE.lock("handle::Source::done_waiting()");
+                    let mut console = CONSOLE.lock();
                     console.has_byte()
                 })
             }
@@ -84,7 +84,7 @@ impl SyncWrite for Sink {
             Sink::KernSerial => {
                 smp::no_interrupt(|| {
                     use shim::io::Write;
-                    let mut console = CONSOLE.lock("handle::Sink::write()");
+                    let mut console = CONSOLE.lock();
                     console.write(buf)
                 })
             }

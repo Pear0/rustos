@@ -9,5 +9,6 @@ extern crate core;
 #[macro_use]
 extern crate alloc;
 
+pub mod fmt;
 pub mod mutex;
 pub mod smp;

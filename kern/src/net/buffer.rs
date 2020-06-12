@@ -97,7 +97,7 @@ pub struct ReadWaitable(pub BufferHandle);
 impl sync::Waitable for ReadWaitable {
 
     fn done_waiting(&self) -> bool {
-        if let Some(b) = (self.0).0.lock_timeout("ReadWaitable::done_waiting", Duration::from_micros(1)) {
+        if let Some(b) = (self.0).0.lock_timeout(Duration::from_micros(1)) {
             return !b.deque.is_empty();
         }
         return false;
@@ -114,7 +114,7 @@ pub struct WriteWaitable(pub BufferHandle);
 impl sync::Waitable for WriteWaitable {
 
     fn done_waiting(&self) -> bool {
-        if let Some(b) = (self.0).0.lock_timeout("WriteWaitable::done_waiting", Duration::from_micros(1)) {
+        if let Some(b) = (self.0).0.lock_timeout(Duration::from_micros(1)) {
             return b.deque.len() < b.max_size;
         }
         return false;
