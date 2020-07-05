@@ -45,5 +45,5 @@ tree /img_mount
 echo 'Unmounting...'
 umount /img_mount
 
-
+chmod 666 "$img_file"
 

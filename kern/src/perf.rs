@@ -46,13 +46,16 @@ pub fn prepare() {
     CORE_EVENTS.critical(|core| core.reserve(150_000));
 }
 
-pub fn record_event(tf: &mut HyperTrapFrame) {
+pub fn record_event(tf: &mut HyperTrapFrame) -> bool {
     let event = PerfEvent::from_tf(tf);
     CORE_EVENTS.critical(|core| {
         if core.len() < core.capacity() {
             core.push(event);
+            true
+        } else {
+            false
         }
-    });
+    })
 }
 
 pub fn dump_events() {

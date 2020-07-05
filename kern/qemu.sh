@@ -2,7 +2,7 @@
 
 TOP=$(git rev-parse --show-toplevel)
 
-export PATH="$PATH:$TOP"
+export PATH="$TOP/bin:$PATH"
 
 qemu-system-aarch64 \
     -nographic \

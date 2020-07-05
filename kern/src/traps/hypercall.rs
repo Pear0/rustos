@@ -54,7 +54,8 @@ fn sys_exit(tf: &mut HyperTrapFrame) {
 
 pub fn sys_wait_waitable(tf: &mut HyperTrapFrame) {
     // TODO insecure (can be called from userspace)
-    let arc: Arc<dyn Waitable> = unsafe { core::mem::transmute([tf.regs[0], tf.regs[1]]) };
+    let arc: Arc<dyn Waitable> = unsafe { core::mem::transmute((tf.regs[0], tf.regs[1]) ) };
+    // error!("Waiting: {:?} @ {:#x?}", arc.done_waiting(), unsafe { core::mem::transmute::<Arc<dyn Waitable>, (usize, usize)>(core::mem::transmute_copy(&arc)) });
     HYPER_SCHEDULER.switch(State::WaitingObj(arc), tf);
 }
 

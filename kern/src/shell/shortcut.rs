@@ -11,7 +11,9 @@ pub struct WaitFlag(AtomicBool);
 
 impl WaitFlag {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self(AtomicBool::new(false)))
+        let a = Arc::new(Self(AtomicBool::new(false)));
+        error!("WaitFlag::new() @ {:#x}", a.as_ref() as *const WaitFlag as u64);
+        a
     }
 
     pub fn is_flagged(&self) -> bool {
@@ -19,7 +21,14 @@ impl WaitFlag {
     }
 
     pub fn flag(&self) {
+        // error!("WaitFlag::flag() @ {:#x}", self as *const WaitFlag as u64);
         self.0.store(true, Ordering::SeqCst)
+    }
+}
+
+impl Drop for WaitFlag {
+    fn drop(&mut self) {
+        // error!("WaitFlag({})::drop() @ {:#x}", self.0.load(Ordering::Relaxed), self as *mut WaitFlag as u64);
     }
 }
 
@@ -35,10 +44,18 @@ pub fn sleep_until_key(key: u8) {
     let flag_copy = flag.clone();
     console_set_callback(Some((key, Box::new(move || {
         flag_copy.flag();
+        // error!("Ctrl+C pressed");
         false
     }))));
 
-    wait_waitable(flag);
+    // error!("WaitFlag1 @ {:#x}", flag.as_ref() as *const WaitFlag as u64);
+    // error!("WaitFlag2 @ {:#x}", unsafe { core::mem::transmute::<Arc<WaitFlag>, (usize)>(core::mem::transmute_copy(&flag)) });
+
+    let arc: Arc<dyn Waitable> = flag;
+    // error!("WaitFlag3: {:?} @ {:#x?}", arc.done_waiting(), unsafe { core::mem::transmute::<Arc<dyn Waitable>, (usize, usize)>(core::mem::transmute_copy(&arc)) });
+
+    wait_waitable(arc);
+    // error!("done waiting");
 }
 
 

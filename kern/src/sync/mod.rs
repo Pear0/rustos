@@ -4,6 +4,9 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 use crate::fs::handle::Sink;
 
+// pub mod atomic_list;
+pub mod atomic_registry;
+
 #[derive(Debug)]
 pub struct Completion<T>(Mutex<Option<T>>);
 

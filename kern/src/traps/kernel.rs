@@ -24,11 +24,13 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
     let ctl = Controller::new();
     // Invoke any handlers
 
+    const max_irq: usize = 50;
+
     let mut pending: Option<IrqVariant> = None;
-    let mut diffs = [Duration::from_secs(0); 20];
+    let mut diffs = [Duration::from_secs(0); max_irq];
     let mut start = pi::timer::current_time();
 
-    for i in 0..20 {
+    for i in 0..max_irq {
         let mut any_pending = false;
         pending = None;
         for int in Interrupt::iter() {
@@ -63,7 +65,7 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
         start = now;
     }
 
-    kprintln!("irq stuck pending! -> {:?} @ {:?} per loop", pending, diffs);
+    kprintln!("irq stuck pending! -> {:?} @ {:?} per loop", pending, diffs.as_ref());
 
     // {
     //     let mut diffs = [Duration::from_secs(0); 20];

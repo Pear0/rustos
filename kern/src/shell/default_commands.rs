@@ -42,6 +42,10 @@ use crate::traps::coreinfo::exc_ratio;
 use super::shell::Shell;
 use xmas_elf::sections::ShType;
 use common::fmt::ByteSize;
+use crate::sync::atomic_registry::Registry;
+use crate::mutex::{Mutex, MUTEX_REGISTRY};
+use core::sync::atomic::Ordering;
+use crate::traps::IRQ_RECURSION_DEPTH;
 
 mod net;
 
@@ -199,7 +203,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .help("connect to running process TTYs.")
         .func_result(|sh, cmd| {
             if cmd.args.len() < 2 {
-                writeln!(sh.writer, "usage: connect <pid>");
+                writeln!(sh.writer, "usage: connect <pid>")?;
                 return Ok(());
             }
 
@@ -216,6 +220,8 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
 
             sleep_until_key(b'\x03');
 
+            writeln!(sh.writer, "[disconnected]")?;
+
             HYPER_SCHEDULER.crit_process(pid, |proc| {
                 if let Some(proc) = proc {
                     proc.detail.serial = None;
@@ -223,6 +229,20 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             });
 
             Ok(())
+        })
+        .build();
+
+    sh.command()
+        .name("verbose")
+        .help("")
+        .func(|sh, cmd| {
+            use core::sync::atomic::Ordering;
+            use crate::traps::hyper::*;
+
+            error!("IRQ_DEPTH: {}", IRQ_RECURSION_DEPTH.get());
+
+
+            VERBOSE_CORE.store(true, Ordering::Relaxed);
         })
         .build();
 
@@ -362,6 +382,27 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 }
             }
 
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
+        .name("reg")
+        .func_result(|sh, _cmd| {
+
+            let ptr = unsafe { &*MUTEX_REGISTRY.as_ptr() };
+            if let Some(reg) = ptr {
+
+                reg.for_all(|entry| {
+                    if let Some(entry) = entry {
+                        info!("Mutex: {} -> waiting: {:?}", entry.name, crate::timing::cycles_to_time(entry.total_waiting_time.load(Ordering::Relaxed)));
+                    }
+                });
+
+            } else {
+                info!("No registry");
+            }
 
             Ok(())
         })

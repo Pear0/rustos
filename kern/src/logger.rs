@@ -1,4 +1,5 @@
 use core::fmt::Write;
+use core::time::Duration;
 
 use log::{Level, LevelFilter, Metadata, Record, set_logger};
 
@@ -15,12 +16,15 @@ impl log::Log for SimpleLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             smp::no_interrupt(|| {
-                let mut lock = m_lock!(CONSOLE);
+                if let Some(mut lock) = CONSOLE.lock_timeout(Duration::from_secs(2)) {
+                    writeln!(&mut lock, "[{}:{}] {}", record.level(), record.target(), record.args()).ok();
 
-                writeln!(&mut lock, "[{}:{}] {}", record.level(), record.target(), record.args()).ok();
-
-                if record.metadata().level() <= Level::Error {
-                    lock.flush();
+                    if record.metadata().level() <= Level::Error {
+                        lock.flush();
+                    }
+                } else if record.metadata().level() <= Level::Error {
+                    let mut uart = pi::uart::MiniUart::new_opt_init(false);
+                    writeln!(&mut uart, "[RAW-{}:{}] {}", record.level(), record.target(), record.args()).ok();
                 }
             });
         }

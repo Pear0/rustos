@@ -17,7 +17,7 @@ use self::syscall::handle_syscall;
 
 pub mod coreinfo;
 mod frame;
-mod hyper;
+pub mod hyper;
 mod hypercall;
 mod kernel;
 // defines kernel_handle_exception

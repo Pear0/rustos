@@ -113,25 +113,27 @@ fn configure_timer() {
         });
     }));
 
-    if smp::core() == 0 {
-        perf::prepare();
-
-        HYPER_TIMER.critical(|timer| {
-            timer.add(timing::time_to_cycles(Duration::from_micros(10)), Box::new(|ctx| {
-                perf::record_event(ctx.data);
-                // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);
-                // if IRQ_RECURSION_DEPTH.get() > 1 {
-                //     TIMER_EVENTS_EXC.fetch_add(1, Ordering::Relaxed);
-                // }
-            }));
-
-            timer.add(timing::time_to_cycles(Duration::from_secs(50)), Box::new(|ctx| {
-                ctx.remove_timer();
-                // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
-                perf::dump_events();
-            }));
-        });
-    }
+    // if smp::core() == 0 {
+    //     perf::prepare();
+    //
+    //     HYPER_TIMER.critical(|timer| {
+    //         timer.add(timing::time_to_cycles(Duration::from_micros(10)), Box::new(|ctx| {
+    //             if !perf::record_event(ctx.data) {
+    //                 ctx.remove_timer();
+    //             }
+    //             // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);
+    //             // if IRQ_RECURSION_DEPTH.get() > 1 {
+    //             //     TIMER_EVENTS_EXC.fetch_add(1, Ordering::Relaxed);
+    //             // }
+    //         }));
+    //
+    //         timer.add(timing::time_to_cycles(Duration::from_secs(50)), Box::new(|ctx| {
+    //             ctx.remove_timer();
+    //             // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
+    //             perf::dump_events();
+    //         }));
+    //     });
+    // }
 }
 
 pub fn hyper_main() -> ! {
@@ -219,6 +221,12 @@ pub fn hyper_main() -> ! {
     //         *lock += 1;
     //     }
     // });
+
+    {
+        // mutex fun!!!
+        unsafe { crate::mutex::init_registry() };
+    }
+
 
     error!("Add kernel process");
 

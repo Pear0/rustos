@@ -31,6 +31,7 @@ pigrate-core = { path = "../lib/pigrate-core" }
 
 addr2line = { version = "0.12.1", default-features = false, features = ["rustc-demangle"] }
 compression = { version = "0.1", default-features = false, features = ["gzip", "bzip2", "deflate", "lzss"] }
+crossbeam-utils = { version = "0.7.2", default-features = false, features = [] }
 # elfloader = "0.10.0"
 enumset = "1.0.0"
 font8x8 = { version = "0.2.5", default-features = false, features = ["unicode"] }

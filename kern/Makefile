@@ -47,6 +47,11 @@ qemu-gdb: build
 qemu-asm: build
 	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS) -d in_asm
 
+transmit2: build
+	@echo "+ Transmitting build/$(KERN).bin to $(TTY_PATH)"
+	ttywrite -i build/$(KERN).bin $(TTY_PATH)
+	screen -A $(TTY_PATH) 115200
+
 transmit: build
 	@echo "+ Transmitting build/$(KERN).bin to $(TTY_PATH)"
 	ttywrite -i build/$(KERN).bin $(TTY_PATH)
@@ -59,8 +64,11 @@ transmit_fast: build
 	# screen $(TTY_PATH) 115200
 	(stty -f $(TTY_PATH) 115200 >/dev/null | cat $(TTY_PATH) ) 2>/dev/null
 
+screen:
+	screen -a -A $(TTY_PATH) 115200
+
 objdump: build
-	cargo objdump -- -disassemble -no-show-raw-insn -print-imm-hex build/$(KERN).elf
+	$(HOME)/.cargo/bin/rust-objdump -disassemble -no-show-raw-insn -print-imm-hex build/$(KERN).elf
 
 nm: build
 	cargo nm build/$(KERN).elf

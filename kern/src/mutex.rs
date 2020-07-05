@@ -10,7 +10,10 @@ use core::time::Duration;
 use aarch64::{MPIDR_EL1, SCTLR_EL1, SCTLR_EL2, SP};
 use pi::uart::MiniUart;
 
-use crate::{smp, traps};
+use crate::{smp, timing, traps};
+use crate::sync::atomic_registry::{RegistryGuard, RegistryGuarded, Registry};
+use crossbeam_utils::atomic::AtomicCell;
+use alloc::sync::Arc;
 
 type EncUnit = u64;
 
@@ -32,15 +35,40 @@ fn decode_unit(unit: u64) -> Unit {
     }
 }
 
-#[repr(align(32))]
-pub struct Mutex<T> {
-    data: UnsafeCell<T>,
+pub static MUTEX_REGISTRY: AtomicCell<Option<Arc<Registry<MutexInner>>>> = AtomicCell::new(None);
+
+pub unsafe fn init_registry() {
+    // unsafe because this MUST only be init'd once.
+
+    let reg = Registry::new_size(10000);
+    MUTEX_REGISTRY.store(Some(reg));
+
+}
+
+// all the shared fields
+pub struct MutexInner {
     lock_unit: AtomicU64,
     owner: AtomicUsize,
-    name: &'static Location<'static>,
+    pub name: &'static Location<'static>,
     locked_at: AtomicU64,
+    pub total_waiting_time: AtomicU64,
     lock_name: UnsafeCell<&'static Location<'static>>,
     lock_trace: UnsafeCell<[u64; 50]>,
+    pub registry_guard: RegistryGuard<Self>,
+}
+
+unsafe impl Sync for MutexInner {}
+
+impl RegistryGuarded for MutexInner {
+    fn guard(&self) -> &RegistryGuard<Self> {
+        &self.registry_guard
+    }
+}
+
+#[repr(align(32))]
+pub struct Mutex<T> {
+    pub inner: MutexInner,
+    data: UnsafeCell<T>,
 }
 
 unsafe impl<T: Send> Send for Mutex<T> {}
@@ -61,13 +89,17 @@ impl<T> Mutex<T> {
     pub const fn new(val: T) -> Mutex<T> {
         let loc = Location::caller();
         Mutex {
-            lock_unit: AtomicU64::new(0),
-            owner: AtomicUsize::new(usize::max_value()),
+            inner: MutexInner {
+                lock_unit: AtomicU64::new(0),
+                owner: AtomicUsize::new(usize::max_value()),
+                name: loc,
+                locked_at: AtomicU64::new(0),
+                total_waiting_time: AtomicU64::new(0),
+                lock_name: UnsafeCell::new(loc),
+                lock_trace: UnsafeCell::new([0; 50]),
+                registry_guard: RegistryGuard::new(),
+            },
             data: UnsafeCell::new(val),
-            name: loc,
-            locked_at: AtomicU64::new(0),
-            lock_name: UnsafeCell::new(loc),
-            lock_trace: UnsafeCell::new([0; 50]),
         }
     }
 }
@@ -104,7 +136,7 @@ impl<T> Mutex<T> {
     }
 
     pub fn get_name(&self) -> &'static Location<'static> {
-        self.name
+        self.inner.name
     }
 
     pub unsafe fn unsafe_leak(&self) -> &mut T {
@@ -114,10 +146,10 @@ impl<T> Mutex<T> {
     // Once MMU/cache is enabled, do the right thing here. For now, we don't
     // need any real synchronization.
     #[track_caller]
-    pub fn try_lock(&self) -> Option<MutexGuard<T>> {
+    pub fn try_lock(&self, trying_for: Duration) -> Option<MutexGuard<T>> {
         if Self::has_mmu() {
             let this = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-            let current_unit = self.lock_unit.load(Ordering::Relaxed);
+            let current_unit = self.inner.lock_unit.load(Ordering::Relaxed);
             let mut unit = decode_unit(current_unit);
 
             // somebody is locking this lock and hasn't performed an unlock.
@@ -135,14 +167,26 @@ impl<T> Mutex<T> {
             unit.count += 1;
 
             // can we acquire lock
-            if self.lock_unit.compare_and_swap(current_unit, encode_unit(unit), Ordering::SeqCst) != current_unit {
+            if self.inner.lock_unit.compare_and_swap(current_unit, encode_unit(unit), Ordering::SeqCst) != current_unit {
                 return None;
             }
 
-            self.owner.store(this, Ordering::Relaxed);
-            self.locked_at.store(pi::timer::current_time().as_millis() as u64, Ordering::SeqCst);
+            self.inner.owner.store(this, Ordering::Relaxed);
+            self.inner.locked_at.store( timing::clock_time().as_millis() as u64, Ordering::SeqCst);
 
-            unsafe { *self.lock_name.get() = Location::caller() };
+            unsafe { *self.inner.lock_name.get() = Location::caller() };
+
+            self.inner.total_waiting_time.fetch_add(crate::timing::time_to_cycles(trying_for), Ordering::Relaxed);
+
+            {
+                // this assumes that registry is only ever init'ed once.
+                let ptr = unsafe { &*MUTEX_REGISTRY.as_ptr() };
+                if let Some(reg) = ptr {
+                    if !self.inner.registry_guard.is_registered() {
+                        Registry::register(reg, &self.inner);
+                    }
+                }
+            }
 
             let sp = SP.get();
 
@@ -153,9 +197,9 @@ impl<T> Mutex<T> {
             Some(MutexGuard { lock: &self, recursion_enabled_count: 0 })
         } else {
             let this = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-            if self.lock_unit.load(Ordering::SeqCst) == 0 {
-                self.lock_unit.store(encode_unit(Unit { recursion: 0, core: this as u64, count: 1 }), Ordering::SeqCst);
-                self.owner.store(this, Ordering::Relaxed);
+            if self.inner.lock_unit.load(Ordering::SeqCst) == 0 {
+                self.inner.lock_unit.store(encode_unit(Unit { recursion: 0, core: this as u64, count: 1 }), Ordering::SeqCst);
+                self.inner.owner.store(this, Ordering::Relaxed);
                 Some(MutexGuard { lock: &self, recursion_enabled_count: 0 })
             } else {
                 None
@@ -179,15 +223,15 @@ impl<T> Mutex<T> {
 
         let mut uart = MiniUart::new_opt_init(false);
 
-        let locked_at = Duration::from_millis(self.locked_at.load(Ordering::SeqCst));
-        let now = pi::timer::current_time();
-        writeln!(&mut uart, "Lock {} locked for {:?}", self.name, now - locked_at);
+        let locked_at = Duration::from_millis(self.inner.locked_at.load(Ordering::SeqCst));
+        let now = timing::clock_time();
+        writeln!(&mut uart, "Lock {} locked for {:?}", self.inner.name, now - locked_at);
 
-        let owner = self.owner.load(Ordering::SeqCst);
-        let mut locker = unsafe { *self.lock_name.get() };
+        let owner = self.inner.owner.load(Ordering::SeqCst);
+        let mut locker = unsafe { *self.inner.lock_name.get() };
 
         writeln!(&mut uart, "locker trace: {} @ {}", owner, locker);
-        for addr in unsafe { &*self.lock_trace.get() }.iter().take_while(|x| **x != 0) {
+        for addr in unsafe { &*self.inner.lock_trace.get() }.iter().take_while(|x| **x != 0) {
             writeln!(&mut uart, "0x{:08x}", *addr);
         }
 
@@ -210,22 +254,23 @@ impl<T> Mutex<T> {
         }
 
         ERR_LOCK.store(false, Ordering::SeqCst);
-        panic!("failed to acquire lock: {}", self.name)
+        panic!("failed to acquire lock: {}", self.inner.name)
     }
 
     #[inline(never)]
     #[track_caller]
     pub fn lock_timeout(&self, timeout: Duration) -> Option<MutexGuard<T>> {
-        let end = pi::timer::current_time() + timeout;
+        let start = timing::clock_time();
+        let end = start + timeout;
         let mut wait_amt = Duration::from_micros(1);
         loop {
-            match self.try_lock() {
+            match self.try_lock(timing::clock_time() - start) {
                 Some(guard) => return Some(guard),
                 None => {
                     pi::timer::spin_sleep(wait_amt);
                     wait_amt += wait_amt; // double wait amt
 
-                    if pi::timer::current_time() > end {
+                    if timing::clock_time() > end {
                         return None;
                     }
                 }
@@ -237,30 +282,30 @@ impl<T> Mutex<T> {
         if !Self::has_mmu() {
             panic!("cannot use increment_recursion() before CAS is available");
         }
-        let mut unit = decode_unit(self.lock_unit.load(Ordering::Relaxed));
+        let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Relaxed));
         unit.recursion += 1;
-        self.lock_unit.store(encode_unit(unit), Ordering::Relaxed);
+        self.inner.lock_unit.store(encode_unit(unit), Ordering::Relaxed);
     }
 
     fn decrement_recursion(&self) {
         if !Self::has_mmu() {
             panic!("cannot use increment_recursion() before CAS is available");
         }
-        let mut unit = decode_unit(self.lock_unit.load(Ordering::Relaxed));
+        let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Relaxed));
         unit.recursion -= 1;
-        self.lock_unit.store(encode_unit(unit), Ordering::Relaxed);
+        self.inner.lock_unit.store(encode_unit(unit), Ordering::Relaxed);
     }
 
     fn unlock(&self) {
         if Self::has_mmu() {
-            self.owner.store(0, Ordering::SeqCst);
+            self.inner.owner.store(0, Ordering::SeqCst);
 
-            let mut unit = decode_unit(self.lock_unit.load(Ordering::Relaxed));
+            let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Relaxed));
             unit.count -= 1;
 
-            self.lock_unit.store(encode_unit(unit), Ordering::SeqCst);
+            self.inner.lock_unit.store(encode_unit(unit), Ordering::SeqCst);
         } else {
-            self.lock_unit.store(0, Ordering::Relaxed);
+            self.inner.lock_unit.store(0, Ordering::Relaxed);
         }
     }
 }
@@ -307,7 +352,7 @@ impl<'a, T: 'a> Drop for MutexGuard<'a, T> {
 impl<T: fmt::Debug> fmt::Debug for Mutex<T> {
     #[track_caller]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.try_lock() {
+        match self.try_lock(Duration::default()) {
             Some(guard) => f.debug_struct("Mutex").field("data", &&*guard).finish(),
             None => f.debug_struct("Mutex").field("data", &"<locked>").finish()
         }

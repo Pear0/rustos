@@ -9,16 +9,17 @@ use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
-use crate::{smp, BootVariant};
+use crate::{smp, BootVariant, timing};
 use crate::cls::CoreLocal;
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{Id, Process, State, KernelImpl, HyperImpl};
 use crate::process::snap::SnapProcess;
 use crate::process::state::RunContext;
-use crate::traps::{KernelTrapFrame, Frame, HyperTrapFrame};
+use crate::traps::{KernelTrapFrame, Frame, HyperTrapFrame, IRQ_RECURSION_DEPTH};
 use crate::process::process::ProcessImpl;
 use crate::hyper::HYPER_TIMER;
+use crate::arm::{VirtualCounter, GenericCounterImpl, HyperPhysicalCounter};
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler<T: ProcessImpl>(Mutex<Option<Scheduler<T>>>);
@@ -33,8 +34,8 @@ fn reset_timer() {
     use aarch64::regs::*;
 
     match BootVariant::get_variant() {
-        BootVariant::Kernel => unsafe { CNTV_TVAL_EL0.set(100000) },
-        BootVariant::Hypervisor => { unsafe { CNTHP_TVAL_EL2.set(100000 * 2) } },
+        BootVariant::Kernel => VirtualCounter::set_timer_duration(Duration::from_millis(10)),
+        BootVariant::Hypervisor => HyperPhysicalCounter::set_timer_duration(Duration::from_millis(5)),
         _ => panic!("somehow got unknown boot variant"),
     }
 }
@@ -199,8 +200,12 @@ impl GlobalScheduler<HyperImpl> {
         }
 
         HYPER_TIMER.critical(|timer| {
-            timer.add(100000 * 2, Box::new(|ctx| {
-                HYPER_SCHEDULER.switch(State::Ready, ctx.data);
+            timer.add(timing::time_to_cycles(Duration::from_millis(5)), Box::new(|ctx| {
+                if IRQ_RECURSION_DEPTH.get() > 1 {
+                    ctx.no_reschedule();
+                } else {
+                    HYPER_SCHEDULER.switch(State::Ready, ctx.data);
+                }
             }));
         });
     }

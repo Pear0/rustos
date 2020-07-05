@@ -23,7 +23,7 @@ impl ConsoleImpl {
             send_buffer: CapacityRingBuffer::new(1000),
             receive_buffer: CapacityRingBuffer::new(1000),
             callback: Some((0x02, Box::new(|| {
-                info!("pressed Ctrl+B");
+                error!("pressed Ctrl+B");
                 true
             }))),
         }

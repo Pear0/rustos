@@ -338,7 +338,8 @@ impl Process<HyperImpl> {
         let region = match self.vmap.get_region(addr) {
             Some(reg) => reg,
             None => {
-                panic!("on_access_fault() called on unmapped address: {:#x}", addr.as_u64());
+                error!("TPIDR: {}", unsafe { aarch64::TPIDR_EL2.get() });
+                panic!("on_access_fault() called on unmapped address: {:#x} by proc: {} <{}> AT elr={:#x}", addr.as_u64(), self.context.get_id(), self.name, self.context.ELR_EL2);
             },
         };
         match &region.kind {
