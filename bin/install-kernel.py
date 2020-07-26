@@ -17,8 +17,10 @@ def load_target_dir():
     dst = None
     if os.path.exists(CACHE):
         dst = open(CACHE).read().strip()
-    if len(sys.argv) == 3:
-        dst = sys.argv[2]
+    if len(sys.argv) >= 3:
+        dst_ = sys.argv[2]
+        if dst_ != '-':
+            dst = dst_
 
     if dst is None:
         os.system("lsblk")
@@ -118,18 +120,18 @@ if __name__ == '__main__':
         print(" NOTE. if the sdcard directory is not provided,")
         print("       we will select the directory previously used")
         exit(1)
-    
-    assert(len(sys.argv) <= 3)
 
     kernel = load_kernel()
     sdcard = load_target_dir()
     config = build_config(kernel)
-    
+
+    other_files = sys.argv[3:]
+
     for f in load_firmware() \
         + [(kernel, "kernel8.img"),
-           (config, "config.txt")]:
+           (config, "config.txt")] + [(f, os.path.basename(f)) for f in other_files]:
         copy_to(*f, sdcard)
 
     print("[!] unmounting %s" % sdcard)
-    # os.system("sudo umount '%s'" % sdcard)
-    os.system("diskutil unmount '%s'" % sdcard)
+    os.system("sudo umount '%s'" % sdcard)
+    # os.system("diskutil unmount '%s'" % sdcard)

@@ -1,6 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
+use core::sync::atomic::Ordering;
 use core::time::Duration;
 
 use hashbrown::HashMap;
@@ -8,6 +9,7 @@ use hashbrown::HashMap;
 use crate::cls::{CoreLocal, CoreMutex};
 use crate::iosync::Global;
 use crate::traps::{HyperTrapFrame, IRQ_EL, IRQ_RECURSION_DEPTH};
+use crate::traps::hyper::{TM_TOTAL_COUNT, TM_TOTAL_TIME};
 
 static CORE_EVENTS: CoreLocal<Global<Vec<PerfEvent>>> = CoreLocal::new_global(|| Vec::new());
 
@@ -147,6 +149,12 @@ pub fn dump_events() {
         }
 
         info!("{} other events", events.len() - displayed);
+
+        let tm_count = TM_TOTAL_COUNT.load(Ordering::Relaxed);
+        let tm_time = Duration::from_micros(TM_TOTAL_TIME.load(Ordering::Relaxed));
+
+        info!("TM Count: {}, TM Time: {:?}", tm_count, tm_time);
+        info!("Per: {:?}", tm_time / (tm_count as u32));
     });
 }
 

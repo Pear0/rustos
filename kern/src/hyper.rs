@@ -2,18 +2,19 @@ use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use core::time::Duration;
 
 use aarch64::CNTHP_CTL_EL2;
 use pi::interrupt::{CoreInterrupt, Interrupt};
 use pi::usb::Usb;
 
-use crate::{hw, shell, smp, timing, VMM, perf};
+use crate::{hw, perf, shell, smp, timing, VMM};
 use crate::arm::{HyperPhysicalCounter, TimerController};
 use crate::BootVariant::Hypervisor;
 use crate::cls::{CoreGlobal, CoreLocal, CoreMutex};
 use crate::console::{console_ext_init, console_interrupt_handler};
+use crate::debug::initialize_debug;
 use crate::fs::handle::{Sink, SinkWrapper, Source, SourceWrapper, WaitingSourceWrapper};
 use crate::iosync::Global;
 use crate::net::physical::{Physical, PhysicalUsb};
@@ -21,7 +22,6 @@ use crate::process::{GlobalScheduler, HyperImpl, HyperProcess};
 use crate::traps::{HyperTrapFrame, IRQ_RECURSION_DEPTH};
 use crate::traps::irq::Irq;
 use crate::virtualization::nic::VirtualSwitch;
-use crate::debug::initialize_debug;
 
 pub static HYPER_IRQ: Irq<HyperImpl> = Irq::uninitialized();
 pub static HYPER_SCHEDULER: GlobalScheduler<HyperImpl> = GlobalScheduler::uninitialized();
@@ -106,6 +106,8 @@ fn my_thread() -> ! {
 pub static TIMER_EVENTS: AtomicU64 = AtomicU64::new(0);
 pub static TIMER_EVENTS_EXC: AtomicU64 = AtomicU64::new(0);
 
+static foo: AtomicUsize = AtomicUsize::new(0);
+
 fn configure_timer() {
     HYPER_IRQ.register_core(crate::smp::core(), CoreInterrupt::CNTHPIRQ, Box::new(|tf| {
         smp::no_interrupt(|| {
@@ -113,27 +115,31 @@ fn configure_timer() {
         });
     }));
 
-    // if smp::core() == 0 {
-    //     perf::prepare();
-    //
-    //     HYPER_TIMER.critical(|timer| {
-    //         timer.add(timing::time_to_cycles(Duration::from_micros(10)), Box::new(|ctx| {
-    //             if !perf::record_event(ctx.data) {
-    //                 ctx.remove_timer();
-    //             }
-    //             // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);
-    //             // if IRQ_RECURSION_DEPTH.get() > 1 {
-    //             //     TIMER_EVENTS_EXC.fetch_add(1, Ordering::Relaxed);
-    //             // }
-    //         }));
-    //
-    //         timer.add(timing::time_to_cycles(Duration::from_secs(50)), Box::new(|ctx| {
-    //             ctx.remove_timer();
-    //             // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
-    //             perf::dump_events();
-    //         }));
-    //     });
-    // }
+    if smp::core() == 0 {
+        perf::prepare();
+
+        HYPER_TIMER.critical(|timer| {
+            timer.add(timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_micros(10)), Box::new(|ctx| {
+                if foo.fetch_add(1, Ordering::Relaxed) < 10 {
+                    return;
+                }
+
+                if !perf::record_event(ctx.data) {
+                    ctx.remove_timer();
+                }
+                // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);
+                // if IRQ_RECURSION_DEPTH.get() > 1 {
+                //     TIMER_EVENTS_EXC.fetch_add(1, Ordering::Relaxed);
+                // }
+            }));
+
+            timer.add(timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_secs(50)), Box::new(|ctx| {
+                ctx.remove_timer();
+                // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
+                perf::dump_events();
+            }));
+        });
+    }
 }
 
 pub fn hyper_main() -> ! {
@@ -191,9 +197,9 @@ pub fn hyper_main() -> ! {
     });
 
 
-    for atag in pi::atags::Atags::get() {
-        info!("{:?}", atag);
-    }
+    // for atag in pi::atags::Atags::get() {
+    //     info!("{:?}", atag);
+    // }
 
     // Ensure timers are set up. Scheduler will also do this on start.
     // unsafe { CNTHP_CTL_EL2.set((CNTHP_CTL_EL2.get() & !CNTHP_CTL_EL2::IMASK) | CNTHP_CTL_EL2::ENABLE) };

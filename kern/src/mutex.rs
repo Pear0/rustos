@@ -8,12 +8,12 @@ use core::sync::atomic::AtomicU64;
 use core::time::Duration;
 
 use aarch64::{MPIDR_EL1, SCTLR_EL1, SCTLR_EL2, SP};
-use pi::uart::MiniUart;
 
-use crate::{smp, timing, traps};
+use crate::{smp, timing, traps, hw};
 use crate::sync::atomic_registry::{RegistryGuard, RegistryGuarded, Registry};
 use crossbeam_utils::atomic::AtomicCell;
 use alloc::sync::Arc;
+use crate::arm::PhysicalCounter;
 
 type EncUnit = u64;
 
@@ -172,11 +172,11 @@ impl<T> Mutex<T> {
             }
 
             self.inner.owner.store(this, Ordering::Relaxed);
-            self.inner.locked_at.store( timing::clock_time().as_millis() as u64, Ordering::SeqCst);
+            self.inner.locked_at.store( timing::clock_time::<PhysicalCounter>().as_millis() as u64, Ordering::SeqCst);
 
             unsafe { *self.inner.lock_name.get() = Location::caller() };
 
-            self.inner.total_waiting_time.fetch_add(crate::timing::time_to_cycles(trying_for), Ordering::Relaxed);
+            self.inner.total_waiting_time.fetch_add(crate::timing::time_to_cycles::<PhysicalCounter>(trying_for), Ordering::Relaxed);
 
             {
                 // this assumes that registry is only ever init'ed once.
@@ -221,10 +221,10 @@ impl<T> Mutex<T> {
         // grab lock
         while ERR_LOCK.compare_and_swap(false, true, Ordering::SeqCst) != false {}
 
-        let mut uart = MiniUart::new_opt_init(false);
+        let mut uart = hw::arch().early_writer();
 
         let locked_at = Duration::from_millis(self.inner.locked_at.load(Ordering::SeqCst));
-        let now = timing::clock_time();
+        let now = timing::clock_time::<PhysicalCounter>();
         writeln!(&mut uart, "Lock {} locked for {:?}", self.inner.name, now - locked_at);
 
         let owner = self.inner.owner.load(Ordering::SeqCst);
@@ -260,17 +260,17 @@ impl<T> Mutex<T> {
     #[inline(never)]
     #[track_caller]
     pub fn lock_timeout(&self, timeout: Duration) -> Option<MutexGuard<T>> {
-        let start = timing::clock_time();
+        let start = timing::clock_time::<PhysicalCounter>();
         let end = start + timeout;
         let mut wait_amt = Duration::from_micros(1);
         loop {
-            match self.try_lock(timing::clock_time() - start) {
+            match self.try_lock(timing::clock_time::<PhysicalCounter>() - start) {
                 Some(guard) => return Some(guard),
                 None => {
-                    pi::timer::spin_sleep(wait_amt);
+                    timing::sleep_phys(wait_amt);
                     wait_amt += wait_amt; // double wait amt
 
-                    if timing::clock_time() > end {
+                    if timing::clock_time::<PhysicalCounter>() > end {
                         return None;
                     }
                 }

@@ -24,6 +24,11 @@ build:
 	@echo "+ Building build/$(KERN).bin [objcopy]"
 	@$(OBJCPY) $(TARGET) build/$(KERN).bin
 
+	# mkimage -A arm64 -C none -f auto -a 0x80000 -e 0x80000 -n 'kernel' -d build/$(KERN).bin:build/$(KERN).elf build/uImage
+	gzip -fk build/$(KERN).elf
+	mkimage -f uboot_img.its build/uImage
+	# -i build/$(KERN).elf
+
 check:
 	@cargo xcheck
 
@@ -67,7 +72,7 @@ transmit_fast: build
 screen:
 	screen -a -A $(TTY_PATH) 115200
 
-objdump: build
+objdump:
 	$(HOME)/.cargo/bin/rust-objdump -disassemble -no-show-raw-insn -print-imm-hex build/$(KERN).elf
 
 nm: build
@@ -79,7 +84,7 @@ clean:
 
 install: build
 	@echo "+ Installing build/$(KERN).elf [install-kernel.py]"
-	@$(ROOT)/bin/install-kernel.py build/$(KERN).elf
+	@$(ROOT)/bin/install-kernel.py build/$(KERN).elf - build/uImage ./uboot.ini build/$(KERN).elf.gz
 
 test:
 	cargo test --target=$(shell $(ROOT)/bin/get-host-target.sh)

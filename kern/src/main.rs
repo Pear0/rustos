@@ -1,6 +1,7 @@
 #![feature(alloc_error_handler)]
 #![feature(const_fn)]
 #![feature(decl_macro)]
+#![feature(asm)]
 #![feature(llvm_asm)]
 #![feature(track_caller)]
 #![feature(global_asm)]
@@ -20,6 +21,13 @@
 #![allow(safe_packed_borrows)]
 #![allow(dead_code)]
 #![allow(unused_must_use)]
+
+#![allow(unreachable_code)]
+#![allow(unused_imports)]
+#![allow(dead_code)]
+#![allow(unused_parens)]
+#![allow(unused_braces)]
+#![allow(unused_variables)]
 
 
 #[macro_use]
@@ -67,6 +75,7 @@ use crate::param::PAGE_SIZE;
 use crate::process::{Id, KernelImpl, Process, Stack};
 use crate::process::fd::FileDescriptor;
 use crate::traps::syndrome::Syndrome;
+use crate::arm::PhysicalCounter;
 
 #[macro_use]
 pub mod console;
@@ -82,6 +91,7 @@ pub mod cls;
 pub mod collections;
 mod compat;
 pub mod debug;
+mod device_tree;
 pub mod display;
 mod display_manager;
 pub mod fs;
@@ -145,10 +155,15 @@ fn init_jtag() {
 }
 
 fn kmain(boot_hypervisor: bool) -> ! {
-    init_jtag();
+    // init_jtag();
+    use crate::arm::GenericCounterImpl;
+
+    kprintln!("earlier boot");
+
+    kprintln!("foo {}", PhysicalCounter::get_counter());
 
     // This is so that the host computer can attach serial console/screen whatever.
-    timer::spin_sleep(Duration::from_millis(500));
+    timing::sleep_phys(Duration::from_millis(500));
 
     kprintln!("early boot");
     logger::register_global_logger();
@@ -158,8 +173,8 @@ fn kmain(boot_hypervisor: bool) -> ! {
     unsafe {
         debug!("init allocator");
         ALLOCATOR.initialize();
-        debug!("init filesystem");
-        FILESYSTEM.initialize();
+        // debug!("init filesystem");
+        // FILESYSTEM.initialize();
     }
 
     if boot_hypervisor {

@@ -8,10 +8,11 @@ use crate::kernel_call::*;
 use crate::console::CONSOLE;
 use crate::kernel::KERNEL_SCHEDULER;
 use crate::process::{EventPollFn, State, KernelImpl};
-use crate::{process};
+use crate::{process, timing};
 use crate::traps::KernelTrapFrame;
 use crate::sync::{Completion, Waitable};
 use crate::param::PAGE_SIZE;
+use crate::arm::VirtualCounter;
 
 
 fn set_result(tf: &mut KernelTrapFrame, regs: &[u64]) {
@@ -35,11 +36,11 @@ pub fn sys_sleep(ms: u32, tf: &mut KernelTrapFrame) {
     if ms == 0 {
         KERNEL_SCHEDULER.switch(State::Ready, tf);
     } else {
-        let start = pi::timer::current_time();
+        let start = timing::clock_time::<VirtualCounter>();
         let wait_until = start + Duration::from_millis(ms as u64);
 
         let time_fn: EventPollFn<KernelImpl> = Box::new(move |tf| {
-            let now = pi::timer::current_time();
+            let now = timing::clock_time::<VirtualCounter>();
             let good = now >= wait_until;
             if good {
                 let d = (now - start).as_millis() as u64;
@@ -62,7 +63,7 @@ pub fn sys_sleep(ms: u32, tf: &mut KernelTrapFrame) {
 ///  - fractional part of the current time, in nanoseconds.
 pub fn sys_time(tf: &mut KernelTrapFrame) {
 
-    let time = pi::timer::current_time();
+    let time = timing::clock_time::<VirtualCounter>();
 
     tf.regs[0] = time.as_secs();
     tf.regs[0] = time.subsec_nanos() as u64;
@@ -105,7 +106,7 @@ pub fn sys_getpid(tf: &mut KernelTrapFrame) {
 }
 
 pub fn sys_waitpid(pid: u64, tf: &mut KernelTrapFrame) {
-    let start = pi::timer::current_time();
+    let start = timing::clock_time::<VirtualCounter>();
 
     let comp = Arc::new(Completion::<process::Id>::new());
 
@@ -121,7 +122,7 @@ pub fn sys_waitpid(pid: u64, tf: &mut KernelTrapFrame) {
     });
 
     let time_fn: EventPollFn<KernelImpl> = Box::new(move |tf| {
-        let now = pi::timer::current_time();
+        let now = timing::clock_time::<VirtualCounter>();
         if comp.get().is_some() {
             let d = (now - start).as_millis() as u64;
             set_result(&mut tf.context, &[d]);

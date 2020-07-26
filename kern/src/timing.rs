@@ -3,67 +3,71 @@ use core::time::Duration;
 
 use rand::{RngCore, SeedableRng};
 use rand_xorshift::XorShiftRng;
+use crate::arm::{GenericCounterImpl, PhysicalCounter};
 
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 const MICROS_PER_SEC: u64 = 1_000_000;
 
 type PerfFn = dyn FnMut(usize);
 
+pub fn sleep<T: GenericCounterImpl>(dur: Duration) {
+    let end = time_to_cycles::<T>(clock_time::<T>() + dur);
+    while end > T::get_counter() {}
+}
+
+pub fn sleep_phys(dur: Duration) {
+    sleep::<PhysicalCounter>(dur)
+}
+
 pub fn clock_freq() -> u64 {
     use aarch64::regs::*;
     unsafe { CNTFRQ_EL0.get() }
 }
 
-pub fn clock_count() -> u64 {
-    use aarch64::regs::*;
-    aarch64::isb();
-    unsafe { CNTPCT_EL0.get() }
-}
-
-pub fn cycles_to_time(cycles: u64) -> Duration {
-    let nanos = (NANOS_PER_SEC as u128) * (cycles as u128) / (clock_freq() as u128);
+pub fn cycles_to_time<T: GenericCounterImpl>(cycles: u64) -> Duration {
+    let nanos = (NANOS_PER_SEC as u128) * (cycles as u128) / (T::get_frequency() as u128);
     Duration::from_nanos(nanos as u64)
 }
 
-pub fn time_to_cycles(dur: Duration) -> u64 {
-    let cycles = dur.as_nanos() * (clock_freq() as u128) / (NANOS_PER_SEC as u128);
+pub fn time_to_cycles<T: GenericCounterImpl>(dur: Duration) -> u64 {
+    let cycles = dur.as_nanos() * (T::get_frequency() as u128) / (NANOS_PER_SEC as u128);
     cycles as u64
 }
 
-pub fn clock_time() -> Duration {
-    cycles_to_time(clock_count())
+pub fn clock_time<T: GenericCounterImpl>() -> Duration {
+    cycles_to_time::<T>(T::get_counter())
 }
 
 // returns exec time in cycles.
 
-fn perf_fn(func: &mut PerfFn, count: usize) -> u64 {
-    let start = clock_count();
+fn perf_fn<T: GenericCounterImpl>(func: &mut PerfFn, count: usize) -> u64 {
+    let start = T::get_counter();
     func(count);
-    let end = clock_count();
+    let end = T::get_counter();
     end - start
 }
 
-fn do_timing(func: &mut PerfFn) -> Vec<(usize, u64)> {
+fn do_timing<T: GenericCounterImpl>(func: &mut PerfFn) -> Vec<(usize, u64)> {
     let mut readings: Vec<(usize, u64)> = Vec::new();
     let mut rnd = XorShiftRng::seed_from_u64(42);
     let mut rand_max_count = 0;
     let mut rand_mode = false;
 
     // 20ms
-    let rand_threshold = clock_freq() / 50;
-    let minimum_timing_threshold = clock_freq();
+    let rand_threshold = T::get_frequency() / 50;
+    let minimum_timing_threshold = T::get_frequency();
 
     let mut count: usize = 1;
     let mut total_timing = 0;
 
     {
         // make sure we have at least one zero reading
-        let time = perf_fn(func, 0);
+        let time = perf_fn::<T>(func, 0);
         readings.push((0, time));
     }
 
     loop {
-        let time = perf_fn(func, count);
+        let time = perf_fn::<T>(func, count);
         readings.push((count, time));
         total_timing += time;
 
@@ -113,21 +117,21 @@ fn linear_regression(readings: &Vec<(usize, u64)>) -> u64 {
 
 #[inline(never)]
 pub fn benchmark_func_time(func: &mut PerfFn) -> Duration {
-    let readings = do_timing(func);
+    let readings = do_timing::<PhysicalCounter>(func);
     let cycles = linear_regression(&readings);
-    cycles_to_time(cycles)
+    cycles_to_time::<PhysicalCounter>(cycles)
 }
 
 #[inline(never)]
 pub fn benchmark_func(name: &'static str, func: &mut PerfFn) {
     debug!("[{}] Benchmarking", name);
-    let readings = do_timing(func);
+    let readings = do_timing::<PhysicalCounter>(func);
     debug!("[{}] Got {} readings", name, readings.len());
     let cycles = linear_regression(&readings);
     if cycles == 0 {
         info!("[{}] regression beta is zero/negative, did you loop?", name)
     } else {
-        info!("[{}] Benchmark: {:?}", name, cycles_to_time(cycles));
+        info!("[{}] Benchmark: {:?}", name, cycles_to_time::<PhysicalCounter>(cycles));
     }
 }
 

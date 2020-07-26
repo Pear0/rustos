@@ -2,11 +2,12 @@ use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::panic::Location;
 use core::time::Duration;
 
 use pi::gpio;
-use pi::interrupt::Interrupt;
+use pi::interrupt::{Interrupt, CoreInterrupt};
 use shim::{io, ioerr};
 
 use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM};
@@ -19,9 +20,15 @@ use crate::process::{GlobalScheduler, Id, KernelImpl, KernelProcess, KernProcess
 use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
 use crate::vm::VMManager;
+use crate::cls::{CoreGlobal, CoreLocal};
+use crate::arm::{TimerController, VirtualCounter};
+use crate::traps::KernelTrapFrame;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
+
+pub static KERNEL_TIMER: CoreGlobal<TimerController<KernelTrapFrame, VirtualCounter>> = CoreLocal::new_global(|| TimerController::new());
+
 
 fn network_thread() -> ! {
 
@@ -131,27 +138,40 @@ fn led_blink() -> ! {
     }
 }
 
+fn configure_timer() {
+    // TODO only used on Pi
+    KERNEL_IRQ.register_core(crate::smp::core(), CoreInterrupt::CNTVIRQ, Box::new(|tf| {
+        smp::no_interrupt(|| {
+            KERNEL_TIMER.critical(|timer| timer.process_timers(tf));
+        });
+    }));
+
+}
+
 
 pub fn kernel_main() -> ! {
     debug!("init irq");
     KERNEL_IRQ.initialize();
 
-    //
-    console_ext_init();
+    // dont do uart fanciness
+    // console_ext_init();
     KERNEL_IRQ.register(Interrupt::Aux, Box::new(|_| {
         console_interrupt_handler();
     }));
 
     // initialize local timers for all cores
-    unsafe { (0x4000_0008 as *mut u32).write_volatile(0x8000_0000) };
-    unsafe { (0x4000_0040 as *mut u32).write_volatile(0b1010) };
-    unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
-    unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
-    unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
+    // unsafe { (0x4000_0008 as *mut u32).write_volatile(0x8000_0000) };
+    // unsafe { (0x4000_0040 as *mut u32).write_volatile(0b1010) };
+    // unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
+    // unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
+    // unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
 
     debug!("initing smp");
 
-    let enable_many_cores = !BootVariant::kernel_in_hypervisor();
+    let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
+    debug!("cpu attrs: {:?}", attrs);
+
+    let enable_many_cores = !BootVariant::kernel_in_hypervisor() && false;
 
     if true {
         let cores = if enable_many_cores { 4 } else { 1 };
@@ -159,6 +179,7 @@ pub fn kernel_main() -> ! {
         smp::wait_for_cores(cores);
     }
 
+    info!("VMM init");
     // error!("init VMM data structures");
     VMM.init_only();
 
@@ -166,6 +187,10 @@ pub fn kernel_main() -> ! {
     smp::run_on_all_cores(|| {
         VMM.setup_kernel();
     });
+
+    info!("init irqs");
+    khadas::irq::init_stuff();
+    info!("done irqs");
 
     if BootVariant::kernel_in_hypervisor() {
         info!("Making hvc call");
@@ -176,6 +201,7 @@ pub fn kernel_main() -> ! {
     }
 
     // error!("init Scheduler");
+    configure_timer();
     unsafe {
         KERNEL_SCHEDULER.initialize_kernel();
     };
@@ -189,26 +215,31 @@ pub fn kernel_main() -> ! {
 
     debug!("start some processes");
 
-    pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
+    // pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
 
     // Stable
 
-    timing::benchmark("kernel pi::timer", |num| {
-        for _ in 0..num {
-            pi::timer::current_time();
-        }
-    });
-
-    timing::benchmark("kernel hvc", |num| {
-        for _ in 0..num {
-            hvc!(0);
-        }
-    });
+    // timing::benchmark("kernel pi::timer", |num| {
+    //     for _ in 0..num {
+    //         pi::timer::current_time();
+    //     }
+    // });
+    //
+    // timing::benchmark("kernel hvc", |num| {
+    //     for _ in 0..num {
+    //         hvc!(0);
+    //     }
+    // });
 
     {
         let loc = Location::caller();
         info!("Hello: {:?}", loc);
     }
+
+    let b = khadas::uart::get_status_and_control();
+    info!("UART regs: ({:#b}, {:#b})", b.0, b.1);
+
+    // UART regs: (0b10000100000011111100000000, 0b1011000000000000)
 
 
     {
@@ -229,10 +260,10 @@ pub fn kernel_main() -> ! {
     //     KERNEL_SCHEDULER.add(proc);
     // }
 
-    {
-        let proc = KernelProcess::kernel_process_old("led".to_owned(), led_blink).unwrap();
-        KERNEL_SCHEDULER.add(proc);
-    }
+    // {
+    //     let proc = KernelProcess::kernel_process_old("led".to_owned(), led_blink).unwrap();
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
 
     // {
     //     let proc = KernelProcess::kernel_process("display".to_owned(), display_manager::display_process).unwrap();
@@ -273,7 +304,7 @@ pub fn kernel_main() -> ! {
         error!("RIP RIP");
     });
 
-    pi::timer::spin_sleep(Duration::from_millis(50));
+    timing::sleep_phys(Duration::from_millis(50));
     debug!("Core 0 starting scheduler");
 
     KERNEL_SCHEDULER.start();

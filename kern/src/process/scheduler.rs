@@ -20,6 +20,7 @@ use crate::traps::{KernelTrapFrame, Frame, HyperTrapFrame, IRQ_RECURSION_DEPTH};
 use crate::process::process::ProcessImpl;
 use crate::hyper::HYPER_TIMER;
 use crate::arm::{VirtualCounter, GenericCounterImpl, HyperPhysicalCounter};
+use crate::kernel::KERNEL_TIMER;
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler<T: ProcessImpl>(Mutex<Option<Scheduler<T>>>);
@@ -154,12 +155,12 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
 
         let core = smp::core();
 
-        unsafe { ((0x4000_0040 + 4 * core) as *mut u32).write_volatile(0b1010) };
+        // unsafe { ((0x4000_0040 + 4 * core) as *mut u32).write_volatile(0b1010) };
         aarch64::dsb();
 
         // let v = unsafe { CNTVCT_EL0.get() };
-        unsafe { CNTV_TVAL_EL0.set(100000 * 10) };
-        unsafe { CNTV_CTL_EL0.set((CNTV_CTL_EL0.get() & !CNTV_CTL_EL0::IMASK) | CNTV_CTL_EL0::ENABLE) };
+        // unsafe { CNTV_TVAL_EL0.set(100000 * 10) };
+        // unsafe { CNTV_CTL_EL0.set((CNTV_CTL_EL0.get() & !CNTV_CTL_EL0::IMASK) | CNTV_CTL_EL0::ENABLE) };
 
 
         // Bootstrap the first process
@@ -179,12 +180,22 @@ impl GlobalScheduler<KernelImpl> {
         }
 
         let core = crate::smp::core();
-        KERNEL_IRQ.register_core(core, CoreInterrupt::CNTVIRQ, Box::new(|tf| {
-            KERNEL_SCHEDULER.switch(State::Ready, tf);
+        // KERNEL_IRQ.register_core(core, CoreInterrupt::CNTVIRQ, Box::new(|tf| {
+        //     KERNEL_SCHEDULER.switch(State::Ready, tf);
+        //
+        //     // somewhat redundant, .switch() is suppose to do this.
+        //     reset_timer();
+        // }));
 
-            // somewhat redundant, .switch() is suppose to do this.
-            reset_timer();
-        }));
+        KERNEL_TIMER.critical(|timer| {
+            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(5)), Box::new(|ctx| {
+                if IRQ_RECURSION_DEPTH.get() > 1 {
+                    ctx.no_reschedule();
+                } else {
+                    KERNEL_SCHEDULER.switch(State::Ready, ctx.data);
+                }
+            }));
+        });
 
     }
 }
@@ -200,7 +211,7 @@ impl GlobalScheduler<HyperImpl> {
         }
 
         HYPER_TIMER.critical(|timer| {
-            timer.add(timing::time_to_cycles(Duration::from_millis(5)), Box::new(|ctx| {
+            timer.add(timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_millis(5)), Box::new(|ctx| {
                 if IRQ_RECURSION_DEPTH.get() > 1 {
                     ctx.no_reschedule();
                 } else {

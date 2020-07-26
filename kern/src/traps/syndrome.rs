@@ -1,5 +1,6 @@
 use aarch64::ESR_EL1;
 
+// from page D7-2280 of ARMv8-Reference-Manual.pdf
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Fault {
     AddressSize,
@@ -8,6 +9,10 @@ pub enum Fault {
     Permission,
     Alignment,
     TlbConflict,
+    ExternalAbort, // Synchronous External Abort not on Translation Walk
+    TranslationExternalAbort, // Synchronous External Abort on Translation Walk
+    ParityError, // Synchronous parity or ECC error on memory access, not on translation table walk
+    TranslationParityError, // Synchronous parity or ECC error on memory access on translation table walk
     Other(u8),
 }
 
@@ -21,6 +26,10 @@ impl From<u32> for Fault {
             0b0001 => Translation,
             0b0010 => AccessFlag,
             0b0011 => Permission,
+            0b0100 => ExternalAbort,
+            0b0101 => TranslationExternalAbort,
+            0b0110 => ParityError,
+            0b0111 => TranslationParityError,
             0b1000 => Alignment,
             0b1100 => TlbConflict,
             e => Other(e as u8)

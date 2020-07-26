@@ -3,8 +3,8 @@ use core::time::Duration;
 
 use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
-use crate::{debug, shell, smp};
-use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
+use crate::{debug, shell, smp, hw, timing};
+use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER, KERNEL_TIMER};
 use crate::param::{PAGE_MASK, PAGE_SIZE, USER_IMG_BASE};
 use crate::process::State;
 use crate::traps::{Info, IRQ_EL, IRQ_ESR, IRQ_INFO, IRQ_RECURSION_DEPTH, KernelTrapFrame, Kind};
@@ -12,6 +12,7 @@ use crate::traps::Kind::Synchronous;
 use crate::traps::syndrome::Syndrome;
 use crate::traps::syscall::handle_syscall;
 use crate::vm::VirtualAddr;
+use crate::arm::VirtualCounter;
 
 #[derive(Debug)]
 enum IrqVariant {
@@ -21,6 +22,12 @@ enum IrqVariant {
 
 
 fn handle_irqs(tf: &mut KernelTrapFrame) {
+
+    if hw::not_pi() {
+        KERNEL_TIMER.critical(|d| d.process_timers(tf));
+        return;
+    }
+
     let ctl = Controller::new();
     // Invoke any handlers
 
@@ -28,7 +35,7 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
 
     let mut pending: Option<IrqVariant> = None;
     let mut diffs = [Duration::from_secs(0); max_irq];
-    let mut start = pi::timer::current_time();
+    let mut start = timing::clock_time::<VirtualCounter>();
 
     for i in 0..max_irq {
         let mut any_pending = false;
@@ -57,10 +64,10 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
         }
 
         for _ in 0..5 {
-            pi::timer::current_time();
+            timing::clock_time::<VirtualCounter>();
         }
 
-        let now = pi::timer::current_time();
+        let now = timing::clock_time::<VirtualCounter>();
         diffs[i] = now - start;
         start = now;
     }
@@ -110,6 +117,8 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
 
     match info.kind {
         Kind::Irq | Kind::Fiq => {
+            use aarch64::regs::*;
+            // kprintln!("Got an irq");
             handle_irqs(tf);
         }
         Kind::Synchronous => {
@@ -125,6 +134,10 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
                     kprintln!("ELR: 0x{:x}", tf.ELR_EL1);
 
                     debug_shell(tf);
+                }
+                s @ Syndrome::Other(13) => {
+                    use core::fmt::Write;
+                    writeln!(hw::arch().early_writer(), "bad atomic instruction :( {:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.ELR_EL1);
                 }
                 s => {
                     error!("F {:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.ELR_EL1);

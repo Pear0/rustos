@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use aarch64::*;
 
-use crate::kmain;
+use crate::{kmain, hw};
 use crate::param::*;
 
 mod oom;
@@ -30,16 +30,16 @@ pub static EL1_IN_HYPERVISOR: AtomicBool = AtomicBool::new(true);
 #[link_section = ".text.init"]
 #[naked]
 #[no_mangle]
-pub unsafe extern "C" fn _start() -> ! {
+pub unsafe extern "C" fn _start(x0: u64, x1: u64, x2: u64) -> u32 {
     if MPIDR_EL1.get_value(MPIDR_EL1::Aff0) == 0 {
-        SP.set(KERN_STACK_BASE);
-        kinit()
+       SP.set(KERN_STACK_BASE);
+       kinit(x0, x1, x2);
     }
 
     loop {
         aarch64::wfe();
     }
-    // unreachable!()
+    unreachable!()
 }
 
 unsafe fn zeros_bss() {
@@ -176,6 +176,7 @@ pub unsafe fn el2_init() {
 
         core::ptr::copy_nonoverlapping(text_beg as *const u8, text_end as *mut u8, text_len as usize);
 
+
         aarch64::dsb();
 
         EL2_KERNEL_INIT.store(text_end, Ordering::Relaxed);
@@ -187,17 +188,40 @@ pub unsafe fn el2_init() {
 }
 
 #[no_mangle]
-unsafe fn kinit() -> ! {
+unsafe fn kinit(boot_x0: u64, boot_x1: u64, boot_x2: u64) -> ! {
     zeros_bss();
+    hw::init_hal(hw::ArchInitInfo {
+        entry_regs: [boot_x0, boot_x1, boot_x2],
+    });
+
+    khadas::uart::print("hello world 2\r\n");
+    hw::arch().early_print().write_str("HAL hello world!\r\n");
+
     switch_to_el2();
 
+    kprintln!("boot regs [{:#x} {:#x} {:#x}]", boot_x0, boot_x1, boot_x2);
+
+    // ICC_SRE_EL2.set(ICC_SRE_EL2::ENABLE | ICC_SRE_EL2::SRE);
+
+    if boot_x0 != 0 {
+        // crate::device_tree::dump_dtb(boot_x0);
+        if let Err(e) = hw::arch().iter_memory_regions(&mut |start, size| {
+            kprintln!("Memory from {} with size {}", start, size);
+        }) {
+            kprintln!("Error mem regions: {}", e);
+        }
+    }
+
     // for now, always boot hypervisor
-    if current_el() == 2 {
+    if current_el() == 2 && false {
         el2_init();
+        khadas::uart::print("hello world 2int El2\r\n");
         kmain(true);
     } else {
+        el2_init();
         switch_to_el1();
         el1_init();
+        khadas::uart::print("hello world into EL1\r\n");
         kmain(false);
     }
 }

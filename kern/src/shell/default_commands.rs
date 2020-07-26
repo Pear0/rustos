@@ -20,7 +20,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, BootVariant, NET, timer};
+use crate::{ALLOCATOR, BootVariant, NET, timer, timing};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
 use crate::fs::handle::{Sink, Source};
@@ -46,6 +46,7 @@ use crate::sync::atomic_registry::Registry;
 use crate::mutex::{Mutex, MUTEX_REGISTRY};
 use core::sync::atomic::Ordering;
 use crate::traps::IRQ_RECURSION_DEPTH;
+use crate::arm::PhysicalCounter;
 
 mod net;
 
@@ -396,7 +397,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
 
                 reg.for_all(|entry| {
                     if let Some(entry) = entry {
-                        info!("Mutex: {} -> waiting: {:?}", entry.name, crate::timing::cycles_to_time(entry.total_waiting_time.load(Ordering::Relaxed)));
+                        info!("Mutex: {} -> waiting: {:?}", entry.name, timing::cycles_to_time::<PhysicalCounter>(entry.total_waiting_time.load(Ordering::Relaxed)));
                     }
                 });
 

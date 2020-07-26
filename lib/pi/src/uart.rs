@@ -60,6 +60,8 @@ pub struct MiniUart {
     timeout: Option<Duration>,
 }
 
+unsafe impl Sync for MiniUart {}
+
 impl MiniUart {
     /// Initializes the mini UART by enabling it as an auxiliary peripheral,
     /// setting the data size to 8 bits, setting the BAUD rate to ~115200 (baud
@@ -106,6 +108,10 @@ impl MiniUart {
         Self::new_opt_init(true)
     }
 
+    fn unsafe_mut(&self) -> &mut Self {
+        unsafe { &mut *(self as *const MiniUart as *mut MiniUart)  }
+    }
+
     /// Set the read timeout to `t` duration.
     pub fn set_read_timeout(&mut self, t: Duration) {
         self.timeout = Some(t)
@@ -115,23 +121,23 @@ impl MiniUart {
         (self.registers.LSR_REG.read() & (TxAvailable as u8)) != 0
     }
 
-    pub fn set_send_interrupt_enabled(&mut self, enabled: bool) {
+    pub fn set_send_interrupt_enabled(&self, enabled: bool) {
 
-        let mut val = self.registers.IER_REG.read();
+        let mut val = self.unsafe_mut().registers.IER_REG.read();
         if enabled {
             val |= 0b10;
         } else {
             val &= !0b10;
         }
-        self.registers.IER_REG.write(val);
+        self.unsafe_mut().registers.IER_REG.write(val);
 
     }
 
     /// Write the byte `byte`. This method blocks until there is space available
     /// in the output FIFO.
-    pub fn write_byte(&mut self, byte: u8) {
+    pub fn write_byte(&self, byte: u8) {
         while !self.can_send() {}
-        self.registers.IO_REG.write(byte);
+        self.unsafe_mut().registers.IO_REG.write(byte);
     }
 
     /// Returns `true` if there is at least one byte ready to be read. If this
@@ -170,9 +176,9 @@ impl MiniUart {
     }
 
     /// Reads a byte. Blocks indefinitely until a byte is ready to be read.
-    pub fn read_byte(&mut self) -> u8 {
+    pub fn read_byte(&self) -> u8 {
         while !self.has_byte() {}
-        self.registers.IO_REG.read()
+        self.unsafe_mut().registers.IO_REG.read()
     }
 
     pub fn read_nonblocking(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -183,6 +189,28 @@ impl MiniUart {
             buf[i] = self.read_byte();
         }
         Ok(buf.len())
+    }
+}
+
+impl karch::EarlyPrintSerial for MiniUart {
+    fn has_byte(&self) -> bool {
+        MiniUart::has_byte(self)
+    }
+
+    fn read_byte(&self) -> u8 {
+        MiniUart::read_byte(self)
+    }
+
+    fn can_send(&self) -> bool {
+        MiniUart::can_send(self)
+    }
+
+    fn write_byte(&self, b: u8) {
+        MiniUart::write_byte(self, b)
+    }
+
+    fn set_send_interrupt_enabled(&self, enabled: bool) {
+        MiniUart::set_send_interrupt_enabled(self, enabled)
     }
 }
 

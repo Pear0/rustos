@@ -6,7 +6,7 @@ use pi::pm::reset;
 use pi::timer::spin_sleep;
 use pi::uart::MiniUart;
 use crate::mutex::Mutex;
-use crate::smp;
+use crate::{smp, hw};
 
 static PANIC_LOCK: Mutex<bool> = mutex_new!(false);
 
@@ -19,10 +19,10 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[inline(never)]
 fn do_panic(info: &PanicInfo, sp: usize) -> ! {
-    let mut uart: MiniUart;
+    let mut uart: karch::EarlyWriter;
     {
         let guard = m_lock!(PANIC_LOCK);
-        uart = MiniUart::new();
+        uart = hw::arch().early_writer();
 
         // EZ
         writeln!(uart, "{}", info).ok();

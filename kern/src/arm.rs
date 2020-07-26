@@ -68,6 +68,41 @@ impl GenericCounterImpl for HyperPhysicalCounter {
 
 pub struct PhysicalCounter();
 
+impl GenericCounterImpl for PhysicalCounter {
+    fn set_interrupt_enabled(enabled: bool) {
+        unsafe {
+            let mut value = CNTP_CTL_EL0.get();
+            if enabled {
+                value &= !CNTV_CTL_EL0::IMASK;
+            } else {
+                value |= CNTV_CTL_EL0::IMASK;
+            }
+            CNTP_CTL_EL0.set(value | CNTV_CTL_EL0::ENABLE);
+        }
+    }
+
+    fn interrupted() -> bool {
+        unsafe { CNTP_CTL_EL0.get() & CNTHP_CTL_EL2::ISTATUS != 0 }
+    }
+
+    fn set_timer(value: u64) {
+        unsafe { CNTP_TVAL_EL0.set(value) };
+    }
+
+    fn set_compare(value: u64) {
+        unsafe { CNTP_CVAL_EL0.set(value) };
+    }
+
+    fn get_frequency() -> u64 {
+        unsafe { CNTFRQ_EL0.get() }
+    }
+
+    fn get_counter() -> u64 {
+        aarch64::isb();
+        unsafe { CNTPCT_EL0.get() }
+    }
+}
+
 pub struct VirtualCounter();
 
 impl GenericCounterImpl for VirtualCounter {

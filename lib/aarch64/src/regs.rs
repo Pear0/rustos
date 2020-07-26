@@ -356,3 +356,13 @@ defreg!(ISR_EL1, [
     I [7-7], // IRQ pending
     F [6-6],
 ]);
+
+defreg!(ICC_SRE_EL2, [
+    ENABLE [3-3],
+    SRE [0-0],
+]);
+defreg!(ICC_SRE_EL1);
+
+defbit32!(GICD_CTLR, [
+    DS [6-6],
+]);

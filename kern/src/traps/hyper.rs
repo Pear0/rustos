@@ -1,10 +1,10 @@
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use pi::interrupt::{Controller, CoreInterrupt, Interrupt};
 
 use crate::{debug, shell, smp, timing};
-use crate::arm::{GenericCounterImpl, HyperPhysicalCounter};
+use crate::arm::{GenericCounterImpl, HyperPhysicalCounter, PhysicalCounter};
 use crate::hyper::{HYPER_IRQ, HYPER_SCHEDULER, HYPER_TIMER};
 use crate::param::PAGE_MASK;
 use crate::process::State;
@@ -15,6 +15,9 @@ use crate::traps::Kind::Synchronous;
 use crate::traps::syndrome::{AbortInfo, Fault, Syndrome};
 use crate::traps::syscall::handle_syscall;
 use crate::vm::VirtualAddr;
+
+pub static TM_TOTAL_TIME: AtomicU64 = AtomicU64::new(0);
+pub static TM_TOTAL_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 enum IrqVariant {
@@ -141,6 +144,11 @@ fn do_hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTrapFrame) -> E
     if info.kind == Kind::Irq || (info.kind == Kind::Synchronous && info.source == Source::LowerAArch64) {
         use aarch64::regs::*;
         if tf.HCR_EL2 & HCR_EL2::VM != 0 {
+            let start = timing::clock_time::<PhysicalCounter>();
+
+            // total: 27us
+            // lock: 3us
+            // lock+update(): 14us
             HYPER_SCHEDULER.crit_process(tf.TPIDR_EL2, |p| {
                 if let Some(p) = p {
                     // give process a chance to update any virtualized components.
@@ -149,6 +157,13 @@ fn do_hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTrapFrame) -> E
                     *tf = *p.context;
                 }
             });
+
+            let diff = timing::clock_time::<PhysicalCounter>() - start;
+            TM_TOTAL_TIME.fetch_add(diff.as_micros() as u64, Ordering::Relaxed);
+            TM_TOTAL_COUNT.fetch_add(1, Ordering::Relaxed);
+
+            // something useless that cannot be optimized out
+            unsafe { aarch64::regs::ELR_EL2.get() };
         }
     }
 
@@ -176,7 +191,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
     // }
 
     let exc_start = unsafe { aarch64::CNTPCT_EL0.get() };
-    let time_start = timing::clock_time();
+    let time_start = timing::clock_time::<HyperPhysicalCounter>();
     let mut exc_type = ExceptionType::Unknown;
     exc_enter();
 
@@ -233,7 +248,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
         IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
     }
 
-    let time_end = timing::clock_time();
+    let time_end = timing::clock_time::<HyperPhysicalCounter>();
     exc_record_time(exc_type, time_end - time_start);
     exc_exit();
 

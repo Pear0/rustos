@@ -8,7 +8,7 @@ use shim::io;
 use crate::allocator::tags::{MemTag, TaggingAlloc};
 use crate::init::SAFE_ALLOC_START;
 use crate::mutex::Mutex;
-use crate::smp;
+use crate::{smp, hw};
 
 mod linked_list;
 pub mod tags;
@@ -112,11 +112,18 @@ pub fn memory_map() -> Option<(usize, usize)> {
 
     let mut mem_end = 0u32;
 
-    for atag in Atags::get() {
-        if let Some(mem) = atag.mem() {
-            mem_end = mem.start + mem.size;
+    hw::arch().iter_memory_regions(&mut |start, size| {
+        let size = size as u32;
+        if start == 0 && size > mem_end {
+            mem_end = size;
         }
-    }
+    });
+
+    // for atag in Atags::get() {
+    //     if let Some(mem) = atag.mem() {
+    //         mem_end = mem.start + mem.size;
+    //     }
+    // }
 
     if (mem_end as usize) < binary_end {
         panic!("mem_end {} < binary_end {}", mem_end, binary_end);

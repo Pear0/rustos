@@ -5,7 +5,7 @@ use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS, PAGE_MASK, PAGE_SIZE};
 
 pub use self::address::{PhysicalAddr, VirtualAddr};
 pub use self::pagetable::*;
-use crate::{smp, BootVariant};
+use crate::{smp, BootVariant, hw};
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU64;
 
@@ -125,12 +125,20 @@ impl VMManager {
             TTBR0_EL1.set(baddr);
             TTBR1_EL1.set(baddr);
 
-            llvm_asm!("dsb ish");
+            asm!("dsb ish");
             isb();
 
-            trace!("about to enable mmu");
+            debug!("about to enable mmu old SCTLR_EL1 = {:#x}", SCTLR_EL1.get());
             SCTLR_EL1.set(SCTLR_EL1.get() | SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M);
-            trace!("enabled mmu");
+
+            isb();
+
+            hw::arch().early_print().write_str("WOW MMU works\n");
+
+            // SCTLR_EL1.set(SCTLR_EL1.get() & !(SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M));
+            debug!("enabled mmu");
+
+            hw::arch().early_print().write_str("WOW MMU works 2\n");
 
             llvm_asm!("dsb sy");
             isb();

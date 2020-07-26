@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::fmt;
+use alloc::vec::Vec;
 use core::alloc::{GlobalAlloc, Layout};
 use core::fmt::Formatter;
 use core::iter::Chain;
@@ -14,9 +15,9 @@ use shim::const_assert_size;
 use crate::allocator;
 use crate::ALLOCATOR;
 use crate::param::*;
-use crate::vm::{PhysicalAddr, VirtualAddr};
-use crate::traps::HyperTrapFrame;
 use crate::process::HyperProcess;
+use crate::traps::HyperTrapFrame;
+use crate::vm::{PhysicalAddr, VirtualAddr};
 
 #[repr(C)]
 pub struct Page([u8; PAGE_SIZE]);
@@ -31,7 +32,7 @@ impl Page {
     }
 }
 
-const L2_PAGES: usize = 3;
+const L2_PAGES: usize = 12;
 
 #[repr(C)]
 #[repr(align(65536))]
@@ -107,7 +108,7 @@ impl L3PageTable {
 #[repr(align(65536))]
 pub struct PageTable {
     pub l2: L2PageTable,
-    pub l3: [Box<L3PageTable>; L2_PAGES],
+    pub l3: Vec<Box<L3PageTable>>,
 }
 
 impl PageTable {
@@ -116,8 +117,12 @@ impl PageTable {
     fn new(perm: u64) -> Box<PageTable> {
         let mut table = Box::new(PageTable {
             l2: L2PageTable::new(),
-            l3: [Box::new(L3PageTable::new()), Box::new(L3PageTable::new()), Box::new(L3PageTable::new())],
+            l3: Vec::new(),
         });
+
+        for _ in 0..L2_PAGES {
+            table.l3.push(Box::new(L3PageTable::new()));
+        }
 
         for (i, l3) in table.l3.iter().enumerate() {
             table.l2.entries[i].set_value(l3.as_ptr().as_u64() >> PAGE_ALIGN, RawL2Entry::ADDR);
@@ -238,7 +243,12 @@ impl KernPageTable {
             table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Mem));
         }
 
-        for addr in (IO_BASE..IO_BASE_END).step_by(PAGE_SIZE) {
+        // for addr in (IO_BASE..IO_BASE_END).step_by(PAGE_SIZE) {
+        //     // attr not actually used here
+        //     table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Dev));
+        // }
+
+        for addr in (0xf500_0000..0xffff_ffff).step_by(PAGE_SIZE) {
             // attr not actually used here
             table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Dev));
         }
@@ -250,7 +260,6 @@ impl KernPageTable {
         kprintln!("PageTable:");
         for (i, entry) in self.0.l2.entries.iter().enumerate() {
             if entry.get() != 0 {
-
                 let addr = entry.get_value(RawL2Entry::ADDR) << 16;
 
                 kprintln!("index = {}, addr = {:x}, value = {:x}", i, addr, entry.get());
@@ -262,7 +271,6 @@ impl KernPageTable {
                         kprintln!("  index = {}, value = {:x}", i, e.0.get());
                     }
                 }
-
             }
         }
     }
@@ -277,12 +285,11 @@ impl KernPageTable {
         entry.set_value(1, RawL3Entry::AF);
         entry.set_value(1, RawL3Entry::NS);
 
-        if addr >= IO_BASE && addr < IO_BASE_END {
+        if (addr >= IO_BASE && addr < IO_BASE_END) || (addr >= 0xff800000) {
             entry.set_value(EntrySh::OSh, RawL3Entry::SH);
             entry.set_value(EntryAttr::Dev, RawL3Entry::ATTR);
         } else {
             entry.set_value(EntrySh::ISh, RawL3Entry::SH);
-            // FIXME caching disabled so that MBox works properly.
             entry.set_value(attr, RawL3Entry::ATTR);
         }
 
@@ -294,7 +301,6 @@ impl KernPageTable {
     pub fn get_baddr(&self) -> PhysicalAddr {
         self.0.get_baddr()
     }
-
 }
 
 pub enum PagePerm {
@@ -313,13 +319,11 @@ pub trait GuestPageTable: Sized {
     fn is_valid(&self, va: VirtualAddr) -> bool;
 
     fn alloc(&mut self, va: VirtualAddr, _perm: PagePerm) -> &mut [u8];
-
 }
 
 pub struct UserPageTable(Box<PageTable>);
 
 impl UserPageTable {
-
     pub fn iter_mapped_pages<'a>(&'a self) -> impl Iterator<Item=(VirtualAddr, PhysicalAddr)> + 'a {
         self.0.l3.iter()
             .flat_map(|l3| l3.entries.iter())
@@ -377,7 +381,6 @@ impl UserPageTable {
     pub fn get_baddr(&self) -> PhysicalAddr {
         self.0.get_baddr()
     }
-
 }
 
 impl GuestPageTable for UserPageTable {
@@ -470,7 +473,6 @@ impl DerefMut for KernPageTable {
 
 impl Drop for UserPageTable {
     fn drop(&mut self) {
-
         for l3 in self.0.l3.iter_mut() {
             for entry in l3.entries.iter_mut() {
                 if entry.is_valid() {
@@ -479,7 +481,6 @@ impl Drop for UserPageTable {
                 }
             }
         }
-
     }
 }
 
@@ -493,7 +494,6 @@ impl fmt::Debug for UserPageTable {
 pub struct VirtualizationPageTable(Box<PageTable>);
 
 impl VirtualizationPageTable {
-
     pub fn iter_mapped_pages<'a>(&'a self) -> impl Iterator<Item=(VirtualAddr, PhysicalAddr)> + 'a {
         self.0.l3.iter()
             .flat_map(|l3| l3.entries.iter())
@@ -562,7 +562,6 @@ impl VirtualizationPageTable {
         self.0.get_entry_mut(va_sub).0.set_bit(RawL3Entry::AF);
 
         aarch64::clean_data_cache((&mut self.0.get_entry_mut(va_sub).0) as *mut RawL3Entry as u64);
-
     }
 
     pub fn dealloc(&mut self, va: VirtualAddr) -> bool {
@@ -577,7 +576,6 @@ impl VirtualizationPageTable {
             false
         }
     }
-
 }
 
 impl GuestPageTable for VirtualizationPageTable {
@@ -637,13 +635,11 @@ impl GuestPageTable for VirtualizationPageTable {
 
         unsafe { core::slice::from_raw_parts_mut(alloc, PAGE_SIZE) }
     }
-
 }
 
 
 impl Drop for VirtualizationPageTable {
     fn drop(&mut self) {
-
         for l3 in self.0.l3.iter_mut() {
             for entry in l3.entries.iter_mut() {
                 if entry.is_valid() {
@@ -652,7 +648,6 @@ impl Drop for VirtualizationPageTable {
                 }
             }
         }
-
     }
 }
 

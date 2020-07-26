@@ -32,7 +32,7 @@ impl ConsoleImpl {
 
 /// A global singleton allowing read/write access to the console.
 pub struct Console {
-    inner: Option<MiniUart>,
+    inner: Option<&'static dyn karch::EarlyPrintSerial>,
     ext: Option<ConsoleImpl>, // pieces that require an allocator
 }
 
@@ -48,15 +48,15 @@ impl MutexGuard<'_, Console> {
     #[inline]
     fn initialize(&mut self) {
         if self.inner.is_none() {
-            self.inner = Some(MiniUart::new());
+            self.inner = Some(crate::hw::arch().early_print());
         }
     }
 
     /// Returns a mutable borrow to the inner `MiniUart`, initializing it as
     /// needed.
-    fn inner(&mut self) -> &mut MiniUart {
+    fn inner(&mut self) -> &'static dyn karch::EarlyPrintSerial {
         self.initialize();
-        self.inner.as_mut().unwrap()
+        self.inner.unwrap()
     }
 
     pub fn read_byte(&mut self) -> u8 {

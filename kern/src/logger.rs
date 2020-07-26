@@ -4,7 +4,8 @@ use core::time::Duration;
 use log::{Level, LevelFilter, Metadata, Record, set_logger};
 
 use crate::console::CONSOLE;
-use crate::smp;
+use crate::{smp, hw};
+use crate::traps::IRQ_RECURSION_DEPTH;
 
 struct SimpleLogger;
 
@@ -23,7 +24,7 @@ impl log::Log for SimpleLogger {
                         lock.flush();
                     }
                 } else if record.metadata().level() <= Level::Error {
-                    let mut uart = pi::uart::MiniUart::new_opt_init(false);
+                    let mut uart = hw::arch().early_writer();
                     writeln!(&mut uart, "[RAW-{}:{}] {}", record.level(), record.target(), record.args()).ok();
                 }
             });

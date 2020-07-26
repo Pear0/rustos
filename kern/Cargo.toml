@@ -20,6 +20,8 @@ debug = true
 common = { path = "../lib/common" }
 mini-alloc = { path = "../lib/mini-alloc" }
 pi = { path = "../lib/pi" }
+khadas = { path = "../lib/khadas" }
+karch = { path = "../lib/karch" }
 shutil = { path = "../lib/shutil" }
 shim = { path = "../lib/shim", features = ["no_std", "alloc"] }
 stack-vec = { path = "../lib/stack-vec/" }
@@ -31,6 +33,7 @@ pigrate-core = { path = "../lib/pigrate-core" }
 
 addr2line = { version = "0.12.1", default-features = false, features = ["rustc-demangle"] }
 compression = { version = "0.1", default-features = false, features = ["gzip", "bzip2", "deflate", "lzss"] }
+dtb = { version = "0.2.0", default-features = false }
 crossbeam-utils = { version = "0.7.2", default-features = false, features = [] }
 # elfloader = "0.10.0"
 enumset = "1.0.0"
@@ -39,6 +42,7 @@ gimli = { version = "0.21.0", default-features = false, features = ["read"] }
 hex = { version = "0.4.2", default-features = false }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 log = { version = "0.4.8", features = [] }
+pretty-hex = "0.1.1"
 rand = { version = "0.7.3", default-features = false, features = ["alloc"] }
 rand_xorshift = "0.2.0"
 serde = { version = "1.0.106", default-features = false, features = ["alloc", "derive"] }
