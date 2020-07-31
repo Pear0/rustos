@@ -1,6 +1,6 @@
 # RustOS
 
-This OS started as a class project for [CS 3210](https://tc.gts3.org/cs3210/2020/spring/info.html) at Georgia Tech, but I have continued developing new futures.
+This OS started as a class project for [CS 3210](https://tc.gts3.org/cs3210/2020/spring/info.html) at Georgia Tech, but I have continued developing new features.
 
 Class Pieces:
 * Bootloader
