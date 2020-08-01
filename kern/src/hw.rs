@@ -70,6 +70,9 @@ pub fn arch() -> &'static dyn Arch {
     }
 }
 
+pub fn arch_variant() -> &'static ArchVariant {
+    unsafe { &BIGLY_ARCH }
+}
 
 
 

@@ -49,6 +49,10 @@ impl Allocator {
         }
     }
 
+    pub fn wilderness(&self) -> (usize, usize) {
+        (self.wilderness, self.wilderness_end)
+    }
+
     fn map_to_bin(&self, mut size: usize) -> usize {
         let mut bin = 0usize;
         size = (size - 1) / 8;

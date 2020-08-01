@@ -170,8 +170,11 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
                 }
             }
         }
+        Kind::SError => {
+            kprintln!("{:?} @ {:#x}", info, tf.ELR_EL1);
+        }
         _ => {
-            kprintln!("{:?}", info);
+            kprintln!("{:?} @ {:#x}", info, tf.ELR_EL1);
             shell::shell("#>");
         }
     }

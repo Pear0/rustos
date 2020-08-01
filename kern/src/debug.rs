@@ -7,7 +7,7 @@ use xmas_elf::sections::ShType;
 
 use common::fmt::ByteSize;
 
-use crate::FILESYSTEM;
+use crate::{FILESYSTEM, hw, ALLOCATOR};
 
 #[allow(non_upper_case_globals)]
 extern "C" {
@@ -105,7 +105,7 @@ pub struct MetaDebugInfo {
 
 static SELF_SYMBOLS: UnsafeContainer<Option<Box<MetaDebugInfo>>> = UnsafeContainer::new(None);
 
-fn do_initialize() -> Result<(), crate::shell::command::CommandError> {
+fn load_elf_pi() -> Result<&'static mut Vec<u8>, crate::shell::command::CommandError> {
     use fat32::traits::{Entry, FileSystem};
     type File = fat32::vfat::File<crate::fs::PiVFatHandle>;
 
@@ -116,6 +116,50 @@ fn do_initialize() -> Result<(), crate::shell::command::CommandError> {
 
     use shim::io;
     io::copy(&mut entry, file_buffer);
+
+    Ok(file_buffer)
+}
+
+fn load_elf_khadas() -> Result<&'static mut Vec<u8>, crate::shell::command::CommandError> {
+    use compression::prelude::*;
+    let compressed_elf_location = 0x4000000u64;
+    let max_size = 16 * 1024 * 1024;
+
+    let compressed_slice = unsafe { core::slice::from_raw_parts(compressed_elf_location as *const u8, max_size) };
+
+    // make a copy, carefully under the 64mb limit. Now the compressed copy from u-boot can be overridden.
+    let mut compressed_vec: Vec<u8> = Vec::new();
+    compressed_vec.reserve_exact(max_size);
+    compressed_vec.resize(max_size, 0);
+    compressed_vec.copy_from_slice(compressed_slice);
+
+    let alloc_wilderness = ALLOCATOR.with_internal(|a| a.wilderness());
+    if (alloc_wilderness.0 as u64) > compressed_elf_location {
+        warn!("Allocator wilderness {:#x} > elf location {:#x}, corruption likely", alloc_wilderness.0, compressed_elf_location);
+    } else {
+        debug!("Allocator wilderness {:#x} > elf location {:#x}, probably no corruption", alloc_wilderness.0, compressed_elf_location);
+    }
+
+    let comp: Vec<_> = compressed_vec.iter().cloned().decode(&mut GZipDecoder::new()).collect::<Result<Vec<_>, _>>()?;
+
+    info!("Total debug info len: {}", comp.len());
+
+    let file_buffer = Box::leak(Box::new(comp));
+
+    Ok(file_buffer)
+}
+
+
+fn do_initialize() -> Result<(), crate::shell::command::CommandError> {
+
+    let file_buffer = if hw::not_pi() {
+        match hw::arch_variant() {
+            hw::ArchVariant::Khadas(_) => load_elf_khadas()?,
+            _ => Err("cannot load debug symbols for unknown arch")?,
+        }
+    } else {
+        load_elf_pi()?
+    };
 
     info!("Read {} bytes", ByteSize::from(file_buffer.len()));
 

@@ -23,6 +23,7 @@ use crate::vm::VMManager;
 use crate::cls::{CoreGlobal, CoreLocal};
 use crate::arm::{TimerController, VirtualCounter};
 use crate::traps::KernelTrapFrame;
+use crate::debug::initialize_debug;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -212,6 +213,10 @@ pub fn kernel_main() -> ! {
             KERNEL_SCHEDULER.initialize_kernel();
         };
     });
+
+    debug!("read debug info");
+
+    initialize_debug();
 
     debug!("start some processes");
 

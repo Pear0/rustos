@@ -32,7 +32,7 @@ impl KhadasArch {
         })
     }
 
-    fn dtb_reader(&self) -> Result<dtb::Reader, &'static str> {
+    pub fn dtb_reader(&self) -> Result<dtb::Reader, &'static str> {
         let addr = self.device_tree_base;
         if addr == 0 {
             return Err("device_tree_base cannot be zero");

@@ -57,12 +57,12 @@ pub fn init_stuff() {
         //     info!("cannot set GICD_CTLR.DS");
         // }
 
-        for addr in [0xff63_c148u64, 0xff63c_0c8u64].iter() {
-            let addr = (*addr) as *mut u32;
-            info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
-            addr.write_volatile(0xffff_ffff);
-            info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
-        }
+        // for addr in [0xff63_c148u64, 0xff63c_0c8u64].iter() {
+        //     let addr = (*addr) as *mut u32;
+        //     info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
+        //     addr.write_volatile(0xffff_ffff);
+        //     info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
+        // }
 
         // 27 = virtual timer INT ID
 

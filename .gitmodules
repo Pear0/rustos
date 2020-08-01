@@ -1,0 +1,3 @@
+[submodule "lib/xhci"]
+	path = lib/xhci
+	url = git@github.com:Pear0/xhci-rs.git

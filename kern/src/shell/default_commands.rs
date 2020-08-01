@@ -20,7 +20,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, BootVariant, NET, timer, timing};
+use crate::{ALLOCATOR, BootVariant, NET, timer, timing, hw};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
 use crate::fs::handle::{Sink, Source};
@@ -404,6 +404,39 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             } else {
                 info!("No registry");
             }
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
+        .name("dtb")
+        .func_result(|sh, _cmd| {
+
+            if let hw::ArchVariant::Khadas(khadas) = hw::arch_variant() {
+                let dtb = khadas.dtb_reader()?;
+
+
+
+            }
+
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
+        .name("usb")
+        .func_result(|sh, _cmd| {
+
+            let XHCI_BASE: u64 = 0xff500000;
+
+            unsafe {
+
+                let f = core::slice::from_raw_parts(XHCI_BASE as *const u8, 256);
+                kprintln!("{}", pretty_hex::pretty_hex(&f));
+            }
+
 
             Ok(())
         })

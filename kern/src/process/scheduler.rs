@@ -3,24 +3,25 @@ use alloc::collections::vec_deque::VecDeque;
 use alloc::format;
 use alloc::vec::Vec;
 use core::borrow::{Borrow, BorrowMut};
+use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
 
 use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
-use crate::{smp, BootVariant, timing};
+use crate::{BootVariant, smp, timing};
+use crate::arm::{GenericCounterImpl, HyperPhysicalCounter, VirtualCounter};
 use crate::cls::CoreLocal;
+use crate::hyper::HYPER_TIMER;
+use crate::kernel::KERNEL_TIMER;
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
-use crate::process::{Id, Process, State, KernelImpl, HyperImpl};
+use crate::process::{HyperImpl, Id, KernelImpl, Process, State};
+use crate::process::process::ProcessImpl;
 use crate::process::snap::SnapProcess;
 use crate::process::state::RunContext;
-use crate::traps::{KernelTrapFrame, Frame, HyperTrapFrame, IRQ_RECURSION_DEPTH};
-use crate::process::process::ProcessImpl;
-use crate::hyper::HYPER_TIMER;
-use crate::arm::{VirtualCounter, GenericCounterImpl, HyperPhysicalCounter};
-use crate::kernel::KERNEL_TIMER;
+use crate::traps::{Frame, HyperTrapFrame, IRQ_RECURSION_DEPTH, KernelTrapFrame};
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler<T: ProcessImpl>(Mutex<Option<Scheduler<T>>>);
@@ -166,7 +167,6 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         // Bootstrap the first process
         self.bootstrap();
     }
-
 }
 
 impl GlobalScheduler<KernelImpl> {
@@ -188,15 +188,19 @@ impl GlobalScheduler<KernelImpl> {
         // }));
 
         KERNEL_TIMER.critical(|timer| {
-            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(5)), Box::new(|ctx| {
+            let mut skip_ticks = AtomicU32::new(10);
+            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(5)), Box::new(move |ctx| {
                 if IRQ_RECURSION_DEPTH.get() > 1 {
                     ctx.no_reschedule();
                 } else {
-                    KERNEL_SCHEDULER.switch(State::Ready, ctx.data);
+                    if skip_ticks.load(Ordering::Relaxed) <= 0 {
+                        KERNEL_SCHEDULER.switch(State::Ready, ctx.data);
+                    } else {
+                        skip_ticks.fetch_sub(1, Ordering::Relaxed);
+                    }
                 }
             }));
         });
-
     }
 }
 
@@ -279,8 +283,6 @@ impl GlobalScheduler<HyperImpl> {
         // Bootstrap the first process
         self.bootstrap_hyper();
     }
-
-
 }
 
 pub struct Scheduler<T: ProcessImpl> {
