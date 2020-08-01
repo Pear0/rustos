@@ -21,7 +21,7 @@ use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
 use crate::vm::VMManager;
 use crate::cls::{CoreGlobal, CoreLocal};
-use crate::arm::{TimerController, VirtualCounter};
+use crate::arm::{TimerController, VirtualCounter, PhysicalCounter};
 use crate::traps::KernelTrapFrame;
 use crate::debug::initialize_debug;
 
@@ -149,6 +149,26 @@ fn configure_timer() {
 
 }
 
+struct XHCIHal();
+
+impl xhci::HAL for XHCIHal {
+    fn current_time(&self) -> Duration {
+        timing::clock_time::<PhysicalCounter>()
+    }
+
+    fn sleep(&self, dur: Duration) {
+        timing::sleep_phys(dur);
+    }
+
+    fn memory_barrier(&self) {
+        aarch64::dmb();
+    }
+
+    fn translate_addr(&self, addr: u64) -> u64 {
+        addr
+    }
+}
+
 
 pub fn kernel_main() -> ! {
     debug!("init irq");
@@ -256,6 +276,17 @@ pub fn kernel_main() -> ! {
     {
         let mut proc = KernelProcess::kernel_process_old("pipe".to_owned(), PipeService::task_func).unwrap();
         proc.priority = Priority::Highest;
+        KERNEL_SCHEDULER.add(proc);
+    }
+
+    {
+        let mut proc = KernelProcess::kernel_process("pipe".to_owned(), |ctx| {
+
+            let x = XHCIHal();
+            xhci::do_stuff(0xff500000, &x);
+
+        }).unwrap();
+
         KERNEL_SCHEDULER.add(proc);
     }
 

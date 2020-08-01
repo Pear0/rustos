@@ -30,6 +30,7 @@ mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
 aarch64 = { path = "../lib/aarch64/" }
 kernel_api = { path = "../lib/kernel_api" }
 pigrate-core = { path = "../lib/pigrate-core" }
+xhci = { path = "../lib/xhci" }
 
 addr2line = { version = "0.12.1", default-features = false, features = ["rustc-demangle"] }
 compression = { version = "0.1", default-features = false, features = ["gzip", "bzip2", "deflate", "lzss"] }
