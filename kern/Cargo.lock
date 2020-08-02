@@ -271,8 +271,9 @@ dependencies = [
  "karch 0.1.0",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "mini-alloc 0.1.0",
+ "modular-bitfield 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "shim 0.1.0",
- "volatile 0.1.0",
+ "volatile 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -535,6 +536,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "xhci"
 version = "0.1.0"
 dependencies = [
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "modular-bitfield 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "volatile 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",

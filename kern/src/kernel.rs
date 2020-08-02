@@ -167,6 +167,10 @@ impl xhci::HAL for XHCIHal {
     fn translate_addr(&self, addr: u64) -> u64 {
         addr
     }
+
+    fn flush_cache(&self, addr: u64, len: u64) {
+        aarch64::clean_and_invalidate_data_cache_region(addr, len);
+    }
 }
 
 
@@ -234,9 +238,21 @@ pub fn kernel_main() -> ! {
         };
     });
 
-    debug!("read debug info");
+    // debug!("read debug info");
+    // initialize_debug();
 
-    initialize_debug();
+    // spam on clock gating
+    unsafe {
+        for addr in [0xff63_c148u64, 0xff63c_0c8u64, 0xff63_c140u64, 0xff63_c0c0u64].iter() {
+            let addr = (*addr) as *mut u32;
+            info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
+            addr.write_volatile(0xffff_ffff);
+            info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
+        }
+    }
+    // #define DWC3_REG_OFFSET				0xC100
+
+    // DTB items: usb_pwr, usb3_pcie_phy
 
     debug!("start some processes");
 
@@ -282,8 +298,12 @@ pub fn kernel_main() -> ! {
     {
         let mut proc = KernelProcess::kernel_process("pipe".to_owned(), |ctx| {
 
+            let addr = 0xff500000u64;
+
+
             let x = XHCIHal();
-            xhci::do_stuff(0xff500000, &x);
+            xhci::init_dwc3(addr);
+            xhci::do_stuff(addr, &x);
 
         }).unwrap();
 

@@ -8,10 +8,11 @@ edition = "2018"
 
 [dependencies]
 mini-alloc = { path = "../mini-alloc" }
-volatile = { path = "../volatile" }
 shim = { path = "../shim", features = ["no_std"] }
 aarch64 = { path = "../aarch64" }
 karch = { path = "../karch" }
 
 dtb = { version = "0.2.0", default-features = false }
 log = { version = "0.4.8", features = [] }
+modular-bitfield = "0.6.0"
+volatile = "0.3.0"

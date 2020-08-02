@@ -8,6 +8,7 @@ extern crate log;
 
 use karch::{EarlyPrintSerial, Arch};
 
+pub mod gpio;
 pub mod irq;
 pub mod uart;
 
