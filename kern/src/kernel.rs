@@ -24,6 +24,7 @@ use crate::cls::{CoreGlobal, CoreLocal};
 use crate::arm::{TimerController, VirtualCounter, PhysicalCounter};
 use crate::traps::KernelTrapFrame;
 use crate::debug::initialize_debug;
+use xhci::FlushType;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -168,8 +169,12 @@ impl xhci::HAL for XHCIHal {
         addr
     }
 
-    fn flush_cache(&self, addr: u64, len: u64) {
-        aarch64::clean_and_invalidate_data_cache_region(addr, len);
+    fn flush_cache(&self, addr: u64, len: u64, flush: FlushType) {
+        match flush {
+            FlushType::Clean => aarch64::clean_data_cache_region(addr, len),
+            FlushType::Invalidate => aarch64::invalidate_data_cache_region(addr, len),
+            FlushType::CleanAndInvalidate => aarch64::clean_and_invalidate_data_cache_region(addr, len),
+        }
     }
 }
 

@@ -85,6 +85,26 @@ pub fn clean_data_cache_region(mut addr: u64, length: u64) {
     }
 }
 
+pub fn invalidate_data_cache_region(mut addr: u64, length: u64) {
+    dsb();
+    unsafe {
+        let mut end = addr + length;
+        addr &= !(64 - 1);
+
+        // round end up to the cache line.
+        if end % 64 != 0 {
+            end += 64;
+        }
+        addr &= !(64 - 1);
+
+        for i in (addr..end).step_by(64) {
+            llvm_asm!("dc ivac, $0" :: "r"(i) :: "volatile");
+        }
+
+        llvm_asm!("dsb ish" :::: "volatile");
+    }
+}
+
 pub fn clean_and_invalidate_data_cache_region(mut addr: u64, length: u64) {
     dsb();
     unsafe {
