@@ -310,6 +310,15 @@ pub fn kernel_main() -> ! {
             xhci::init_dwc3(addr);
             xhci::do_stuff(addr, &x);
 
+            let mut xx = xhci::Xhci::new(addr, &x);
+
+            smp::no_interrupt(|| {
+                match xx.do_stuff() {
+                    Ok(()) => info!("did stuff successfully"),
+                    Err(e) => error!("Error failed to do stuff: {:?}", e),
+                }
+            });
+
         }).unwrap();
 
         KERNEL_SCHEDULER.add(proc);
