@@ -308,7 +308,6 @@ pub fn kernel_main() -> ! {
 
             let x = XHCIHal();
             xhci::init_dwc3(addr);
-            xhci::do_stuff(addr, &x);
 
             let mut xx = xhci::Xhci::new(addr, &x);
 
