@@ -255,7 +255,9 @@ dependencies = [
  "serde_cbor 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "shim 0.1.0",
  "shutil 0.1.0",
+ "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "stack-vec 0.1.0",
+ "usb-host 0.1.0",
  "xhci 0.1.0",
  "xmas-elf 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

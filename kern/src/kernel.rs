@@ -25,6 +25,10 @@ use crate::arm::{TimerController, VirtualCounter, PhysicalCounter};
 use crate::traps::KernelTrapFrame;
 use crate::debug::initialize_debug;
 use xhci::FlushType;
+use usb_host::structs::USBDevice;
+use usb_host::traits::USBHostController;
+use usb_host::items::{ControlCommand, TypeTriple};
+use usb_host::USBHost;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -302,21 +306,33 @@ pub fn kernel_main() -> ! {
 
     {
         let mut proc = KernelProcess::kernel_process("pipe".to_owned(), |ctx| {
+            use usb_host::traits::*;
 
             let addr = 0xff500000u64;
 
 
-            let x = XHCIHal();
+            let x = Box::leak(Box::new(XHCIHal()));
             xhci::init_dwc3(addr);
 
-            let mut xx = xhci::Xhci::new(addr, &x);
+            let mut xx = xhci::Xhci::new(addr, x);
 
-            smp::no_interrupt(|| {
-                match xx.do_stuff() {
-                    Ok(()) => info!("did stuff successfully"),
-                    Err(e) => error!("Error failed to do stuff: {:?}", e),
-                }
-            });
+            let my_xhci = Arc::new(xhci::XhciWrapper(spin::Mutex::new(xx)));
+
+            info!("created things");
+
+            let mut host = USBHost::new();
+            let dev = host.attach_root_hub(my_xhci);
+
+            host.enumerate_devices(dev);
+
+            info!("Done xhci code");
+
+            // smp::no_interrupt(|| {
+            //     match xx.do_stuff() {
+            //         Ok(()) => info!("did stuff successfully"),
+            //         Err(e) => error!("Error failed to do stuff: {:?}", e),
+            //     }
+            // });
 
         }).unwrap();
 

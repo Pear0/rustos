@@ -30,6 +30,7 @@ mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
 aarch64 = { path = "../lib/aarch64/" }
 kernel_api = { path = "../lib/kernel_api" }
 pigrate-core = { path = "../lib/pigrate-core" }
+usb-host = { path = "../lib/usb-host-rs" }
 xhci = { path = "../lib/xhci" }
 
 addr2line = { version = "0.12.1", default-features = false, features = ["rustc-demangle"] }
@@ -48,6 +49,7 @@ rand = { version = "0.7.3", default-features = false, features = ["alloc"] }
 rand_xorshift = "0.2.0"
 serde = { version = "1.0.106", default-features = false, features = ["alloc", "derive"] }
 serde_cbor = { version = "0.11.1", default-features = false, features = ["alloc"] }
+spin = "0.5.2"
 hashbrown = { version = "0.6.3", features = ["serde"] }
 modular-bitfield = "0.6.0"
 xmas-elf = "0.7.0"
