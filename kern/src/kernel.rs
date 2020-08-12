@@ -182,6 +182,17 @@ impl xhci::HAL for XHCIHal {
     }
 }
 
+impl usb_host::HAL2 for XHCIHal {
+
+    fn current_time() -> Duration {
+        timing::clock_time::<PhysicalCounter>()
+    }
+
+    fn sleep(dur: Duration) {
+        timing::sleep_phys(dur);
+    }
+
+}
 
 pub fn kernel_main() -> ! {
     debug!("init irq");
@@ -320,10 +331,10 @@ pub fn kernel_main() -> ! {
 
             info!("created things");
 
-            let mut host = USBHost::new();
+            let mut host = USBHost::<XHCIHal>::new();
             let dev = host.attach_root_hub(my_xhci);
 
-            host.enumerate_devices(dev);
+            USBHost::<XHCIHal>::setup_new_device(dev);
 
             info!("Done xhci code");
 
