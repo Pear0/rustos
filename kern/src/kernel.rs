@@ -29,6 +29,7 @@ use usb_host::structs::USBDevice;
 use usb_host::traits::USBHostController;
 use usb_host::items::{ControlCommand, TypeTriple};
 use usb_host::USBHost;
+use usb_host::consts::USBSpeed;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -332,7 +333,7 @@ pub fn kernel_main() -> ! {
             info!("created things");
 
             let mut host = USBHost::<XHCIHal>::new();
-            let dev = host.attach_root_hub(my_xhci);
+            let dev = host.attach_root_hub(my_xhci, USBSpeed::Super);
 
             USBHost::<XHCIHal>::setup_new_device(dev);
 
