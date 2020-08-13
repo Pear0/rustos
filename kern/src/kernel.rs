@@ -157,42 +157,33 @@ fn configure_timer() {
 
 struct XHCIHal();
 
-impl xhci::HAL for XHCIHal {
-    fn current_time(&self) -> Duration {
-        timing::clock_time::<PhysicalCounter>()
-    }
-
-    fn sleep(&self, dur: Duration) {
+impl usb_host::UsbHAL for XHCIHal {
+    fn sleep(dur: Duration) {
         timing::sleep_phys(dur);
     }
 
-    fn memory_barrier(&self) {
+    fn current_time() -> Duration {
+        timing::clock_time::<PhysicalCounter>()
+    }
+}
+
+impl xhci::XhciHAL for XHCIHal {
+
+    fn memory_barrier() {
         aarch64::dmb();
     }
 
-    fn translate_addr(&self, addr: u64) -> u64 {
+    fn translate_addr(addr: u64) -> u64 {
         addr
     }
 
-    fn flush_cache(&self, addr: u64, len: u64, flush: FlushType) {
+    fn flush_cache(addr: u64, len: u64, flush: FlushType) {
         match flush {
             FlushType::Clean => aarch64::clean_data_cache_region(addr, len),
             FlushType::Invalidate => aarch64::invalidate_data_cache_region(addr, len),
             FlushType::CleanAndInvalidate => aarch64::clean_and_invalidate_data_cache_region(addr, len),
         }
     }
-}
-
-impl usb_host::HAL2 for XHCIHal {
-
-    fn current_time() -> Duration {
-        timing::clock_time::<PhysicalCounter>()
-    }
-
-    fn sleep(dur: Duration) {
-        timing::sleep_phys(dur);
-    }
-
 }
 
 pub fn kernel_main() -> ! {
@@ -322,13 +313,11 @@ pub fn kernel_main() -> ! {
 
             let addr = 0xff500000u64;
 
-
-            let x = Box::leak(Box::new(XHCIHal()));
             xhci::init_dwc3(addr);
 
-            let mut xx = xhci::Xhci::new(addr, x);
+            let mut xx = xhci::Xhci::<XHCIHal>::new(addr);
 
-            let my_xhci = Arc::new(xhci::XhciWrapper(spin::Mutex::new(xx)));
+            let my_xhci = Arc::new(xhci::XhciWrapper::<XHCIHal>(spin::Mutex::new(xx)));
 
             info!("created things");
 
