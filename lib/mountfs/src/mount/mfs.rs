@@ -160,7 +160,7 @@ impl FileInfo for Entry {
 }
 
 /// Trait implemented by file systems.
-pub trait FileSystem {
+pub trait FileSystem: Send {
 
     /// Opens the entry at `path`. `path` must be absolute.
     ///

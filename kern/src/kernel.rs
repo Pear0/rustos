@@ -10,7 +10,7 @@ use pi::gpio;
 use pi::interrupt::{Interrupt, CoreInterrupt};
 use shim::{io, ioerr};
 
-use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM};
+use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM, FILESYSTEM2};
 use crate::console::{CONSOLE, console_ext_init, console_interrupt_handler};
 use crate::fs::handle::{Sink, SinkWrapper, Source, SourceWrapper, WaitingSourceWrapper};
 use crate::fs::service::PipeService;
@@ -30,6 +30,7 @@ use usb_host::traits::USBHostController;
 use usb_host::items::{ControlCommand, TypeTriple};
 use usb_host::USBHost;
 use usb_host::consts::USBSpeed;
+use crate::usb::usb_thread;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -155,37 +156,6 @@ fn configure_timer() {
 
 }
 
-struct XHCIHal();
-
-impl usb_host::UsbHAL for XHCIHal {
-    fn sleep(dur: Duration) {
-        timing::sleep_phys(dur);
-    }
-
-    fn current_time() -> Duration {
-        timing::clock_time::<PhysicalCounter>()
-    }
-}
-
-impl xhci::XhciHAL for XHCIHal {
-
-    fn memory_barrier() {
-        aarch64::dmb();
-    }
-
-    fn translate_addr(addr: u64) -> u64 {
-        addr
-    }
-
-    fn flush_cache(addr: u64, len: u64, flush: FlushType) {
-        match flush {
-            FlushType::Clean => aarch64::clean_data_cache_region(addr, len),
-            FlushType::Invalidate => aarch64::invalidate_data_cache_region(addr, len),
-            FlushType::CleanAndInvalidate => aarch64::clean_and_invalidate_data_cache_region(addr, len),
-        }
-    }
-}
-
 pub fn kernel_main() -> ! {
     debug!("init irq");
     KERNEL_IRQ.initialize();
@@ -294,6 +264,8 @@ pub fn kernel_main() -> ! {
 
     // UART regs: (0b10000100000011111100000000, 0b1011000000000000)
 
+    unsafe { FILESYSTEM2.initialize() };
+
 
     {
         let mut proc = KernelProcess::kernel_process("shell".to_owned(), my_thread).unwrap();
@@ -308,35 +280,7 @@ pub fn kernel_main() -> ! {
     }
 
     {
-        let mut proc = KernelProcess::kernel_process("pipe".to_owned(), |ctx| {
-            use usb_host::traits::*;
-
-            let addr = 0xff500000u64;
-
-            xhci::init_dwc3(addr);
-
-            let mut xx = xhci::Xhci::<XHCIHal>::new(addr);
-
-            let my_xhci = Arc::new(xhci::XhciWrapper::<XHCIHal>(spin::Mutex::new(xx)));
-
-            info!("created things");
-
-            let mut host = USBHost::<XHCIHal>::new();
-            let dev = host.attach_root_hub(my_xhci, USBSpeed::Super);
-
-            USBHost::<XHCIHal>::setup_new_device(dev);
-
-            info!("Done xhci code");
-
-            // smp::no_interrupt(|| {
-            //     match xx.do_stuff() {
-            //         Ok(()) => info!("did stuff successfully"),
-            //         Err(e) => error!("Error failed to do stuff: {:?}", e),
-            //     }
-            // });
-
-        }).unwrap();
-
+        let mut proc = KernelProcess::kernel_process("pipe".to_owned(), usb_thread).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
 

@@ -35,6 +35,7 @@ xhci = { path = "../lib/xhci" }
 
 addr2line = { version = "0.12.1", default-features = false, features = ["rustc-demangle"] }
 compression = { version = "0.1", default-features = false, features = ["gzip", "bzip2", "deflate", "lzss"] }
+downcast-rs = { version = "1.2.0", default-features = false }
 dtb = { version = "0.2.0", default-features = false }
 crossbeam-utils = { version = "0.7.2", default-features = false, features = [] }
 # elfloader = "0.10.0"

@@ -5,7 +5,13 @@ use shim::{path::Path, path::PathBuf};
 use shim::ioerr;
 use crate::fs;
 
-pub struct NullFileSystem;
+pub struct NullFileSystem();
+
+impl NullFileSystem {
+    pub fn new() -> Self {
+        NullFileSystem()
+    }
+}
 
 impl mfs::FileSystem for NullFileSystem {
     fn open(&self, manager: &fs::FileSystem, path: &Path) -> io::Result<mfs::Entry> {

@@ -231,6 +231,7 @@ dependencies = [
  "common 0.1.0",
  "compression 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam-utils 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "downcast-rs 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "dtb 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "enumset 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "fat32 0.1.0",

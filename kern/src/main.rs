@@ -34,6 +34,8 @@
 extern crate aarch64;
 extern crate alloc;
 #[macro_use]
+extern crate downcast_rs;
+#[macro_use]
 extern crate enumset;
 #[macro_use]
 extern crate log;
@@ -76,6 +78,7 @@ use crate::process::{Id, KernelImpl, Process, Stack};
 use crate::process::fd::FileDescriptor;
 use crate::traps::syndrome::Syndrome;
 use crate::arm::PhysicalCounter;
+use crate::fs2::FileSystem2;
 
 #[macro_use]
 pub mod console;
@@ -94,7 +97,9 @@ pub mod debug;
 mod device_tree;
 pub mod display;
 mod display_manager;
+pub mod driver;
 pub mod fs;
+pub mod fs2;
 pub mod hw;
 mod hyper;
 pub mod iosync;
@@ -113,12 +118,14 @@ pub mod param;
 pub mod process;
 pub mod timing;
 pub mod traps;
+pub mod usb;
 pub mod virtualization;
 pub mod vm;
 
 #[cfg_attr(not(test), global_allocator)]
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
+pub static FILESYSTEM2: FileSystem2 = FileSystem2::uninitialized();
 pub static NET: GlobalNetHandler = GlobalNetHandler::uninitialized();
 pub static VMM: VMManager = VMManager::uninitialized();
 

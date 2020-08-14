@@ -20,7 +20,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, BootVariant, NET, timer, timing, hw};
+use crate::{ALLOCATOR, BootVariant, NET, timer, timing, hw, FILESYSTEM2};
 use crate::allocator::AllocStats;
 use crate::FILESYSTEM;
 use crate::fs::handle::{Sink, Source};
@@ -251,13 +251,15 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .name("lsd")
         .help("")
         .func(|sh, cmd| {
-            let sd = unsafe { sd::Sd::new() }.expect("failed to init sd card2");
-            let vfat = VFat::<DynVFatHandle>::from(sd).expect("failed to init vfat2");
+            //let sd = unsafe { sd::Sd::new() }.expect("failed to init sd card2");
+            // let vfat = VFat::<DynVFatHandle>::from(sd).expect("failed to init vfat2");
 
-            let mut f = mountfs::fs::FileSystem::new();
-            f.mount(PathBuf::from("/"), Box::new(MetaFileSystem::new()));
-            f.mount(PathBuf::from("/fat"), Box::new(DynWrapper(vfat)));
+            //. let mut f = mountfs::fs::FileSystem::new();
+            //f.mount(PathBuf::from("/"), Box::new(MetaFileSystem::new()));
+            // f.mount(PathBuf::from("/fat"), Box::new(DynWrapper(vfat)));
 
+            let mut f_lock = FILESYSTEM2.0.lock();
+            let mut f = f_lock.as_mut().expect("FS2 not initialized");
 
             let mut dir: &str = sh.cwd_str();
             let mut all = false;
