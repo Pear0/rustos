@@ -280,7 +280,7 @@ pub fn kernel_main() -> ! {
     }
 
     {
-        let mut proc = KernelProcess::kernel_process("pipe".to_owned(), usb_thread).unwrap();
+        let mut proc = KernelProcess::kernel_process("usb".to_owned(), usb_thread).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
 

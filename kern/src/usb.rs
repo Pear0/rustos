@@ -93,6 +93,15 @@ impl usb_host::HostCallbacks<XHCIHal> for USBDriver {
                     break;
                 }
             }
+            if let Err(e) = HIDKeyboard::<XHCIHal>::probe(&device, interface) {
+                error!("failed to probe msd: {:?}", e);
+            }
+            {
+                let d = device.read();
+                if matches!(d.device_state, DeviceState::Owned(_)) {
+                    break;
+                }
+            }
             // match interface.interface.bInterfaceClass {
             //     CLASS_CODE_HID => {
             //         if let Err(e) = HIDKeyboard::<XHCIHal>::probe(&device, interface) {
@@ -169,13 +178,17 @@ pub fn usb_thread(ctx: KernProcessCtx) {
     info!("created things");
 
     let mut host = USBHost::<XHCIHal>::new(Arc::new(USBDriver()));
-    let dev = host.attach_root_hub(my_xhci, USBSpeed::Super);
+    let dev = host.attach_root_hub(my_xhci.clone(), USBSpeed::Super);
 
     let host = Arc::new(host);
 
     USBHost::<XHCIHal>::setup_new_device(&host, dev);
 
-    info!("Done xhci code");
+
+    loop {
+        my_xhci.process_interrupts();
+        kernel_api::syscall::sleep(Duration::from_millis(5));
+    }
 
     // smp::no_interrupt(|| {
     //     match xx.do_stuff() {
