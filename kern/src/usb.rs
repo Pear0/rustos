@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -6,6 +7,7 @@ use core::time::Duration;
 
 use spin::RwLock;
 
+use fat32::traits::BlockDevice;
 use fat32::vfat::{DynVFatHandle, DynWrapper, VFat};
 use shim::io;
 use shim::path::PathBuf;
@@ -19,8 +21,12 @@ use xhci::FlushType;
 
 use crate::{FILESYSTEM2, timing};
 use crate::arm::PhysicalCounter;
+use crate::iosync::Global;
 use crate::process::KernProcessCtx;
-use fat32::traits::BlockDevice;
+
+type BoxFn = Box<dyn FnOnce() + Send>;
+
+static EVENT_QUEUE: Global<VecDeque<BoxFn>> = Global::new(|| VecDeque::new());
 
 struct XHCIHal();
 
@@ -31,6 +37,10 @@ impl usb_host::UsbHAL for XHCIHal {
 
     fn current_time() -> Duration {
         timing::clock_time::<PhysicalCounter>()
+    }
+
+    fn queue_task(func: Box<dyn FnOnce() + Send>) {
+        EVENT_QUEUE.critical(|e| e.push_back(func));
     }
 }
 
@@ -163,6 +173,17 @@ impl MSDCallback for MassFSHook {
     }
 }
 
+fn process_event_queue() {
+    // bound the maximum work we will perform before yielding
+    let len = EVENT_QUEUE.critical(|e| e.len());
+    for _ in 0..len {
+        if let Some(func) = EVENT_QUEUE.critical(|e| e.pop_front()) {
+            func();
+        } else {
+            return;
+        }
+    }
+}
 
 pub fn usb_thread(ctx: KernProcessCtx) {
     use usb_host::traits::*;
@@ -187,6 +208,7 @@ pub fn usb_thread(ctx: KernProcessCtx) {
 
     loop {
         my_xhci.process_interrupts();
+        process_event_queue();
         kernel_api::syscall::sleep(Duration::from_millis(5));
     }
 
