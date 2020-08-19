@@ -38,6 +38,10 @@ pub fn clock_time<T: GenericCounterImpl>() -> Duration {
     cycles_to_time::<T>(T::get_counter())
 }
 
+pub fn clock_time_phys() -> Duration {
+    cycles_to_time::<PhysicalCounter>(PhysicalCounter::get_counter())
+}
+
 // returns exec time in cycles.
 
 fn perf_fn<T: GenericCounterImpl>(func: &mut PerfFn, count: usize) -> u64 {

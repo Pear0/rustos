@@ -374,7 +374,7 @@ impl<T: ProcessImpl> Scheduler<T> {
 
     fn load_frame(tf: &mut T::Frame, proc: &mut Process<T>) -> Id {
         let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-        let now = pi::timer::current_time();
+        let now = crate::timing::clock_time_phys();
 
         proc.set_state(State::Running(RunContext { core_id, scheduled_at: now }));
         *tf = *proc.context.clone();

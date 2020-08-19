@@ -212,7 +212,7 @@ impl<T: ProcessImpl> Process<T> {
     }
 
     pub fn set_state(&mut self, new_state: State<T>) {
-        let now = pi::timer::current_time();
+        let now = crate::timing::clock_time_phys();
 
         match &self.state {
             State::Ready => self.ready_ratio.set_active_with_time(false, now),
@@ -239,7 +239,7 @@ impl<T: ProcessImpl> Process<T> {
     pub fn current_cpu_time(&self) -> Duration {
         let mut amt = self.cpu_time;
         if let State::Running(ctx) = &self.state {
-            amt += (pi::timer::current_time() - ctx.scheduled_at);
+            amt += (crate::timing::clock_time_phys() - ctx.scheduled_at);
         }
         amt
     }

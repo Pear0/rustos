@@ -55,7 +55,7 @@ impl From<&KernelProcess> for SnapProcess {
 
         let mut cpu_time = proc.cpu_time;
         if let State::Running(ctx) = proc.get_state() {
-            cpu_time += pi::timer::current_time() - ctx.scheduled_at;
+            cpu_time += crate::timing::clock_time_phys() - ctx.scheduled_at;
         }
 
         SnapProcess {
@@ -80,7 +80,7 @@ impl From<&HyperProcess> for SnapProcess {
 
         let mut cpu_time = proc.cpu_time;
         if let State::Running(ctx) = proc.get_state() {
-            cpu_time += pi::timer::current_time() - ctx.scheduled_at;
+            cpu_time += crate::timing::clock_time_phys() - ctx.scheduled_at;
         }
 
         SnapProcess {

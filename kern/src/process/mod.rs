@@ -37,7 +37,7 @@ impl TimeRatio {
     const INTERNAL_RES: u32 = 10_000_000;
 
     fn now() -> Duration {
-        pi::timer::current_time()
+        crate::timing::clock_time_phys()
     }
 
     pub fn new_window(window: Duration) -> Self {

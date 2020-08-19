@@ -536,7 +536,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                     return b;
                 }
             }
-            timer::spin_sleep(Duration::from_millis(1));
+            crate::timing::sleep_phys(Duration::from_millis(1));
         }
     }
 }
