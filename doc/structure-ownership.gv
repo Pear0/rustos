@@ -1,0 +1,75 @@
+
+digraph G {
+
+    graph [ splines="true" forcelabels="true" nodesep="1.2" compound=true ];
+
+    subgraph usb {
+        label = "USB";
+
+        usb_host;
+        usb_bus;
+        usb_controller;
+        usb_device;
+        usb_driver;
+        usb_pipe;
+    }
+
+    subgraph usb_msd {
+        label = "Filesystem";
+
+        msd_bulkonly;
+        msd_scsi;
+    }
+
+    subgraph filesystem {
+        label = "Filesystem";
+
+        fs_scsi_wrapper;
+        fs_vfat;
+        fs_mountfs;
+    }
+
+    subgraph console {
+        label = "Console";
+
+        console;
+    }
+
+    # Owns
+	edge[label="owns"]
+
+    msd_scsi -> msd_bulkonly
+    fs_scsi_wrapper -> msd_scsi
+    fs_vfat -> fs_scsi_wrapper
+    fs_mountfs -> fs_vfat
+
+    # Strong ref count
+	edge[label="Arc"]
+    usb_host -> usb_bus;
+    usb_bus -> usb_controller;
+    usb_bus -> usb_device [label="Arc (root)"];
+    usb_device -> usb_driver;
+
+    usb_driver -> usb_device [label="Arc (children)"];
+
+    msd_bulkonly -> usb_pipe
+
+    console -> usb_pipe;
+
+    # Weak ref count
+	edge[label="Weak", style="dashed"];
+
+    usb_device -> usb_bus;
+    usb_device -> usb_device [label="Weak (parent)"];
+
+    usb_bus -> usb_device [label="Weak (all devices)"];
+
+    usb_driver -> usb_device;
+
+    usb_pipe -> usb_device;
+    usb_pipe -> usb_controller;
+
+    usb_driver -> usb_host;
+
+}
+
