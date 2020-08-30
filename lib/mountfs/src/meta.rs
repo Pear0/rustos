@@ -128,6 +128,10 @@ impl mfs::FileSystem for MetaFileSystem {
         self.id = id
     }
 
+    fn get_name(&self) -> Option<String> {
+        Some(String::from("meta"))
+    }
+
     fn open(&self, manager: &fs::FileSystem, path: &Path) -> io::Result<mfs::Entry> {
         self.ensure_dir_tree(manager);
         // TODO support meta not mounted at root? this would be complicated.

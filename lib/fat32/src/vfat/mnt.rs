@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::rc::Rc;
+use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
 
@@ -7,6 +8,7 @@ use common::mutex::Mutex;
 use mountfs::fs;
 use mountfs::fs::FileSystem;
 use mountfs::mount::mfs;
+use mountfs::mount::mfs::{Dir as MfsDir, FileId, FileInfo, FsId};
 use shim::{ioerr, newioerr};
 use shim::ffi::OsStr;
 use shim::io;
@@ -14,7 +16,6 @@ use shim::path::{Component, Path};
 
 use crate::traits::Entry as TraitEntry;
 use crate::vfat::{Dir, Entry, VFat, VFatHandle};
-use mountfs::mount::mfs::{Dir as MfsDir, FsId, FileInfo, FileId};
 
 #[derive(Clone)]
 pub struct DynVFatHandle(Rc<Mutex<VFat<Self>>>, usize);
@@ -53,10 +54,10 @@ fn convert_entry(entry: Entry<DynVFatHandle>) -> mfs::DirEntry {
     match &entry {
         Entry::File(f) => {
             mfs::DirEntry::new(f.name.clone(), mfs::FileInfo::metadata(f), f.size as u64, false, f.get_id())
-        },
+        }
         Entry::Dir(f) => {
             mfs::DirEntry::new(f.name.clone(), mfs::FileInfo::metadata(f), 0, true, f.get_id())
-        },
+        }
     }
 }
 
@@ -65,6 +66,10 @@ pub struct DynWrapper(pub DynVFatHandle);
 impl mfs::FileSystem for DynWrapper {
     fn set_id(&mut self, id: usize) {
         (self.0).1 = id
+    }
+
+    fn get_name(&self) -> Option<String> {
+        Some(String::from("fat32"))
     }
 
     fn open(&self, manager: &fs::FileSystem, path: &Path) -> io::Result<mfs::Entry> {
@@ -95,7 +100,6 @@ impl mfs::FileSystem for DynWrapper {
 
         let entries = crate::traits::Dir::entries(my_dir)?;
         Ok(Box::new(entries.map(convert_entry)))
-
     }
 
     fn dir_entry(&self, _manager: &FileSystem, dir: Arc<dyn mfs::Dir>, path: &OsStr) -> io::Result<mfs::Entry> {

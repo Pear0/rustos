@@ -30,7 +30,7 @@ impl FileSystem2 {
     }
 
     pub fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<mfs::Entry> {
-        m_lock!(self.0).as_mut().expect("kernel::fs2 uninitialized").open(path)
+        self.critical(|fs| fs.open(path))
     }
 
     pub fn critical<R, F: FnOnce(&mut mountfs::fs::FileSystem) -> R>(&self, func: F) -> R {

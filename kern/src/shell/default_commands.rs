@@ -248,8 +248,8 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
 
     sh.command()
         .name("ls")
-        .help("")
-        .func(|sh, cmd| {
+        .help("List files")
+        .func_result(|sh, cmd| {
 
             let mut dir: &str = sh.cwd_str();
             let mut all = false;
@@ -260,28 +260,33 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 }
             }
 
-            match FILESYSTEM2.open(dir) {
-                Ok(entry) => {
-                    match &entry {
-                        mfs::Entry::File(_) => describe_ls_entry(&mut sh.writer, entry, true),
-                        mfs::Entry::Dir(f) => {
-                            match FILESYSTEM2.critical(|fs| fs.entries(f.clone())) {
-                                Ok(entries) => {
-                                    for entry in entries {
-                                        describe_ls_entry(&mut sh.writer, entry, all);
-                                    }
-                                }
-                                Err(e) => {
-                                    writeln!(sh.writer, "error: {}", e);
-                                }
-                            }
-                        }
+            let entry = FILESYSTEM2.open(dir)?;
+            match &entry {
+                mfs::Entry::File(_) => describe_ls_entry(&mut sh.writer, entry, true),
+                mfs::Entry::Dir(f) => {
+                    let entries = FILESYSTEM2.critical(|fs| fs.entries(f.clone()))?;
+                    for entry in entries {
+                        describe_ls_entry(&mut sh.writer, entry, all);
                     }
                 }
-                Err(e) => {
-                    writeln!(sh.writer, "error: {}", e);
-                }
             }
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
+        .name("lsmnt")
+        .help("List mounted filesystems")
+        .func_result(|sh, cmd| {
+
+            let mount_info = FILESYSTEM2.critical(|fs| fs.get_mounts());
+            writeln!(sh.writer, "Mounts:")?;
+            for mount in mount_info.iter() {
+                writeln!(sh.writer, "  {:?} - {:?}", mount.path, mount.fs_name)?;
+            }
+
+            Ok(())
         })
         .build();
 

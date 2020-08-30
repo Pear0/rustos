@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -31,6 +32,11 @@ pub(crate) struct Mount {
     pub delegate: Box<dyn mfs::FileSystem>,
 }
 
+pub struct MountInfo {
+    pub path: PathBuf,
+    pub fs_name: Option<String>,
+}
+
 pub struct FileSystem {
     fs_id: usize,
     pub(crate) filesystems: HashMap<FsId, Mount>,
@@ -44,6 +50,17 @@ impl FileSystem {
             filesystems: HashMap::new(),
             mounts: HashMap::new(),
         }
+    }
+
+    pub fn get_mounts(&self) -> Vec<MountInfo> {
+        let mut mounts: Vec<MountInfo> = Vec::new();
+        for mount in self.filesystems.values() {
+            mounts.push(MountInfo {
+                path: mount.path.clone(),
+                fs_name: mount.delegate.get_name(),
+            })
+        }
+        mounts
     }
 
     pub fn mount(&mut self, path: Option<&dyn AsRef<Path>>, mut delegate: Box<dyn mfs::FileSystem>) -> io::Result<()> {
@@ -63,6 +80,8 @@ impl FileSystem {
         };
 
         self.mounts.insert(mount_id, fs_id);
+
+        // TODO if there is a mounting error, remove filesystem from self.filesystems
 
         Ok(())
     }

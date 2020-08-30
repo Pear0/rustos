@@ -193,6 +193,10 @@ pub trait FileSystem: Send {
 
     fn set_id(&mut self, id: FsId);
 
+    fn get_name(&self) -> Option<String> {
+        None
+    }
+
     /// Opens the entry at `path`. `path` must be absolute.
     ///
     /// # Errors
