@@ -2,6 +2,9 @@ use alloc::boxed::Box;
 
 use mountfs::{MetaFileSystem, NullFileSystem};
 use mountfs::fs::FileSystem;
+use mountfs::mount::mfs;
+use shim::io;
+use shim::path::Path;
 use shim::path::PathBuf;
 
 use crate::mutex::Mutex;
@@ -17,12 +20,23 @@ impl FileSystem2 {
         let mut lock = self.0.lock();
         lock.replace({
             let mut fs = FileSystem::new();
-            fs.mount(PathBuf::from("/"), Box::new(MetaFileSystem::new()));
+            fs.mount(None, Box::new(MetaFileSystem::new()));
 
-            fs.mount(PathBuf::from("/foo"), Box::new(NullFileSystem::new()));
-            fs.mount(PathBuf::from("/bar"), Box::new(NullFileSystem::new()));
+            fs.mount(Some(&PathBuf::from("/foo")), Box::new(NullFileSystem::new()));
+            fs.mount(Some(&PathBuf::from("/bar")), Box::new(NullFileSystem::new()));
 
             fs
         });
     }
+
+    pub fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<mfs::Entry> {
+        m_lock!(self.0).as_mut().expect("kernel::fs2 uninitialized").open(path)
+    }
+
+    pub fn critical<R, F: FnOnce(&mut mountfs::fs::FileSystem) -> R>(&self, func: F) -> R {
+        let mut lock = self.0.lock();
+        let mut fs = lock.as_mut().expect("kernel::fs2 uninitialized");
+        func(fs)
+    }
+
 }

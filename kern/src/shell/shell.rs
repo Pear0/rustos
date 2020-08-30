@@ -17,7 +17,7 @@ use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
 use crate::{NET, timer, hw, BootVariant};
-use crate::FILESYSTEM;
+use crate::FILESYSTEM2;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
 use crate::net::arp::ArpResolver;
@@ -29,6 +29,8 @@ use super::command_args::{CommandArgs, Error};
 use super::default_commands;
 use pi::atags::{Atag, Atags};
 use crate::hyper::HYPER_IRQ;
+use mountfs::mount::mfs::FileInfo;
+use mountfs::mount::{mfs, Timestamp};
 
 pub struct Shell<'a, R: io::Read, W: io::Write> {
     pub prefix: &'a str,
@@ -39,8 +41,6 @@ pub struct Shell<'a, R: io::Read, W: io::Write> {
     pub commands: HashMap<&'a str, Option<Command<'a, R, W>>>,
     buffered_byte: Option<u8>,
 }
-
-type FEntry = fat32::vfat::Entry<crate::fs::PiVFatHandle>;
 
 impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
     pub fn new(prefix: &'static str, reader: R, writer: W) -> Shell<'a, R, W> {
@@ -75,12 +75,12 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
         self.cwd.to_str().unwrap()
     }
 
-    fn open_file(&self, piece: &str) -> io::Result<FEntry> {
+    fn open_file(&self, piece: &str) -> io::Result<mfs::Entry> {
         let path = Path::new(piece);
         if path.has_root() {
-            FILESYSTEM.open(path)
+            FILESYSTEM2.open(path)
         } else {
-            FILESYSTEM.open(self.cwd.join(path))
+            FILESYSTEM2.open(self.cwd.join(path))
         }
     }
 
@@ -93,37 +93,34 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
         }
     }
 
-    fn describe_ls_entry(&mut self, entry: FEntry, show_all: bool) {
-        if !show_all && (entry.metadata().hidden() || entry.name() == "." || entry.name() == "..") {
+    fn describe_ls_entry(&mut self, entry: &dyn mfs::FileInfo, show_all: bool) {
+        if !show_all && (matches!(entry.metadata().hidden, Some(true)) || entry.name() == "." || entry.name() == "..") {
             return;
         }
 
         let mut line = String::new();
-        if entry.is_dir() {
+        if entry.is_directory() {
             line.push('d');
-        } else if entry.metadata().attributes.volume_id() {
+        } /*else if entry.metadata().attributes.volume_id() {
             line.push('V');
-        } else {
+        } */else {
             line.push('-');
         }
 
-        if entry.metadata().hidden() {
+        if matches!(entry.metadata().hidden, Some(true)) {
             line.push('h');
         } else {
             line.push('-');
         }
-        if entry.metadata().read_only() {
+        if matches!(entry.metadata().read_only, Some(true)) {
             line.push('r');
         } else {
             line.push('-');
         }
 
-        let size = match &entry {
-            fat32::vfat::Entry::<crate::fs::PiVFatHandle>::File(f) => f.size(),
-            fat32::vfat::Entry::<crate::fs::PiVFatHandle>::Dir(_) => 0,
-        };
+        let size = entry.size();
 
-        writeln!(self.writer, "{} {:>7} {} {}", line, size, entry.metadata().modified(), entry.name());
+        writeln!(self.writer, "{} {:>7} {} {}", line, size, entry.metadata().modified.unwrap_or(Timestamp::default()), entry.name());
     }
 
     fn process_command(&mut self, command: &mut CommandArgs) -> io::Result<()> {
@@ -136,7 +133,7 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                         match self.open_file(arg) {
                             Ok(e) => {
                                 if let Some(mut f) = e.into_file() {
-                                    io::copy(&mut f, &mut self.writer)?;
+                                    io::copy(f.as_mut(), &mut self.writer)?;
                                 } else {
                                     writeln!(self.writer, "error: not a file")?;
                                 }
@@ -165,43 +162,16 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                             c @ Component::Normal(_) => {
                                 let new = self.cwd.join(c);
 
-                                if let fat32::vfat::Entry::Dir(d) = FILESYSTEM.open(new.to_str().unwrap())? {
-                                    self.cwd.push(d.name);
+                                info!("checking path: {:?}", new.to_str());
+                                if let mfs::Entry::Dir(d) = FILESYSTEM2.open(new.to_str().unwrap())? {
+                                    info!("adding segment: {}", d.name());
+                                    self.cwd.push(d.name());
+                                    info!("new path is {:?}", self.cwd.to_str());
                                 } else {
                                     writeln!(self.writer, "error: invalid path")?;
                                     return Ok(());
                                 }
                             }
-                        }
-                    }
-                }
-            }
-            "ls" => {
-                // debug!("A");
-                let mut dir: &str = self.cwd_str();
-                // debug!("B");
-                let mut all = false;
-                for arg in command.args[1..].iter() {
-                    match *arg {
-                        "-a" => all = true,
-                        other => dir = other,
-                    }
-                }
-
-                // debug!("C");
-
-                let entry = FILESYSTEM.open(dir)?;
-
-                // debug!("D");
-
-                match &entry {
-                    fat32::vfat::Entry::File(_) => self.describe_ls_entry(entry, true),
-                    fat32::vfat::Entry::Dir(f) => {
-                        let entries = f.entries()?;
-                        // debug!("E");
-
-                        for entry in entries {
-                            self.describe_ls_entry(entry, all);
                         }
                     }
                 }

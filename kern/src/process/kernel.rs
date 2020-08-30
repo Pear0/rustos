@@ -12,7 +12,7 @@ use pigrate_core::bundle::ProcessBundle;
 use shim::io;
 use shim::path::Path;
 
-use crate::{FILESYSTEM, VMM};
+use crate::{FILESYSTEM2, VMM};
 use crate::fs::handle::{Sink, Source};
 use crate::kernel::KERNEL_SCHEDULER;
 use crate::param::{PAGE_SIZE, USER_IMG_BASE};
@@ -176,7 +176,7 @@ impl Process<KernelImpl> {
 
         let image_base = Self::get_image_base();
 
-        let mut file = FILESYSTEM.open(pn)?.into_file().ok_or(OsError::InvalidArgument)?;
+        let mut file = FILESYSTEM2.open(pn)?.into_file().ok_or(OsError::InvalidArgument)?;
 
         let mut base = image_base;
         'page_loop: loop {

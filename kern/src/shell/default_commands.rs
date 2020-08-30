@@ -22,7 +22,6 @@ use stack_vec::StackVec;
 
 use crate::{ALLOCATOR, BootVariant, NET, timer, timing, hw, FILESYSTEM2};
 use crate::allocator::AllocStats;
-use crate::FILESYSTEM;
 use crate::fs::handle::{Sink, Source};
 use crate::fs::sd;
 use crate::fs::service::PipeService;
@@ -248,18 +247,9 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
-        .name("lsd")
+        .name("ls")
         .help("")
         .func(|sh, cmd| {
-            //let sd = unsafe { sd::Sd::new() }.expect("failed to init sd card2");
-            // let vfat = VFat::<DynVFatHandle>::from(sd).expect("failed to init vfat2");
-
-            //. let mut f = mountfs::fs::FileSystem::new();
-            //f.mount(PathBuf::from("/"), Box::new(MetaFileSystem::new()));
-            // f.mount(PathBuf::from("/fat"), Box::new(DynWrapper(vfat)));
-
-            let mut f_lock = FILESYSTEM2.0.lock();
-            let mut f = f_lock.as_mut().expect("FS2 not initialized");
 
             let mut dir: &str = sh.cwd_str();
             let mut all = false;
@@ -270,12 +260,12 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 }
             }
 
-            match f.open(dir) {
+            match FILESYSTEM2.open(dir) {
                 Ok(entry) => {
                     match &entry {
                         mfs::Entry::File(_) => describe_ls_entry(&mut sh.writer, entry, true),
                         mfs::Entry::Dir(f) => {
-                            match f.entries() {
+                            match FILESYSTEM2.critical(|fs| fs.entries(f.clone())) {
                                 Ok(entries) => {
                                     for entry in entries {
                                         describe_ls_entry(&mut sh.writer, entry, all);

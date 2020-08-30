@@ -7,21 +7,25 @@ use core::time::Duration;
 
 use hashbrown::HashMap;
 
+use aarch64::MPIDR_EL1;
+pub use command_args::CommandArgs as CommandArgs;
 use fat32::traits::{Dir, Entry, File, Metadata};
 use fat32::traits::FileSystem;
-use pi::interrupt::{Interrupt, CoreInterrupt};
+use pi::interrupt::{CoreInterrupt, Interrupt};
+pub use shell::Shell as Shell;
 use shim::io;
 use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
 use crate::{NET, timer};
-use crate::FILESYSTEM;
-use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper, TeeingWriter};
+use crate::display::Painter;
+use crate::display::text::TextPainter;
+use crate::display_manager::GlobalDisplay;
+use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, TeeingWriter, WriteWrapper};
 use crate::kernel::KERNEL_IRQ;
 use crate::net::arp::ArpResolver;
 use crate::process::Process;
-use aarch64::MPIDR_EL1;
 use crate::smp;
 
 pub mod command_args;
@@ -30,14 +34,7 @@ mod default_commands;
 mod shell;
 pub mod shortcut;
 
-pub use command_args::CommandArgs as CommandArgs;
-pub use shell::Shell as Shell;
-use crate::display::text::TextPainter;
-use crate::display_manager::GlobalDisplay;
-use crate::display::Painter;
-
 // use std::path::{Path, PathBuf, Component};
-
 
 
 pub fn serial_shell(prefix: &'static str) -> Shell<ConsoleSync, ConsoleSync> {

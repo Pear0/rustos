@@ -1,11 +1,30 @@
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
-use shim::{io, newioerr};
+
+use hashbrown::HashMap;
+
+use shim::{io, ioerr, newioerr};
 use shim::{path::Path, path::PathBuf};
+use shim::ffi::OsStr;
+use shim::path::Component;
+
 // use std::path::{Path, PathBuf};
 use crate::mount::mfs;
+use crate::mount::mfs::{FileId, FsId, INode};
 
+struct DirIterator<'a> {
+    dir: Box<dyn mfs::Dir>,
+    iter: Option<Box<dyn Iterator<Item=mfs::DirEntry> + 'a>>,
+}
 
+impl Iterator for DirIterator<'_> {
+    type Item = mfs::DirEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unimplemented!()
+    }
+}
 
 pub(crate) struct Mount {
     pub path: PathBuf,
@@ -13,39 +32,90 @@ pub(crate) struct Mount {
 }
 
 pub struct FileSystem {
-    pub(crate) mounts: Vec<Mount>,
+    fs_id: usize,
+    pub(crate) filesystems: HashMap<FsId, Mount>,
+    pub(crate) mounts: HashMap<Option<FileId>, FsId>,
 }
 
 impl FileSystem {
     pub fn new() -> Self {
         Self {
-            mounts: Vec::new(),
+            fs_id: 1,
+            filesystems: HashMap::new(),
+            mounts: HashMap::new(),
         }
     }
 
-    pub fn mount(&mut self, path: PathBuf, delegate: Box<dyn mfs::FileSystem>) {
-        self.mounts.push(Mount{ path, delegate })
+    pub fn mount(&mut self, path: Option<&dyn AsRef<Path>>, mut delegate: Box<dyn mfs::FileSystem>) -> io::Result<()> {
+        let fs_id = (self.fs_id) as FsId;
+        self.fs_id += 1;
+
+        delegate.set_id(fs_id);
+
+        self.filesystems.insert(fs_id, Mount {
+            path: path.as_ref().map(|p| p.as_ref().to_path_buf()).unwrap_or(PathBuf::from("/")),
+            delegate,
+        });
+
+        let mount_id = match path {
+            Some(path) => Some(self.open(path.as_ref())?.get_id()),
+            None => None,
+        };
+
+        self.mounts.insert(mount_id, fs_id);
+
+        Ok(())
+    }
+
+    pub fn entries(&self, dir: Arc<dyn mfs::Dir>) -> io::Result<Box<dyn Iterator<Item=mfs::DirEntry>>> {
+        let file_id = dir.get_id();
+
+        if let Some(mounted_id) = self.mounts.get(&Some(file_id)) {
+            let fs = self.filesystems.get(mounted_id).unwrap();
+            let root = fs.delegate.open(self, &Path::new("/"))?.into_dir().expect("expected root to be a dir");
+            fs.delegate.entries(self, root)
+        } else {
+            let fs = self.filesystems.get(&file_id.0).unwrap();
+            fs.delegate.entries(self, dir)
+        }
+    }
+
+    pub fn dir_entry(&self, dir: Arc<dyn mfs::Dir>, path: &OsStr) -> io::Result<mfs::Entry> {
+        let file_id = dir.get_id();
+
+        if let Some(mounted_id) = self.mounts.get(&Some(file_id)) {
+            let fs = self.filesystems.get(mounted_id).unwrap();
+            let root = fs.delegate.open(self, &Path::new("/"))?.into_dir().expect("expected root to be a dir");
+            fs.delegate.dir_entry(self, root, path)
+        } else {
+            let fs = self.filesystems.get(&file_id.0).unwrap();
+            fs.delegate.dir_entry(self, dir, path)
+        }
+    }
+
+    fn root_dir(&self) -> io::Result<Arc<dyn mfs::Dir>> {
+        let fs_id = self.mounts.get(&None).expect("no root filesystem");
+        let root = self.filesystems.get(fs_id).expect("cannot find root fs");
+        let dir = root.delegate.open(self, Path::new("/"))?.into_dir().expect("root is not a directory");
+
+        Ok(dir)
     }
 
     pub fn open<P: AsRef<Path>>(&mut self, path: P) -> io::Result<mfs::Entry> {
+        let mut entry = mfs::Entry::Dir(self.root_dir()?);
 
-        let mut most_depth = 0;
-        let mut index = usize::max_value();
-
-        for (i, mount) in self.mounts.iter().enumerate() {
-            if path.as_ref().starts_with(&mount.path) && mount.path.iter().count() >= most_depth {
-                most_depth = mount.path.iter().count();
-                index = i;
+        for component in path.as_ref().components() {
+            if let Component::Normal(comp) = component {
+                if let mfs::Entry::Dir(dir) = entry {
+                    entry = self.dir_entry(dir, comp)?;
+                } else {
+                    return ioerr!(InvalidInput, "found file in directory traversal");
+                }
             }
         }
 
-        let mount = self.mounts.get(index).ok_or(newioerr!(NotFound, "path does not match any mount"))?;
-
-        let leaf = path.as_ref().strip_prefix(&mount.path).unwrap();
-
-        mount.delegate.open(self, leaf)
+        Ok(entry)
     }
-
 }
 
 

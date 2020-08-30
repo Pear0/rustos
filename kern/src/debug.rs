@@ -7,7 +7,8 @@ use xmas_elf::sections::ShType;
 
 use common::fmt::ByteSize;
 
-use crate::{FILESYSTEM, hw, ALLOCATOR};
+use crate::{FILESYSTEM2, hw, ALLOCATOR};
+use mountfs::mount::mfs;
 
 #[allow(non_upper_case_globals)]
 extern "C" {
@@ -106,16 +107,14 @@ pub struct MetaDebugInfo {
 static SELF_SYMBOLS: UnsafeContainer<Option<Box<MetaDebugInfo>>> = UnsafeContainer::new(None);
 
 fn load_elf_pi() -> Result<&'static mut Vec<u8>, crate::shell::command::CommandError> {
-    use fat32::traits::{Entry, FileSystem};
-    type File = fat32::vfat::File<crate::fs::PiVFatHandle>;
 
-    let mut entry: File = FILESYSTEM.open("/kernel.elf")?.into_file().ok_or("no file")?;
-    info!("opened file: {}", entry.name);
+    let mut entry: Box<dyn mfs::File> = FILESYSTEM2.open("/kernel.elf")?.into_file().ok_or("no file")?;
+    info!("opened file: {}", entry.name());
 
     let file_buffer = Box::leak(Box::new(Vec::<u8>::new()));
 
     use shim::io;
-    io::copy(&mut entry, file_buffer);
+    io::copy(entry.as_mut(), file_buffer);
 
     Ok(file_buffer)
 }

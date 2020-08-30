@@ -1,8 +1,17 @@
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::sync::Arc;
 use shim::{io, path::Path};
 use crate::mount::Metadata;
 use crate::fs;
+use downcast_rs::{Downcast, DowncastSync};
+use shim::ffi::OsStr;
+
+pub type FsId = usize;
+pub type INode = usize;
+
+#[derive(Copy, Clone, Debug, PartialOrd, PartialEq, Ord, Eq, Hash)]
+pub struct FileId(pub FsId, pub INode);
 
 pub trait FileInfo {
     /// The name of the file or directory corresponding to this entry.
@@ -14,10 +23,12 @@ pub trait FileInfo {
     fn size(&self) -> u64;
 
     fn is_directory(&self) -> bool;
+
+    fn get_id(&self) -> FileId;
 }
 
 /// Trait implemented by files in the file system.
-pub trait File: FileInfo + io::Read + io::Write + io::Seek {
+pub trait File: FileInfo + io::Read + io::Write + io::Seek + Downcast {
     /// Writes any buffered data to disk.
     fn sync(&mut self) -> io::Result<()>;
 
@@ -25,24 +36,27 @@ pub trait File: FileInfo + io::Read + io::Write + io::Seek {
     fn size(&self) -> u64;
 }
 
-/// Trait implemented by directories in a file system.
-pub trait Dir: FileInfo {
-    /// The type of entry stored in this directory.
+impl_downcast!(File);
 
-    /// Returns an interator over the entries in this directory.
-    fn entries<'a>(&'a self) -> io::Result<Box<dyn Iterator<Item=DirEntry> + 'a>>;
+/// Trait implemented by directories in a file system.
+pub trait Dir: FileInfo + DowncastSync {
+
 }
 
+impl_downcast!(sync Dir);
+
+#[derive(Clone, Debug)]
 pub struct DirEntry {
     pub name: String,
     pub metadata: Metadata,
     pub size: u64,
     pub is_directory: bool,
+    pub id: FileId,
 }
 
 impl DirEntry {
-    pub fn new(name: String, metadata: Metadata, size: u64, is_directory: bool) -> Self {
-        Self { name, metadata, size, is_directory }
+    pub fn new(name: String, metadata: Metadata, size: u64, is_directory: bool, id: FileId) -> Self {
+        Self { name, metadata, size, is_directory, id }
     }
 }
 
@@ -62,11 +76,15 @@ impl FileInfo for DirEntry {
     fn is_directory(&self) -> bool {
         self.is_directory
     }
+
+    fn get_id(&self) -> FileId {
+        self.id
+    }
 }
 
 pub enum Entry {
     File(Box<dyn File>),
-    Dir(Box<dyn Dir>),
+    Dir(Arc<dyn Dir>),
 }
 
 impl Entry {
@@ -103,7 +121,7 @@ impl Entry {
 
     /// If `self` is a directory, returns `Some` of the directory. Otherwise
     /// returns `None`.
-    pub fn into_dir(self) -> Option<Box<dyn Dir>> {
+    pub fn into_dir(self) -> Option<Arc<dyn Dir>> {
         if let Entry::Dir(d) = self {
             Some(d)
         } else {
@@ -136,6 +154,13 @@ impl Entry {
             Entry::Dir(d) => d.metadata(),
         }
     }
+
+    pub fn get_id(&self) -> FileId {
+        match self {
+            Entry::File(f) => f.get_id(),
+            Entry::Dir(d) => d.get_id(),
+        }
+    }
 }
 
 impl FileInfo for Entry {
@@ -157,10 +182,16 @@ impl FileInfo for Entry {
     fn is_directory(&self) -> bool {
         self.is_dir()
     }
+
+    fn get_id(&self) -> FileId {
+        Entry::get_id(self)
+    }
 }
 
 /// Trait implemented by file systems.
 pub trait FileSystem: Send {
+
+    fn set_id(&mut self, id: FsId);
 
     /// Opens the entry at `path`. `path` must be absolute.
     ///
@@ -175,6 +206,10 @@ pub trait FileSystem: Send {
     ///
     /// All other error values are implementation defined.
     fn open(&self, manager: &fs::FileSystem, path: &Path) -> io::Result<Entry>;
+
+    fn entries(&self, manager: &fs::FileSystem, dir: Arc<dyn Dir>) -> io::Result<Box<dyn Iterator<Item=DirEntry>>>;
+
+    fn dir_entry(&self, manager: &fs::FileSystem, dir: Arc<dyn Dir>, path: &OsStr) -> io::Result<Entry>;
 
 }
 

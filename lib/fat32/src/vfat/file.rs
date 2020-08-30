@@ -10,6 +10,7 @@ use mountfs::mount::mfs;
 use mountfs::mount;
 use crate::vfat::mnt::DynVFatHandle;
 use crate::vfat::dir::convert_ts;
+use mountfs::mount::mfs::FileId;
 
 #[derive(Debug)]
 pub struct File<HANDLE: VFatHandle> {
@@ -131,6 +132,10 @@ impl mfs::FileInfo for File<DynVFatHandle> {
 
     fn is_directory(&self) -> bool {
         false
+    }
+
+    fn get_id(&self) -> FileId {
+        FileId(self.vfat.get_id(), self.cluster.raw() as usize)
     }
 }
 

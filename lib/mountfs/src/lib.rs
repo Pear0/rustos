@@ -8,6 +8,9 @@ extern crate core;
 extern crate alloc;
 
 #[macro_use]
+extern crate downcast_rs;
+
+#[macro_use]
 extern crate log;
 
 pub mod fs;

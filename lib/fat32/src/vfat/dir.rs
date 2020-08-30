@@ -14,6 +14,7 @@ use crate::vfat::{Cluster, Entry, File, VFatHandle};
 use mountfs::mount::mfs;
 use mountfs::mount;
 use crate::vfat::mnt::DynVFatHandle;
+use mountfs::mount::mfs::{FileId, FsId, FileInfo};
 
 #[derive(Debug)]
 pub struct Dir<HANDLE: VFatHandle> {
@@ -311,22 +312,11 @@ impl mfs::FileInfo for Dir<DynVFatHandle> {
     fn is_directory(&self) -> bool {
         true
     }
-}
 
-fn convert_entry(entry: Entry<DynVFatHandle>) -> mfs::DirEntry {
-    match &entry {
-        Entry::File(f) => {
-            mfs::DirEntry::new(f.name.clone(), mfs::FileInfo::metadata(f), f.size as u64, false)
-        },
-        Entry::Dir(f) => {
-            mfs::DirEntry::new(f.name.clone(), mfs::FileInfo::metadata(f), 0, true)
-        },
+    fn get_id(&self) -> FileId {
+        FileId(self.vfat.get_id(), self.cluster.raw() as usize)
     }
 }
 
 impl mfs::Dir for Dir<DynVFatHandle> {
-    fn entries(&self) -> io::Result<Box<dyn Iterator<Item=mfs::DirEntry>>> {
-        let entries = traits::Dir::entries(self)?;
-        Ok(Box::new(entries.map(convert_entry)))
-    }
 }

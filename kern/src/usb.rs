@@ -166,7 +166,7 @@ impl MSDCallback for MassFSHook {
 
         let mut f_lock = FILESYSTEM2.0.lock();
         let mut f = f_lock.as_mut().expect("FS2 not initialized");
-        f.mount(PathBuf::from(string), Box::new(DynWrapper(vfat)));
+        f.mount(Some(&PathBuf::from(string)), Box::new(DynWrapper(vfat)));
 
 
         Ok(())

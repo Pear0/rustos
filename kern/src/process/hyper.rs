@@ -16,7 +16,7 @@ use pigrate_core::bundle::ProcessBundle;
 use shim::io;
 use shim::path::Path;
 
-use crate::{FILESYSTEM, VMM};
+use crate::{FILESYSTEM2, VMM};
 use crate::fs::handle::{Sink, Source};
 use crate::hyper::{hyper_main, NET_SWITCH};
 use crate::init::{EL2_KERNEL_INIT, EL2_KERNEL_INIT_LEN};
@@ -293,7 +293,7 @@ impl Process<HyperImpl> {
 
         Self::init_guest(&mut proc);
 
-        let mut file = FILESYSTEM.open(pn)?.into_file().ok_or(OsError::InvalidArgument)?;
+        let mut file = FILESYSTEM2.open(pn)?.into_file().ok_or(OsError::InvalidArgument)?;
 
         let mut base = VirtualAddr::from(0x80_000);
         'page_loop: loop {

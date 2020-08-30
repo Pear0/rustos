@@ -20,6 +20,10 @@ use mountfs::mount::mfs;
 pub trait VFatHandle: Clone + Debug + Send + Sync {
     fn new(val: VFat<Self>) -> Self;
     fn lock<R>(&self, f: impl FnOnce(&mut VFat<Self>) -> R) -> R;
+
+    fn get_id(&self) -> usize {
+        0
+    }
 }
 
 #[derive(Debug)]

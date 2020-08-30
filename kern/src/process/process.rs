@@ -17,7 +17,7 @@ use aarch64::SPSR_EL1;
 use shim::{io, ioerr};
 use shim::path::Path;
 
-use crate::{FILESYSTEM, smp, VMM};
+use crate::{smp, VMM};
 use crate::fs::handle::{Sink, Source};
 use crate::kernel::KERNEL_SCHEDULER;
 use crate::param::*;
