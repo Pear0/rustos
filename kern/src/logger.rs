@@ -6,6 +6,8 @@ use log::{Level, LevelFilter, Metadata, Record, set_logger};
 use crate::console::CONSOLE;
 use crate::{smp, hw};
 use crate::traps::IRQ_RECURSION_DEPTH;
+use crossbeam_utils::atomic::AtomicCell;
+use hashbrown::HashMap;
 
 struct SimpleLogger;
 
@@ -33,6 +35,44 @@ impl log::Log for SimpleLogger {
 
     fn flush(&self) {}
 }
+
+struct ModuleLogger {
+    module_info: AtomicCell<Box<HashMap<&'static str, Level>>>
+}
+
+impl ModuleLogger {
+
+    fn update<F: Fn(&mut HashMap<&'static str, Level>)>(&self, func: F) {
+        self.module_info.load()
+
+
+
+        self.f.compare_and_swap()
+    }
+
+    fn leak_string(&self, s: &str) -> &'static str {
+        let s = Box::leak(Box::new(String::from(s)));
+        s.as_str()
+    }
+}
+
+impl log::Log for ModuleLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.target();
+        self.module_info.load();
+
+        core::mem::forget()
+        core::mem::ManuallyDrop::new()
+
+        metadata.level() <= Level::Debug
+    }
+
+    fn log(&self, record: &Record) {
+    }
+
+    fn flush(&self) {}
+}
+
 
 static LOGGER: SimpleLogger = SimpleLogger;
 

@@ -342,6 +342,22 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
+        .name("loadelf")
+        .func_result(|sh, cmd| {
+            if cmd.args.len() < 2 {
+                writeln!(sh.writer, "expected: loadelf <path>")?;
+                return Ok(())
+            }
+
+            let path = sh.handle_path(cmd.args[1]);
+
+            crate::debug::load_from_file(&path)?;
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
         .name("elf")
         .func_result(|sh, _cmd| {
 

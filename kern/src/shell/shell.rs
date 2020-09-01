@@ -75,6 +75,15 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
         self.cwd.to_str().unwrap()
     }
 
+    pub fn handle_path(&self, arg: &str) -> PathBuf {
+        let path = Path::new(arg);
+        if path.has_root() {
+            path.to_path_buf()
+        } else {
+            self.cwd.join(path)
+        }
+    }
+
     fn open_file(&self, piece: &str) -> io::Result<mfs::Entry> {
         let path = Path::new(piece);
         if path.has_root() {

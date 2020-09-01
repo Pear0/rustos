@@ -9,6 +9,8 @@ use common::fmt::ByteSize;
 
 use crate::{FILESYSTEM2, hw, ALLOCATOR};
 use mountfs::mount::mfs;
+use shim::path::Path;
+use crate::shell::command::CommandError;
 
 #[allow(non_upper_case_globals)]
 extern "C" {
@@ -148,20 +150,7 @@ fn load_elf_khadas() -> Result<&'static mut Vec<u8>, crate::shell::command::Comm
     Ok(file_buffer)
 }
 
-
-fn do_initialize() -> Result<(), crate::shell::command::CommandError> {
-
-    let file_buffer = if hw::not_pi() {
-        match hw::arch_variant() {
-            hw::ArchVariant::Khadas(_) => load_elf_khadas()?,
-            _ => Err("cannot load debug symbols for unknown arch")?,
-        }
-    } else {
-        load_elf_pi()?
-    };
-
-    info!("Read {} bytes", ByteSize::from(file_buffer.len()));
-
+fn load_elf_symbols(file_buffer: &'static mut Vec<u8>) -> Result<(), crate::shell::command::CommandError> {
     let elf = xmas_elf::ElfFile::new(file_buffer.as_slice())?;
 
     // for section in elf.section_iter() {
@@ -209,6 +198,23 @@ fn do_initialize() -> Result<(), crate::shell::command::CommandError> {
     Ok(())
 }
 
+
+fn do_initialize() -> Result<(), crate::shell::command::CommandError> {
+
+    let file_buffer = if hw::not_pi() {
+        match hw::arch_variant() {
+            hw::ArchVariant::Khadas(_) => load_elf_khadas()?,
+            _ => Err("cannot load debug symbols for unknown arch")?,
+        }
+    } else {
+        load_elf_pi()?
+    };
+
+    info!("Read {} bytes", ByteSize::from(file_buffer.len()));
+
+    load_elf_symbols(file_buffer)
+}
+
 pub fn debug_ref() -> Option<&'static MetaDebugInfo> {
     unsafe {
         SELF_SYMBOLS.inner.get()
@@ -231,6 +237,27 @@ pub fn initialize_debug() {
             error!("Failed to load debug info: {:?}", e);
         }
     }
+}
+
+pub fn load_from_file(path: &dyn AsRef<Path>) -> Result<(), CommandError> {
+    if debug_ref().is_some() {
+        warn!("Refusing to initialize debug information, already init.");
+        return Ok(())
+    }
+
+    let mut entry: Box<dyn mfs::File> = FILESYSTEM2.open(path)?.into_file().ok_or("no file")?;
+    info!("opened file: {}", entry.name());
+
+    let file_buffer = Box::leak(Box::new(Vec::<u8>::new()));
+
+    use shim::io;
+    io::copy(entry.as_mut(), file_buffer)?;
+
+    info!("Read {} bytes", ByteSize::from(file_buffer.len()));
+
+    load_elf_symbols(file_buffer)?;
+
+    Ok(())
 }
 
 

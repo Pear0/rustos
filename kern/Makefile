@@ -84,7 +84,12 @@ clean:
 
 install: build
 	@echo "+ Installing build/$(KERN).elf [install-kernel.py]"
-	@$(ROOT)/bin/install-kernel.py build/$(KERN).elf - build/uImage ./uboot.ini build/$(KERN).elf.gz
+	@$(ROOT)/bin/install-kernel.py build/$(KERN).elf - build/uImage ./uboot.ini build/$(KERN).elf.gz build/$(KERN).elf
+
+minstall: build
+	@udiskie-mount -a
+	@echo "+ Installing build/$(KERN).elf [install-kernel.py]"
+	@$(ROOT)/bin/install-kernel.py build/$(KERN).elf - build/uImage ./uboot.ini build/$(KERN).elf.gz build/$(KERN).elf
 
 test:
 	cargo test --target=$(shell $(ROOT)/bin/get-host-target.sh)
