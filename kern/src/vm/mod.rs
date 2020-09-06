@@ -133,12 +133,12 @@ impl VMManager {
 
             isb();
 
-            hw::arch().early_print().write_str("WOW MMU works\n");
+            // hw::arch().early_print().write_str("WOW MMU works\n");
 
             // SCTLR_EL1.set(SCTLR_EL1.get() & !(SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M));
             debug!("enabled mmu");
 
-            hw::arch().early_print().write_str("WOW MMU works 2\n");
+            // hw::arch().early_print().write_str("WOW MMU works 2\n");
 
             llvm_asm!("dsb sy");
             isb();

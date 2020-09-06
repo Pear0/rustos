@@ -46,6 +46,7 @@ use crate::mutex::{Mutex, MUTEX_REGISTRY};
 use core::sync::atomic::Ordering;
 use crate::traps::IRQ_RECURSION_DEPTH;
 use crate::arm::PhysicalCounter;
+use log::Level;
 
 mod net;
 
@@ -439,17 +440,24 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
-        .name("usb")
-        .func_result(|sh, _cmd| {
-
-            let XHCI_BASE: u64 = 0xff500000;
-
-            unsafe {
-
-                let f = core::slice::from_raw_parts(XHCI_BASE as *const u8, 256);
-                kprintln!("{}", pretty_hex::pretty_hex(&f));
+        .name("logl")
+        .func_result(|sh, cmd| {
+            if cmd.args.len() < 3 {
+                writeln!(sh.writer, "expected: logl <module> <error|warn|info|debug|trace")?;
+                return Ok(())
             }
 
+            let level_str = cmd.args[2].to_lowercase();
+            let level = match level_str.as_str() {
+                "error" => Level::Error,
+                "warn" => Level::Warn,
+                "info" => Level::Info,
+                "debug" => Level::Debug,
+                "trace" => Level::Trace,
+                _ => Err("unknown log level")?,
+            };
+
+            crate::logger::get_logger().set_module_log_level(cmd.args[1], level);
 
             Ok(())
         })

@@ -8,7 +8,7 @@ use hashbrown::HashMap;
 
 use crate::cls::{CoreLocal, CoreMutex};
 use crate::iosync::Global;
-use crate::traps::{HyperTrapFrame, IRQ_EL, IRQ_RECURSION_DEPTH};
+use crate::traps::{HyperTrapFrame, IRQ_EL, IRQ_RECURSION_DEPTH, KernelTrapFrame};
 use crate::traps::hyper::{TM_TOTAL_COUNT, TM_TOTAL_TIME};
 
 static CORE_EVENTS: CoreLocal<Global<Vec<PerfEvent>>> = CoreLocal::new_global(|| Vec::new());
@@ -16,31 +16,54 @@ static CORE_EVENTS: CoreLocal<Global<Vec<PerfEvent>>> = CoreLocal::new_global(||
 struct GuestEvent {
     tpidr: u64,
     lr: u64,
+    is_kernel_thread: bool,
 }
 
-struct HyperEvent {
+struct ExcEvent {
     lr: u64,
 }
 
 struct PerfEvent {
     timestamp: Duration,
     guest: GuestEvent,
-    hyper: Option<HyperEvent>,
+    exc: Option<ExcEvent>,
 }
 
 impl PerfEvent {
-    pub fn from_tf(tf: &mut HyperTrapFrame) -> Self {
+    pub fn from_hyper_tf(tf: &mut HyperTrapFrame) -> Self {
         let timestamp = crate::timer::current_time();
         let is_exc = IRQ_RECURSION_DEPTH.get() > 1;
 
-        let guest = GuestEvent { lr: (if is_exc { IRQ_EL.get() } else { tf.ELR_EL2 }), tpidr: tf.TPIDR_EL2 };
+        let guest = GuestEvent {
+            lr: (if is_exc { IRQ_EL.get() } else { tf.ELR_EL2 }),
+            tpidr: tf.TPIDR_EL2,
+            is_kernel_thread: false
+        };
 
         let hyper = if is_exc {
-            Some(HyperEvent { lr: tf.ELR_EL2 })
+            Some(ExcEvent { lr: tf.ELR_EL2 })
         } else {
             None
         };
-        Self { timestamp, guest, hyper }
+        Self { timestamp, guest, exc: hyper }
+    }
+
+    pub fn from_kernel_tf(tf: &mut KernelTrapFrame) -> Self {
+        let timestamp = crate::timer::current_time();
+        let is_exc = IRQ_RECURSION_DEPTH.get() > 1;
+
+        let guest = GuestEvent {
+            lr: (if is_exc { IRQ_EL.get() } else { tf.ELR_EL1 }),
+            tpidr: tf.TPIDR_EL0,
+            is_kernel_thread: tf.is_el1(),
+        };
+
+        let hyper = if is_exc {
+            Some(ExcEvent { lr: tf.ELR_EL1 })
+        } else {
+            None
+        };
+        Self { timestamp, guest, exc: hyper }
     }
 }
 
@@ -48,8 +71,20 @@ pub fn prepare() {
     CORE_EVENTS.critical(|core| core.reserve(150_000));
 }
 
-pub fn record_event(tf: &mut HyperTrapFrame) -> bool {
-    let event = PerfEvent::from_tf(tf);
+pub fn record_event_hyper(tf: &mut HyperTrapFrame) -> bool {
+    let event = PerfEvent::from_hyper_tf(tf);
+    CORE_EVENTS.critical(|core| {
+        if core.len() < core.capacity() {
+            core.push(event);
+            true
+        } else {
+            false
+        }
+    })
+}
+
+pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
+    let event = PerfEvent::from_kernel_tf(tf);
     CORE_EVENTS.critical(|core| {
         if core.len() < core.capacity() {
             core.push(event);
@@ -76,11 +111,16 @@ pub fn dump_events() {
 
         for event in events.iter() {
             let mut name = String::from("<guest>");
-
-            if let Some(hyper) = &event.hyper {
+            let mut lr = None;
+            if let Some(hyper) = &event.exc {
                 name = String::from("<hyper>");
+                lr = Some(hyper.lr);
+            } else if event.guest.is_kernel_thread {
+                lr = Some(event.guest.lr);
+            }
 
-                if let Ok(mut iter) = debug_info.context.find_frames(hyper.lr) {
+            if let Some(kernel_lr) = lr {
+                if let Ok(mut iter) = debug_info.context.find_frames(kernel_lr) {
                     name = String::new();
 
                     let mut first = true;
@@ -151,10 +191,12 @@ pub fn dump_events() {
         info!("{} other events", events.len() - displayed);
 
         let tm_count = TM_TOTAL_COUNT.load(Ordering::Relaxed);
-        let tm_time = Duration::from_micros(TM_TOTAL_TIME.load(Ordering::Relaxed));
+        if tm_count > 0 {
+            let tm_time = Duration::from_micros(TM_TOTAL_TIME.load(Ordering::Relaxed));
 
-        info!("TM Count: {}, TM Time: {:?}", tm_count, tm_time);
-        info!("Per: {:?}", tm_time / (tm_count as u32));
+            info!("TM Count: {}, TM Time: {:?}", tm_count, tm_time);
+            info!("Per: {:?}", tm_time / (tm_count as u32));
+        }
     });
 }
 

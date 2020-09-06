@@ -64,9 +64,14 @@ fn do_panic(info: &PanicInfo, sp: usize) -> ! {
 
         let core = smp::core();
         writeln!(&mut uart, "my trace: core={}", core);
-        for addr in crate::debug::stack_scanner(sp, None) {
-            writeln!(&mut uart, "0x{:08x}", addr);
+
+        for addr in crate::debug::stack_walker() {
+            writeln!(&mut uart, "0x{:08x}", addr.link_register);
         }
+
+        // for addr in crate::debug::stack_scanner(sp, None) {
+        //     writeln!(&mut uart, "0x{:08x}", addr);
+        // }
 
     }
 

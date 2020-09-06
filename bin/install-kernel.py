@@ -133,5 +133,10 @@ if __name__ == '__main__':
         copy_to(*f, sdcard)
 
     print("[!] unmounting %s" % sdcard)
-    os.system("sudo umount '%s'" % sdcard)
-    # os.system("diskutil unmount '%s'" % sdcard)
+    if shutil.which('udiskie-umount'):
+        os.system("udiskie-umount '%s'" % sdcard)
+    elif shutil.which('diskutil'):
+        os.system("diskutil unmount '%s'" % sdcard)
+    else:
+        os.system("sudo umount '%s'" % sdcard)
+

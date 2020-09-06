@@ -7,6 +7,8 @@ use crate::allocator::tags::{TaggingAlloc, MemTag};
 use super::util::align_up;
 use shim::io;
 use pi::atags::Atag::Mem;
+use arrayvec::ArrayVec;
+use crate::allocator::util::align_down;
 
 /// A simple allocator that allocates based on size classes.
 ///   bin 0 (2^3 bytes)    : handles allocations in (0, 2^3]
@@ -27,10 +29,17 @@ pub struct Allocator {
     wilderness: usize,
     wilderness_end: usize,
     bins: [LinkedList; 30],
+    reserved_regions: ArrayVec<[(usize, usize); 32]>,
 }
 
 fn has_alignment(ptr: usize, align: usize) -> bool {
     ptr % align == 0
+}
+
+fn region_overlap(a: (u64, u64), b: (u64, u64)) -> bool {
+    // (start, size) -> region: [start, start+size)
+    // ref: https://stackoverflow.com/a/325964
+    a.0 < b.0 + b.1 && b.0 < a.0 + a.1
 }
 
 impl Allocator {
@@ -46,6 +55,7 @@ impl Allocator {
             wilderness: align_up(start, 8),
             wilderness_end: end,
             bins: [LinkedList::new(); 30],
+            reserved_regions: ArrayVec::new(),
         }
     }
 
@@ -92,15 +102,16 @@ impl Allocator {
     /// Instead of naively incurring external fragmentation, this function will
     /// place the allocate the largest possible bin entries as possible in the
     /// region. This way otherwise lost space gets turned into more small fastbins.
-    fn fill_allocations(&mut self, mut start: usize, end: usize) -> bool {
-        'fill_loop: while start != end {
-            assert!(end - start > 7);
+    fn fill_allocations_until(&mut self, end: usize) -> bool {
+
+        'fill_loop: while self.wilderness != end {
+            assert!(end - self.wilderness > 7);
 
             for i in (0..self.bins.len()).rev() {
-                if has_alignment(self.wilderness, self.bin_size(i)) {
+                let bin_size = self.bin_size(i);
+                if self.wilderness + bin_size < end && has_alignment(self.wilderness, bin_size) {
                     // will not recurse because this is a perfect fit.
                     self.allocate_bin_entry(i);
-                    start += self.bin_size(i);
                     continue 'fill_loop;
                 }
             }
@@ -112,26 +123,41 @@ impl Allocator {
     }
 
     fn allocate_bin_entry(&mut self, bin: usize) -> bool {
-        let alloc_start = align_up(self.wilderness, self.bin_size(bin));
+        // notes:
+        // - "end" / right side boundaries are all exclusive bounds.
+        //
 
-        // println!("[alloc wilderness] wilderness=0x{:x}, bin_size=0x{:x}, alloc_start=0x{:x}, wilderness_end=0x{:x}",
-        //          self.wilderness, self.bin_size(bin), alloc_start, self.wilderness_end );
+        loop {
+            let alloc_start = align_up(self.wilderness, self.bin_size(bin));
+            let bin_size = self.bin_size(bin);
 
-        if alloc_start + self.bin_size(bin) > self.wilderness_end {
-            // println!("[alloc wilderness] failed, allocation would exceed wilderness");
-            return false;
+            if alloc_start + bin_size > self.wilderness_end {
+                // There is no way we can allocate.
+                return false;
+            }
+
+            if let Some(res_region) = self.reserved_regions.first().cloned() as Option<(usize, usize)> {
+                if alloc_start + bin_size > res_region.0 {
+                    // allocation passes into a reserved region.
+
+                    self.reserved_regions.remove(0);
+
+                    self.fill_allocations_until(res_region.0);
+                    self.wilderness = res_region.0 + res_region.1;
+
+                    // restart allocation at the top of the next region.
+                    continue;
+                }
+            }
+
+            self.fill_allocations_until(alloc_start);
+
+            self.wilderness = alloc_start + bin_size;
+
+            unsafe { self.bins[bin].push(alloc_start as *mut usize) };
+
+            return true;
         }
-
-        if !self.fill_allocations(self.wilderness, alloc_start) {
-            // println!("[alloc wilderness] failed to fill in alignment bins");
-            return false;
-        }
-
-        self.wilderness = alloc_start + self.bin_size(bin);
-
-        unsafe { self.bins[bin].push(alloc_start as *mut usize) };
-
-        true
     }
 
     fn layout_to_bin(&self, layout: Layout) -> usize {
@@ -202,6 +228,19 @@ impl Allocator {
         // cast is safe because we only ever give out 8 byte aligned pointers
         // anyway.
         unsafe { self.bins[bin].push(ptr as *mut usize) };
+    }
+
+    pub fn register_reserved_region(&mut self, region: (usize, usize)) -> bool {
+        let aligned_start =  align_down(region.0, 8);
+        let aligned_size = align_up(region.0 + region.1, 8) - aligned_start;
+
+        self.reserved_regions.push((aligned_start, aligned_size));
+
+        // does not allocate.
+        self.reserved_regions.sort_unstable();
+
+        // return false if the allocator is unable / has already violated the reserved region.
+        aligned_start >= self.wilderness
     }
 
 }

@@ -18,6 +18,7 @@ debug = true
 
 [dependencies]
 common = { path = "../lib/common" }
+dsx = { path = "../lib/dsx", default-features = false, features = ["kern"] }
 mini-alloc = { path = "../lib/mini-alloc" }
 pi = { path = "../lib/pi" }
 khadas = { path = "../lib/khadas" }
@@ -34,6 +35,7 @@ usb-host = { path = "../lib/usb-host-rs" }
 xhci = { path = "../lib/xhci" }
 
 addr2line = { version = "0.12.1", default-features = false, features = ["rustc-demangle"] }
+arrayvec = { version = "0.5.1", default-features = false, features = [] }
 compression = { version = "0.1", default-features = false, features = ["gzip", "bzip2", "deflate", "lzss"] }
 downcast-rs = { version = "1.2.0", default-features = false }
 dtb = { version = "0.2.0", default-features = false }

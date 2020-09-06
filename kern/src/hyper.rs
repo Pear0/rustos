@@ -124,7 +124,7 @@ fn configure_timer() {
                     return;
                 }
 
-                if !perf::record_event(ctx.data) {
+                if !perf::record_event_hyper(ctx.data) {
                     ctx.remove_timer();
                 }
                 // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);

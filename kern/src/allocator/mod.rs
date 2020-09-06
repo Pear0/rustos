@@ -69,6 +69,16 @@ impl Allocator {
         })
     }
 
+    pub fn with_internal_mut<F, R>(&self, f: F) -> R
+        where
+            F: FnOnce(&mut AllocatorImpl) -> R,
+    {
+        smp::no_interrupt(|| {
+            let mut lock = m_lock!(self.0);
+            f(lock.as_mut().expect("allocator uninitialized"))
+        })
+    }
+
     pub unsafe fn alloc_tag(&self, layout: Layout, tag: MemTag) -> *mut u8 {
         smp::no_interrupt(|| {
             m_lock!(self.0)

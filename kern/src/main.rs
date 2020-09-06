@@ -79,6 +79,7 @@ use crate::process::fd::FileDescriptor;
 use crate::traps::syndrome::Syndrome;
 use crate::arm::PhysicalCounter;
 use crate::fs2::FileSystem2;
+use crate::traps::IRQ_RECURSION_DEPTH;
 
 #[macro_use]
 pub mod console;
@@ -161,6 +162,10 @@ fn init_jtag() {
     }
 }
 
+pub fn can_make_syscall() -> bool {
+    IRQ_RECURSION_DEPTH.get() == 0
+}
+
 fn kmain(boot_hypervisor: bool) -> ! {
     // init_jtag();
     use crate::arm::GenericCounterImpl;
@@ -182,6 +187,13 @@ fn kmain(boot_hypervisor: bool) -> ! {
         ALLOCATOR.initialize();
         // debug!("init filesystem");
         // FILESYSTEM.initialize();
+    }
+
+    if let hw::ArchVariant::Khadas(_) = hw::arch_variant() {
+        // TODO read this from device tree within karch.
+        if !ALLOCATOR.with_internal_mut(|a| a.register_reserved_region((0x05000000, 0x300000))) {
+            info!("failed to mark region 'secmon_reserved' as reserved.");
+        }
     }
 
     if boot_hypervisor {

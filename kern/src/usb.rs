@@ -19,7 +19,7 @@ use usb_host::drivers::mass_storage::{MassStorageDriver, MSDCallback, SimpleBloc
 use usb_host::structs::{DeviceState, USBDevice};
 use xhci::FlushType;
 
-use crate::{FILESYSTEM2, timing};
+use crate::{FILESYSTEM2, timing, can_make_syscall};
 use crate::arm::PhysicalCounter;
 use crate::iosync::Global;
 use crate::process::KernProcessCtx;
@@ -32,7 +32,13 @@ struct XHCIHal();
 
 impl usb_host::UsbHAL for XHCIHal {
     fn sleep(dur: Duration) {
-        timing::sleep_phys(dur);
+        let syscall_threshold = Duration::from_millis(1);
+
+        if can_make_syscall() && dur >= syscall_threshold {
+            kernel_api::syscall::sleep(dur);
+        } else {
+            timing::sleep_phys(dur);
+        }
     }
 
     fn current_time() -> Duration {

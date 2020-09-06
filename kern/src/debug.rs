@@ -138,7 +138,7 @@ fn load_elf_khadas() -> Result<&'static mut Vec<u8>, crate::shell::command::Comm
     if (alloc_wilderness.0 as u64) > compressed_elf_location {
         warn!("Allocator wilderness {:#x} > elf location {:#x}, corruption likely", alloc_wilderness.0, compressed_elf_location);
     } else {
-        debug!("Allocator wilderness {:#x} > elf location {:#x}, probably no corruption", alloc_wilderness.0, compressed_elf_location);
+        info!("Allocator wilderness {:#x} > elf location {:#x}, probably no corruption", alloc_wilderness.0, compressed_elf_location);
     }
 
     let comp: Vec<_> = compressed_vec.iter().cloned().decode(&mut GZipDecoder::new()).collect::<Result<Vec<_>, _>>()?;
@@ -180,6 +180,8 @@ fn load_elf_symbols(file_buffer: &'static mut Vec<u8>) -> Result<(), crate::shel
 
     let sup_loader = |_: gimli::SectionId| Ok(&[][..]);
 
+    info!("gimli::load()");
+
     let dwarf_slice = gimli::Dwarf::load(loader, sup_loader)?;
 
     let borrow_section: &dyn for<'a> Fn(&&'a [u8]) -> gimli::EndianSlice<'a, gimli::RunTimeEndian> =
@@ -188,7 +190,11 @@ fn load_elf_symbols(file_buffer: &'static mut Vec<u8>) -> Result<(), crate::shel
     // Create `EndianSlice`s for all of the sections.
     let dwarf = dwarf_slice.borrow(&borrow_section);
 
+    info!("addr2line::Context::from_dwarf()");
+
     let context = addr2line::Context::from_dwarf(dwarf)?;
+
+    info!("registering global symbols");
 
     unsafe { SELF_SYMBOLS.inner.get().write(Some(Box::new(MetaDebugInfo { file_buffer, context }))) };
 

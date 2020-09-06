@@ -144,11 +144,17 @@ pub struct TimerCtx<'a, T> {
     pub data: &'a mut T,
     remove: bool,
     no_reschedule: bool,
+    new_period: Option<u64>,
 }
 
 impl<'a, T> TimerCtx<'a, T> {
     fn new(data: &'a mut T) -> Self {
-        Self { data, remove: false, no_reschedule: false }
+        Self {
+            data,
+            remove: false,
+            no_reschedule: false,
+            new_period: None,
+        }
     }
 
     pub fn remove_timer(&mut self) {
@@ -157,6 +163,10 @@ impl<'a, T> TimerCtx<'a, T> {
 
     pub fn no_reschedule(&mut self) {
         self.no_reschedule = true;
+    }
+
+    pub fn set_period(&mut self, period: u64) {
+        self.new_period = Some(period);
     }
 }
 
@@ -213,6 +223,11 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
 
                 if ctx.remove {
                     self.remove_list.push(i);
+                    continue;
+                }
+
+                if let Some(period) = &ctx.new_period {
+                    timer.cycle_period = *period;
                 }
 
                 if !ctx.no_reschedule {

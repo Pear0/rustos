@@ -10,7 +10,7 @@ use pi::gpio;
 use pi::interrupt::{Interrupt, CoreInterrupt};
 use shim::{io, ioerr};
 
-use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM, FILESYSTEM2};
+use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM, FILESYSTEM2, perf};
 use crate::console::{CONSOLE, console_ext_init, console_interrupt_handler};
 use crate::fs::handle::{Sink, SinkWrapper, Source, SourceWrapper, WaitingSourceWrapper};
 use crate::fs::service::PipeService;
@@ -31,6 +31,8 @@ use usb_host::items::{ControlCommand, TypeTriple};
 use usb_host::USBHost;
 use usb_host::consts::USBSpeed;
 use crate::usb::usb_thread;
+use core::sync::atomic::Ordering;
+use core::sync::atomic::AtomicUsize;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -154,10 +156,34 @@ fn configure_timer() {
         });
     }));
 
+    if smp::core() == 0 {
+        // perf::prepare();
+
+        KERNEL_TIMER.critical(|timer| {
+            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_micros(10)), Box::new(|ctx| {
+
+                if perf::record_event_kernel(ctx.data) {
+                    ctx.set_period(timing::time_to_cycles::<VirtualCounter>(Duration::from_micros(10)));
+                } else {
+                    ctx.set_period(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(100)));
+                }
+                // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);
+                // if IRQ_RECURSION_DEPTH.get() > 1 {
+                //     TIMER_EVENTS_EXC.fetch_add(1, Ordering::Relaxed);
+                // }
+            }));
+
+            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_secs(50)), Box::new(|ctx| {
+                ctx.remove_timer();
+                // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
+                perf::dump_events();
+            }));
+        });
+    }
 }
 
 pub fn kernel_main() -> ! {
-    debug!("init irq");
+    info!("init irq");
     KERNEL_IRQ.initialize();
 
     // dont do uart fanciness
@@ -176,7 +202,7 @@ pub fn kernel_main() -> ! {
     debug!("initing smp");
 
     let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
-    debug!("cpu attrs: {:?}", attrs);
+    info!("cpu attrs: {:?}", attrs);
 
     let enable_many_cores = !BootVariant::kernel_in_hypervisor() && false;
 
@@ -220,8 +246,11 @@ pub fn kernel_main() -> ! {
         };
     });
 
-    // debug!("read debug info");
-    // initialize_debug();
+    info!("read debug info");
+    initialize_debug();
+
+    info!("perf::prepare();");
+    perf::prepare();
 
     // spam on clock gating
     unsafe {

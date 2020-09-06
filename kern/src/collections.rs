@@ -1,5 +1,6 @@
 use core::fmt;
 use alloc::collections::VecDeque;
+use crate::smp;
 
 pub struct CapacityRingBuffer<T> {
     deque: VecDeque<T>,
@@ -48,3 +49,36 @@ impl<T: fmt::Debug> fmt::Debug for CapacityRingBuffer<T> {
             .finish()
     }
 }
+
+pub struct MyKernRcu;
+
+impl dsx::kern::KernInterruptRcu for MyKernRcu {
+    fn critical_region<R, F: FnOnce() -> R>(func: F) -> R {
+        smp::no_interrupt(func)
+    }
+
+    fn get_core_irq_count(core: usize) -> u32 {
+        0
+    }
+
+    fn core_count() -> usize {
+        1
+    }
+
+    fn my_core_index() -> usize {
+        0
+    }
+
+    fn yield_for_other_cores() {
+    }
+
+    fn memory_barrier<T>(value: &T) {
+        aarch64::dsb();
+    }
+
+    fn lock_failed() {
+    }
+}
+
+pub type Rcu<T> = dsx::kern::InterruptRcu<T, MyKernRcu>;
+

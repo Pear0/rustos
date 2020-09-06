@@ -12,7 +12,8 @@ use crate::traps::Kind::Synchronous;
 use crate::traps::syndrome::Syndrome;
 use crate::traps::syscall::handle_syscall;
 use crate::vm::VirtualAddr;
-use crate::arm::VirtualCounter;
+use crate::arm::{VirtualCounter, PhysicalCounter, GenericCounterImpl};
+use crate::traps::coreinfo::{exc_enter, exc_record_time, exc_exit, ExceptionType};
 
 #[derive(Debug)]
 enum IrqVariant {
@@ -94,27 +95,7 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
     debug_shell(tf);
 }
 
-
-/// This function is called when an exception occurs. The `info` parameter
-/// specifies the source and kind of exception that has occurred. The `esr` is
-/// the value of the exception syndrome register. Finally, `tf` is a pointer to
-/// the trap frame for the exception.
-#[no_mangle]
-pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelTrapFrame) {
-    //
-    // let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-    // kprintln!("IRQ: {}", core_id);
-
-    if IRQ_RECURSION_DEPTH.get() != 0 {
-        kprintln!("Recursive IRQ: {:?}", info);
-        shell::shell("#>");
-    }
-
-    IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
-    IRQ_ESR.set(esr);
-    IRQ_EL.set(tf.ELR_EL1);
-    IRQ_INFO.set(info);
-
+fn do_kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelTrapFrame) {
     match info.kind {
         Kind::Irq | Kind::Fiq => {
             use aarch64::regs::*;
@@ -139,32 +120,12 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
                     use core::fmt::Write;
                     writeln!(hw::arch().early_writer(), "bad atomic instruction :( {:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.ELR_EL1);
                 }
+                Syndrome::DataAbort(_) | Syndrome::InstructionAbort(_) => {
+                    let s = Syndrome::from(esr);
+                    error!("MemAbort {:?} {:?} (FAR_EL1={:#x}) @ {:#x}", info, s, unsafe { aarch64::FAR_EL1.get() }, tf.ELR_EL1);
+                }
                 s => {
                     error!("F {:?} {:?} (raw={:#x}) @ {:#x}", info, s, esr, tf.ELR_EL1);
-
-                    // KERNEL_SCHEDULER.crit_process(tf.TPIDR_EL0, |proc| {
-                    //     if let Some(proc) = proc {
-                    //
-                    //         let b = tf.ELR_EL1 > USER_IMG_BASE as u64;
-                    //         error!("A @ {:#x} {:#x} {:?}", tf.ELR_EL1, USER_IMG_BASE, b);
-                    //         if b {
-                    //             error!("B");
-                    //             if let Some(page) = proc.vmap.get_page_mut(VirtualAddr::from(tf.ELR_EL1 & PAGE_MASK as u64)) {
-                    //                 let offset = (((tf.ELR_EL1 as usize % PAGE_SIZE) / 4) * 4);
-                    //
-                    //                 error!("C");
-                    //                 error!("value at ELR_EL1: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
-                    //             }
-                    //         } else {
-                    //             let page = unsafe { core::slice::from_raw_parts(0 as *const u8, 0x10000000) };
-                    //             let offset = tf.ELR_EL1 as usize;
-                    //             error!("value at ELR_EL1: {:#x} {:#x} {:#x} {:#x}", page[offset], page[offset+1], page[offset+2], page[offset+3]);
-                    //         }
-                    //
-                    //
-                    //         proc.request_suspend = true;
-                    //     }
-                    // });
 
                     KERNEL_SCHEDULER.switch(State::Suspended, tf);
                 }
@@ -186,8 +147,76 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
             tf.ELR_EL1 += 4;
         }
     }
+}
 
-    IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
+
+/// This function is called when an exception occurs. The `info` parameter
+/// specifies the source and kind of exception that has occurred. The `esr` is
+/// the value of the exception syndrome register. Finally, `tf` is a pointer to
+/// the trap frame for the exception.
+#[no_mangle]
+pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelTrapFrame) {
+
+    let exc_start = unsafe { aarch64::CNTPCT_EL0.get() };
+    let time_start = timing::clock_time::<VirtualCounter>();
+    exc_enter();
+
+    if IRQ_RECURSION_DEPTH.get() > 1 {
+        kprintln!("Recursive IRQ: {:?}", info);
+        shell::shell("#>");
+    }
+
+    // recursive irq for profiling
+    let is_recursive = IRQ_RECURSION_DEPTH.get() == 1;
+    let mut is_timer = info.kind == Kind::Irq && VirtualCounter::interrupted();
+
+    if is_recursive {
+        let mut disable_interrupts = true;
+
+        if is_timer {
+            IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
+
+            // interrupts are disabled here:
+            disable_interrupts = KERNEL_TIMER.critical(|timer| timer.process_timers(tf));
+
+            IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
+        }
+        if disable_interrupts {
+            use aarch64::regs::*;
+            // set guest interrupts masked, we don't know what is interrupting us but
+            // it's not the timer.
+            tf.SPSR_EL1 |= SPSR_EL2::D | SPSR_EL2::A | SPSR_EL2::I | SPSR_EL2::F;
+        }
+    } else {
+        use aarch64::regs::*;
+
+        IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
+        IRQ_ESR.set(esr);
+        IRQ_EL.set(tf.ELR_EL1);
+        IRQ_INFO.set(info);
+
+        // try to handle timers sooner
+        if is_timer {
+            KERNEL_TIMER.critical(|timer| timer.process_timers(tf));
+        }
+
+        {
+            // enable general IRQ, so we can get interrupted by the timer.
+            unsafe { DAIF.set(DAIF::D | DAIF::A | DAIF::F) };
+
+            do_kernel_handle_exception(info, esr, tf);
+
+            // disable interrupts again, IRQ_RECURSION_DEPTH will be wrong and a recursive
+            // interrupt won't realize it is recursive.
+            unsafe { DAIF.set(DAIF::D | DAIF::A | DAIF::I | DAIF::F) };
+        }
+
+        IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
+    }
+
+    let time_end = timing::clock_time::<VirtualCounter>();
+    exc_record_time(ExceptionType::Unknown, time_end - time_start);
+    exc_exit();
 }
 
 fn debug_shell(tf: &mut KernelTrapFrame) {
