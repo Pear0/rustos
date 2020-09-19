@@ -9,6 +9,7 @@ use core::cell::UnsafeCell;
 use pi::uart::MiniUart;
 use crate::sync::Waitable;
 use crate::smp;
+use downcast_rs::__std::time::Duration;
 
 pub trait SyncRead : Sync + Send {
 
@@ -77,7 +78,7 @@ impl<T> Global<T> {
     }
 
     pub fn critical<R, F: FnOnce(&mut T) -> R>(&self, func: F) -> R {
-        let mut lock = m_lock!(self.0);
+        let mut lock = self.0.lock();
 
         if let GlobalState::Init(f) = lock.deref() {
             *lock = GlobalState::Val(f());
@@ -85,6 +86,20 @@ impl<T> Global<T> {
 
         if let GlobalState::Val(val) = lock.deref_mut() {
             func(val)
+        } else {
+            unreachable!();
+        }
+    }
+
+    pub fn try_critical<R, F: FnOnce(&mut T) -> R>(&self, func: F) -> Option<R> {
+        let mut lock = self.0.try_lock(Duration::default())?;
+
+        if let GlobalState::Init(f) = lock.deref() {
+            *lock = GlobalState::Val(f());
+        }
+
+        if let GlobalState::Val(val) = lock.deref_mut() {
+            Some(func(val))
         } else {
             unreachable!();
         }

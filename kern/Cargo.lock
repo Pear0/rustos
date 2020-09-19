@@ -259,6 +259,7 @@ dependencies = [
  "mini-alloc 0.1.0",
  "modular-bitfield 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mountfs 0.1.0",
+ "mpalloc 0.1.0",
  "pi 0.1.0",
  "pigrate-core 0.1.0",
  "pretty-hex 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -354,6 +355,10 @@ dependencies = [
  "shim 0.1.0",
  "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "mpalloc"
+version = "0.1.0"
 
 [[package]]
 name = "num-traits"

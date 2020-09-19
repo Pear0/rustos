@@ -20,6 +20,7 @@ debug = true
 common = { path = "../lib/common" }
 dsx = { path = "../lib/dsx", default-features = false, features = ["kern"] }
 mini-alloc = { path = "../lib/mini-alloc" }
+mpalloc = { path = "../lib/mpalloc" }
 pi = { path = "../lib/pi" }
 khadas = { path = "../lib/khadas" }
 karch = { path = "../lib/karch" }

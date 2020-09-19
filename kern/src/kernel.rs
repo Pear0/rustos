@@ -173,11 +173,11 @@ fn configure_timer() {
                 // }
             }));
 
-            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_secs(50)), Box::new(|ctx| {
-                ctx.remove_timer();
-                // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
-                perf::dump_events();
-            }));
+            // timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_secs(50)), Box::new(|ctx| {
+            //     ctx.remove_timer();
+            //     // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
+            //     perf::dump_events();
+            // }));
         });
     }
 }
@@ -185,6 +185,8 @@ fn configure_timer() {
 pub fn kernel_main() -> ! {
     info!("init irq");
     KERNEL_IRQ.initialize();
+
+    info!("init irq2");
 
     // dont do uart fanciness
     // console_ext_init();
@@ -198,6 +200,8 @@ pub fn kernel_main() -> ! {
     // unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
     // unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
     // unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
+
+    info!("init irq3");
 
     debug!("initing smp");
 

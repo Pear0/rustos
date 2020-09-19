@@ -80,6 +80,8 @@ use crate::traps::syndrome::Syndrome;
 use crate::arm::PhysicalCounter;
 use crate::fs2::FileSystem2;
 use crate::traps::IRQ_RECURSION_DEPTH;
+use crate::allocator::{MpAllocator, MpThreadLocal};
+use mpalloc::NULL_ALLOC;
 
 #[macro_use]
 pub mod console;
@@ -123,8 +125,12 @@ pub mod usb;
 pub mod virtualization;
 pub mod vm;
 
-#[cfg_attr(not(test), global_allocator)]
+
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
+
+#[cfg_attr(not(test), global_allocator)]
+pub static MP_ALLOC: MpAllocator = MpAllocator::new();
+
 // pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
 pub static FILESYSTEM2: FileSystem2 = FileSystem2::uninitialized();
 pub static NET: GlobalNetHandler = GlobalNetHandler::uninitialized();
@@ -185,6 +191,9 @@ fn kmain(boot_hypervisor: bool) -> ! {
     unsafe {
         debug!("init allocator");
         ALLOCATOR.initialize();
+
+        MP_ALLOC.initialize(&ALLOCATOR, MpThreadLocal::default())
+
         // debug!("init filesystem");
         // FILESYSTEM.initialize();
     }

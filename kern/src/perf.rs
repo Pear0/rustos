@@ -10,6 +10,7 @@ use crate::cls::{CoreLocal, CoreMutex};
 use crate::iosync::Global;
 use crate::traps::{HyperTrapFrame, IRQ_EL, IRQ_RECURSION_DEPTH, KernelTrapFrame};
 use crate::traps::hyper::{TM_TOTAL_COUNT, TM_TOTAL_TIME};
+use common::fmt::ByteSize;
 
 static CORE_EVENTS: CoreLocal<Global<Vec<PerfEvent>>> = CoreLocal::new_global(|| Vec::new());
 
@@ -73,31 +74,38 @@ pub fn prepare() {
 
 pub fn record_event_hyper(tf: &mut HyperTrapFrame) -> bool {
     let event = PerfEvent::from_hyper_tf(tf);
-    CORE_EVENTS.critical(|core| {
+    CORE_EVENTS.try_critical(|core| {
         if core.len() < core.capacity() {
             core.push(event);
             true
         } else {
             false
         }
-    })
+    }).unwrap_or(false)
 }
 
 pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
     let event = PerfEvent::from_kernel_tf(tf);
-    CORE_EVENTS.critical(|core| {
+    CORE_EVENTS.try_critical(|core| {
         if core.len() < core.capacity() {
             core.push(event);
             true
         } else {
             false
         }
-    })
+    }).unwrap_or(false)
 }
 
 pub fn dump_events() {
     CORE_EVENTS.critical(|events| {
         info!("Events: {}", events.len());
+
+        let perf_event = core::mem::size_of::<PerfEvent>();
+        info!("Event Storage: event={}, buffer: {} of {}",
+              ByteSize::from(perf_event),
+              ByteSize::from(perf_event * events.len()),
+              ByteSize::from(perf_event * events.capacity()));
+
 
         let debug_info = match crate::debug::debug_ref() {
             Some(d) => d,

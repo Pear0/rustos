@@ -20,7 +20,7 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, BootVariant, NET, timer, timing, hw, FILESYSTEM2};
+use crate::{ALLOCATOR, BootVariant, NET, timer, timing, hw, FILESYSTEM2, perf, MP_ALLOC};
 use crate::allocator::AllocStats;
 use crate::fs::handle::{Sink, Source};
 use crate::fs::sd;
@@ -244,6 +244,28 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
 
 
             VERBOSE_CORE.store(true, Ordering::Relaxed);
+        })
+        .build();
+
+    sh.command()
+        .name("perf-dump")
+        .help("Dump current profiling data")
+        .func(|_sh, _cmd| {
+            perf::dump_events();
+        })
+        .build();
+
+    sh.command()
+        .name("alloc-oom")
+        .help("Trigger OOM by causing an allocation using NULL_ALLOC")
+        .func(|_sh, _cmd| {
+            error!("this allocation should panic...");
+
+            MP_ALLOC.with_allocator(&mpalloc::NULL_ALLOC, || {
+                String::from("this allocation should panic")
+            });
+
+            error!("no panic ???");
         })
         .build();
 

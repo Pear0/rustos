@@ -9,6 +9,7 @@ use crate::allocator::tags::{MemTag, TaggingAlloc};
 use crate::init::SAFE_ALLOC_START;
 use crate::mutex::Mutex;
 use crate::{smp, hw};
+use core::cell::UnsafeCell;
 
 mod linked_list;
 pub mod tags;
@@ -151,3 +152,22 @@ impl fmt::Debug for Allocator {
         Ok(())
     }
 }
+
+#[derive(Default)]
+pub struct MpThreadLocal<T: Default>(UnsafeCell<T>);
+
+impl<T: Default> mpalloc::ThreadLocal<T> for MpThreadLocal<T> {
+    unsafe fn get_mut(&self) -> &mut T {
+        unsafe { &mut *self.0.get() }
+    }
+}
+
+pub struct MpAllocHook;
+
+impl mpalloc::Hooks for MpAllocHook {
+    type TL = MpThreadLocal<Option<&'static dyn GlobalAlloc>>;
+}
+
+pub type MpAllocator = mpalloc::Allocator<MpAllocHook>;
+
+
