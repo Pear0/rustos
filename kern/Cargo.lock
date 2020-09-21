@@ -135,6 +135,14 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "dwmac"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pretty-hex 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "enumset"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -245,6 +253,7 @@ dependencies = [
  "downcast-rs 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "dsx 0.1.0",
  "dtb 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dwmac 0.1.0",
  "enumset 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "fat32 0.1.0",
  "font8x8 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",

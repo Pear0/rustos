@@ -182,6 +182,26 @@ fn configure_timer() {
     }
 }
 
+struct DwMacHooks;
+
+impl dwmac::Hooks for DwMacHooks {
+    fn sleep(dur: Duration) {
+        timing::sleep_phys(dur);
+    }
+
+    fn memory_barrier() {
+        aarch64::dmb();
+    }
+
+    fn flush_cache(addr: u64, len: u64, flush: dwmac::FlushType) {
+        match flush {
+            dwmac::FlushType::Clean => aarch64::clean_data_cache_region(addr, len),
+            dwmac::FlushType::Invalidate => aarch64::invalidate_data_cache_region(addr, len),
+            dwmac::FlushType::CleanAndInvalidate => aarch64::clean_and_invalidate_data_cache_region(addr, len),
+        }
+    }
+}
+
 pub fn kernel_main() -> ! {
     info!("init irq");
     KERNEL_IRQ.initialize();
@@ -250,8 +270,8 @@ pub fn kernel_main() -> ! {
         };
     });
 
-    info!("read debug info");
-    initialize_debug();
+    // info!("read debug info");
+    // initialize_debug();
 
     info!("perf::prepare();");
     perf::prepare();
@@ -322,6 +342,13 @@ pub fn kernel_main() -> ! {
     //     proc.affinity.set_only(0);
     //     KERNEL_SCHEDULER.add(proc);
     // }
+
+    {
+        let proc = KernelProcess::kernel_process("dwmac".to_owned(), |ctx| {
+            dwmac::do_stuff::<DwMacHooks>();
+        }).unwrap();
+        KERNEL_SCHEDULER.add(proc);
+    }
 
     // {
     //     let proc = KernelProcess::kernel_process_old("led".to_owned(), led_blink).unwrap();

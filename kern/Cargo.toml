@@ -19,6 +19,7 @@ debug = true
 [dependencies]
 common = { path = "../lib/common" }
 dsx = { path = "../lib/dsx", default-features = false, features = ["kern"] }
+dwmac = { path = "../lib/dwmac" }
 mini-alloc = { path = "../lib/mini-alloc" }
 mpalloc = { path = "../lib/mpalloc" }
 pi = { path = "../lib/pi" }
