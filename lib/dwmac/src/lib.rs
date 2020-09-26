@@ -161,6 +161,8 @@ pub fn do_stuff<H: Hooks>() {
         write_u32(BASE + DMA_STATUS, stat & 0x1ffff);
     }
 
+    info!("dwmac::do_stuff() done");
+
 }
 
 struct Platform {
@@ -623,7 +625,9 @@ fn gmac_core_init(dev: &mut Dev) {
         value |= GMAC_CONTROL_TE;
 
         // clear any speed flags...
-        value &= !(GMAC_CONTROL_PS | GMAC_CONTROL_FES);
+        // value &= !(GMAC_CONTROL_PS | GMAC_CONTROL_FES);
+
+        value = (GMAC_CONTROL_PS | GMAC_CONTROL_FES);
         // no flags == gigabit
     }
 

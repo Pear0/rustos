@@ -48,6 +48,7 @@ use crate::traps::IRQ_RECURSION_DEPTH;
 use crate::arm::PhysicalCounter;
 use log::Level;
 
+mod mem;
 mod net;
 
 fn describe_ls_entry<W: io::Write, T: mfs::FileInfo>(writer: &mut W, entry: T, show_all: bool) {
@@ -311,6 +312,12 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
 
             Ok(())
         })
+        .build();
+
+    sh.command()
+        .name("mem")
+        .help("network stack utilities")
+        .func_result(|sh, cmd| mem::MemCmd::process(sh, cmd))
         .build();
 
     sh.command()

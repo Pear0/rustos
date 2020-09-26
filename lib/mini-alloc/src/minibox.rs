@@ -14,7 +14,21 @@ impl<T> MiniBox<T> {
     pub fn new(alloc: &'static dyn Alloc, x: T) -> MiniBox<T> {
         let lay = Layout::new::<T>();
         let ptr = unsafe { alloc.alloc(lay) };
-        let mut data = Unique::new(ptr as * mut T).expect("no memory");
+        let mut data = Unique::new(ptr as *mut T).expect("no memory");
+        unsafe { *data.as_mut() = x };
+        MiniBox {
+            data,
+            alloc,
+        }
+    }
+
+    pub unsafe fn new_zeroed(alloc: &'static dyn Alloc) -> MiniBox<T> {
+        let lay = Layout::new::<T>();
+        let ptr = unsafe { alloc.alloc(lay) };
+        if !ptr.is_null() {
+            core::ptr::write_bytes(ptr, 0, core::mem::size_of::<T>());
+        }
+        let mut data = Unique::new(ptr as *mut T).expect("no memory");
         unsafe { *data.as_mut() = x };
         MiniBox {
             data,
@@ -51,8 +65,7 @@ impl<T: fmt::Debug + ?Sized> fmt::Debug for MiniBox<T> {
 
 impl<T: ?Sized> Drop for MiniBox<T> {
     fn drop(&mut self) {
-        let lay = unsafe { Layout::from_size_align_unchecked(
-            core::mem::size_of_val(self), core::mem::align_of_val(self)) };
+        let lay = unsafe { Layout::for_value(self.data.as_ref()) };
         let ptr = self.data.as_ptr() as *mut u8;
         unsafe { self.alloc.dealloc(ptr, lay) }
     }
