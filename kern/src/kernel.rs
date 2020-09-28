@@ -33,6 +33,7 @@ use usb_host::consts::USBSpeed;
 use crate::usb::usb_thread;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicUsize;
+use crate::mini_allocators::NOCACHE_PAGE_ALLOC;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -345,7 +346,7 @@ pub fn kernel_main() -> ! {
 
     {
         let proc = KernelProcess::kernel_process("dwmac".to_owned(), |ctx| {
-            dwmac::do_stuff::<DwMacHooks>();
+            dwmac::do_stuff::<DwMacHooks>(&NOCACHE_PAGE_ALLOC);
         }).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }

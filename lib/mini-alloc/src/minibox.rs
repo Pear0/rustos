@@ -1,11 +1,12 @@
-use core::ptr::Unique;
-use crate::allocator::Alloc;
 use core::alloc::Layout;
-use core::ops::{Deref, DerefMut};
 use core::fmt;
+use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
+
+use crate::allocator::Alloc;
 
 pub struct MiniBox<T: ?Sized> {
-    data: Unique<T>,
+    data: NonNull<T>,
     alloc: &'static dyn Alloc,
 }
 
@@ -14,7 +15,7 @@ impl<T> MiniBox<T> {
     pub fn new(alloc: &'static dyn Alloc, x: T) -> MiniBox<T> {
         let lay = Layout::new::<T>();
         let ptr = unsafe { alloc.alloc(lay) };
-        let mut data = Unique::new(ptr as *mut T).expect("no memory");
+        let mut data = NonNull::new(ptr as *mut T).expect("no memory");
         unsafe { *data.as_mut() = x };
         MiniBox {
             data,
@@ -28,8 +29,7 @@ impl<T> MiniBox<T> {
         if !ptr.is_null() {
             core::ptr::write_bytes(ptr, 0, core::mem::size_of::<T>());
         }
-        let mut data = Unique::new(ptr as *mut T).expect("no memory");
-        unsafe { *data.as_mut() = x };
+        let mut data = NonNull::new(ptr as *mut T).expect("no memory");
         MiniBox {
             data,
             alloc,

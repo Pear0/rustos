@@ -63,6 +63,19 @@ impl VMManager {
         self.setup_kernel();
     }
 
+    pub unsafe fn mark_page_normal(&self, addr: usize) {
+        assert_eq!(addr % PAGE_SIZE, 0);
+
+        trace!("marking 0x{:x} as non cached", addr);
+
+        let mut lock = m_lock!(self.0);
+        let kern_page_table = lock.as_mut().unwrap();
+        kern_page_table.set_entry(VirtualAddr::from(addr),
+                                  KernPageTable::create_l3_entry(addr, EntryAttr::Mem));
+
+        flush_tlbs();
+    }
+
     pub unsafe fn mark_page_non_cached(&self, addr: usize) {
         assert_eq!(addr % PAGE_SIZE, 0);
 
@@ -74,12 +87,6 @@ impl VMManager {
                                   KernPageTable::create_l3_entry(addr, EntryAttr::Nc));
 
         flush_tlbs();
-
-        // match BootVariant::get_variant() {
-        //     BootVariant::Kernel => self.setup_kernel(),
-        //     BootVariant::Hypervisor =>  self.setup_hypervisor(),
-        //     e => panic!("unknown variant: {:?}", e),
-        // }
     }
 
     /// Set up the virtual memory manager.

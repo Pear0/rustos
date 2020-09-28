@@ -17,6 +17,7 @@ pub enum MemTag {
     Global = 0,
     CLib,
     NoCacheMini,
+    NoCacheDirect,
     __last,
 }
 

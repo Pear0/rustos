@@ -11,3 +11,4 @@ pub(crate) mod mutex;
 pub use allocator::*;
 pub use minibox::MiniBox;
 
+pub type AllocRef = &'static dyn Alloc;
