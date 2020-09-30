@@ -28,6 +28,13 @@ impl<T> MiniBox<T> {
         let ptr = unsafe { alloc.alloc(lay) };
         if !ptr.is_null() {
             core::ptr::write_bytes(ptr, 0, core::mem::size_of::<T>());
+
+            for i in 0..core::mem::size_of::<T>() {
+                if *ptr.offset(i as isize) != 0 {
+                    panic!("zero memory didnt work");
+                }
+            }
+
         }
         let mut data = NonNull::new(ptr as *mut T).expect("no memory");
         MiniBox {
@@ -35,6 +42,11 @@ impl<T> MiniBox<T> {
             alloc,
         }
     }
+
+    pub const fn as_ptr(&self) -> *mut T {
+        self.data.as_ptr()
+    }
+
 }
 
 impl<T: ?Sized> Deref for MiniBox<T> {

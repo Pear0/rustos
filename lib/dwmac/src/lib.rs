@@ -1,6 +1,12 @@
 #![no_std]
 #![feature(const_if_match)]
 
+macro_rules! const_assert_size {
+    ($expr:tt, $size:tt) => {
+    const _: fn(a: $expr) -> [u8; $size] = |a| unsafe { core::mem::transmute::<$expr, [u8; $size]>(a) };
+    };
+}
+
 extern crate alloc;
 #[macro_use]
 extern crate log;
@@ -51,7 +57,7 @@ pub(crate) fn read_u32_poll<F>(addr: usize, mut val: Option<&mut u32>, break_fn:
 #[repr(align(1024))]
 struct MyArp(pub [u8; 42]);
 
-const MY_ARP_PACKET: MyArp = MyArp([
+static MY_ARP_PACKET: MyArp = MyArp([
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // destination
     0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, // source
     0x08, 0x06, // ethertype
@@ -132,10 +138,6 @@ impl Gmac {
             info!("tx dma status: {:#x}", (dma_stat & DMA_STATUS_TS_MASK) >> DMA_STATUS_TS_SHIFT);
         }
 
-        for _ in 0..5 {
-            rings.tx_rings[0].transmit_frame(&MY_ARP_PACKET.0);
-        }
-
         Ok(Gmac {
             dev,
             rings,
@@ -149,15 +151,37 @@ pub fn do_stuff<H: Hooks>(al: AllocRef) {
         Err(e) => {
             info!("do_stuff(): error: {:?}", e);
         }
-        Ok(gmac) => {
+        Ok(mut gmac) => {
             info!("dwmac::do_stuff() done");
+
+            #[allow(mutable_transmutes)]
+            {
+                for _ in 0..5 {
+                    unsafe { core::mem::transmute::<&MyArp, &mut MyArp>(&MY_ARP_PACKET).0[41] += 1; }
+                    gmac.rings.tx_rings[0].transmit_frame::<H>(&MY_ARP_PACKET.0);
+                    H::sleep(Duration::from_millis(100));
+                }
+            }
+            // loop {
+            //     gmac.rings.rx_rings[0].receive_frames(&mut |buf| {
+            //         info!("Received: {:?}", buf);
+            //     });
+            // }
+
+            for _ in 0..10 {
+                let dma_stat = read_u32(BASE + DMA_STATUS);
+                info!("rx dma status: {:#x}", (dma_stat & DMA_STATUS_RS_MASK) >> DMA_STATUS_RS_SHIFT);
+                info!("tx dma status: {:#x}", (dma_stat & DMA_STATUS_TS_MASK) >> DMA_STATUS_TS_SHIFT);
+                H::sleep(Duration::from_millis(500));
+            }
 
         }
     }
 }
 
 const TX_NUM_DESC: usize = 32;
-const MAX_FRAME_BODY: usize = 1500;
+const RX_NUM_DESC: usize = 32;
+const MAX_FRAME_BODY: usize = 1600; // add 100 so the buffer is divisible by 8 (RDES1[10:0])
 
 #[derive(Debug, Clone)]
 enum Error {
@@ -172,6 +196,7 @@ impl From<&'static str> for Error {
 
 struct GmacRings {
     tx_rings: Vec<GmacTxRing>,
+    rx_rings: Vec<GmacRxRing>,
 }
 
 impl GmacRings {
@@ -181,33 +206,43 @@ impl GmacRings {
             tx_rings.push(GmacTxRing::new(i, al));
         }
 
+        let mut rx_rings = Vec::new();
+        for i in 0..num_rx {
+            rx_rings.push(GmacRxRing::new(i, al));
+        }
+
         GmacRings {
             tx_rings,
+            rx_rings,
         }
     }
 }
 
 
 struct GmacTxRing {
-    tx_buffers: Vec<MiniBox<[u8; MAX_FRAME_BODY]>>,
+    tx_buffer: MiniBox<[u8; GmacTxRing::BUF_SIZE]>,
     tx_queue: TxQueue,
 }
 
 impl GmacTxRing {
+    const BUF_SIZE: usize = MAX_FRAME_BODY * TX_NUM_DESC;
+
     pub fn new(index: usize, al: AllocRef) -> Self {
-        let mut tx_buffers = Vec::new();
-        for _ in 0..TX_NUM_DESC {
-            tx_buffers.push(unsafe { MiniBox::new_zeroed(al) });
-        }
+        let tx_buffer: MiniBox<[u8; Self::BUF_SIZE]> = unsafe { MiniBox::new_zeroed(al) };
+        info!("ADDR TxRing buf: {:#x}", tx_buffer.as_ptr() as usize);
         let tx_queue = TxQueue::new(index, al);
 
         GmacTxRing {
-            tx_buffers,
+            tx_buffer,
             tx_queue,
         }
     }
 
-    pub fn transmit_frame(&mut self, frame: &[u8]) -> Result<(), Error> {
+    fn buffer_idx(&mut self, i: usize) -> &mut [u8] {
+        &mut self.tx_buffer[MAX_FRAME_BODY * i..MAX_FRAME_BODY * (i + 1)]
+    }
+
+    pub fn transmit_frame<H: Hooks>(&mut self, frame: &[u8]) -> Result<(), Error> {
         let frame_len = frame.len();
         if frame_len > MAX_FRAME_BODY {
             return Err(Error::Str("frame too large"));
@@ -217,13 +252,63 @@ impl GmacTxRing {
 
         let idx = self.tx_queue.next_id().ok_or("no free tx queue space")?;
 
-        (&mut self.tx_buffers[idx][..frame_len]).copy_from_slice(frame);
+        info!("using buf index: {}", idx);
 
-        self.tx_queue.dma_tx[idx].prepare(true, true, false, STMMAC_RING_MODE, frame_len);
-        self.tx_queue.dma_tx[idx].set_address(self.tx_buffers[idx].as_ptr() as usize);
+        (&mut self.buffer_idx(idx)[..frame_len]).copy_from_slice(frame);
+
+        self.tx_queue.dma_tx[idx].prepare_tx(true, true, false, STMMAC_RING_MODE, frame_len);
+        let ptr = self.buffer_idx(idx).as_ptr() as usize;
+        self.tx_queue.dma_tx[idx].set_address(ptr);
         self.tx_queue.dma_tx[idx].set_owner();
 
+        H::memory_barrier();
         write_u32(BASE + DMA_XMT_POLL_DEMAND, 1);
+
+        Ok(())
+    }
+}
+
+struct GmacRxRing {
+    rx_buffer: MiniBox<[u8; GmacRxRing::BUF_SIZE]>,
+    rx_queue: RxQueue,
+}
+
+impl GmacRxRing {
+    const BUF_SIZE: usize = MAX_FRAME_BODY * RX_NUM_DESC;
+
+    pub fn new(index: usize, al: AllocRef) -> Self {
+        let rx_buffer: MiniBox<[u8; Self::BUF_SIZE]> = unsafe { MiniBox::new_zeroed(al) };
+        info!("ADDR RxRing buf: {:#x}", rx_buffer.as_ptr() as usize);
+
+        let rx_queue = RxQueue::new(index, al);
+
+        let mut ring = GmacRxRing {
+            rx_buffer,
+            rx_queue,
+        };
+
+        // for i in 0..RX_NUM_DESC {
+        //     let mut desc = &mut ring.rx_queue.dma_rx[i];
+        //     desc.init_rx(i + 1 == RX_NUM_DESC);
+        //     desc.set_address(ring.rx_buffers[i].as_ptr() as usize);
+        //     desc.prepare_rx(STMMAC_RING_MODE, MAX_FRAME_BODY);
+        // }
+
+        ring
+    }
+
+    fn buffer_idx(buffer: &[u8], i: usize) -> &[u8] {
+        &buffer[MAX_FRAME_BODY * i..MAX_FRAME_BODY * (i + 1)]
+    }
+
+    pub fn receive_frames(&mut self, mut callback: &mut dyn FnMut(&[u8])) -> Result<(), Error> {
+        let Self { rx_queue, rx_buffer } = self;
+
+        rx_queue.process_received(&mut |idx, len| {
+            callback(&Self::buffer_idx(rx_buffer.as_ref(), idx)[..len]);
+        });
+
+        write_u32(BASE + DMA_RCV_POLL_DEMAND, 1);
 
         Ok(())
     }
@@ -297,44 +382,49 @@ struct DmaDesc {
     des0: u32,
     des1: u32,
     des2: u32,
-    // address
     des3: u32,
 }
 
-impl DmaDesc {
+#[derive(Clone, Default)]
+#[repr(C, packed)]
+struct TxDesc(DmaDesc);
+
+const_assert_size!(TxDesc, 16);
+
+impl TxDesc {
     pub fn clear(&mut self) {
-        self.des2 = 0; // only des2 needs to be zeroed to clear it for the dma.
+        self.0.des2 = 0; // only des2 needs to be zeroed to clear it for the dma.
     }
 
     pub fn init_tx(&mut self, end: bool) {
-        self.des0 &= !TDES0_OWN;
+        self.0.des0 &= !TDES0_OWN;
         // assuming ring mode
         if end {
-            self.des1 |= TDES1_END_RING;
+            self.0.des1 |= TDES1_END_RING;
         } else {
-            self.des1 &= !TDES1_END_RING;
+            self.0.des1 &= !TDES1_END_RING;
         }
     }
 
     pub fn set_address(&mut self, addr: usize) {
         assert!(addr < u32::max_value() as usize);
-        self.des2 = addr as u32;
+        self.0.des2 = addr as u32;
     }
 
     pub fn set_owner(&mut self) {
-        self.des0 |= TDES0_OWN;
+        self.0.des0 |= TDES0_OWN;
     }
 
     pub fn clear_owner(&mut self) {
-        self.des0 &= !TDES0_OWN;
+        self.0.des0 &= !TDES0_OWN;
     }
 
     pub fn is_owned_by_dma(&self) -> bool {
-        (self.des0 & TDES0_OWN) != 0
+        (self.0.des0 & TDES0_OWN) != 0
     }
 
-    pub fn prepare(&mut self, first_segment: bool, last_segment: bool, insert_checksum: bool, mode: u32, len: usize) {
-        let mut des1 = self.des1;
+    pub fn prepare_tx(&mut self, first_segment: bool, last_segment: bool, insert_checksum: bool, mode: u32, len: usize) {
+        let mut des1 = self.0.des1;
         if first_segment {
             des1 |= TDES1_FIRST_SEGMENT;
         } else {
@@ -350,30 +440,89 @@ impl DmaDesc {
         } else {
             des1 &= !TDES1_LAST_SEGMENT;
         }
-        self.des1 = des1;
 
         assert_eq!(mode, STMMAC_RING_MODE);
-        self.des1 |= (len as u32) & TDES1_BUFFER1_SIZE_MASK;
+
+        des1 &= !TDES1_BUFFER1_SIZE_MASK;
+        des1 |= (len as u32) & TDES1_BUFFER1_SIZE_MASK;
+
+        self.0.des1 = des1;
     }
 
     pub fn dump(&self) {
-        info!("des0: {:#08x}", self.des0);
-        info!("des1: {:#08x}", self.des1);
-        info!("des2: {:#08x}", self.des2);
-        info!("des3: {:#08x}", self.des3);
+        info!("des0: {:#08x}", self.0.des0);
+        info!("des1: {:#08x}", self.0.des1);
+        info!("des2: {:#08x}", self.0.des2);
+        info!("des3: {:#08x}", self.0.des3);
+    }
+}
+
+#[derive(Clone, Default)]
+#[repr(C, packed)]
+struct RxDesc(DmaDesc);
+
+impl RxDesc {
+    pub fn clear(&mut self) {
+        self.0.des2 = 0; // only des2 needs to be zeroed to clear it for the dma.
+    }
+
+    pub fn init_rx(&mut self, end: bool) {
+        self.0.des0 &= !RDES0_OWN;
+        // assuming ring mode
+        if end {
+            self.0.des1 |= RDES1_END_RING;
+        } else {
+            self.0.des1 &= !RDES1_END_RING;
+        }
+    }
+
+    pub fn set_address(&mut self, addr: usize) {
+        assert!(addr < u32::max_value() as usize);
+        self.0.des2 = addr as u32;
+    }
+
+    pub fn set_owned_by_dma(&mut self) {
+        self.0.des0 |= RDES0_OWN;
+    }
+
+    pub fn clear_owned_by_dma(&mut self) {
+        self.0.des0 &= !RDES0_OWN;
+    }
+
+    pub fn is_owned_by_dma(&self) -> bool {
+        (self.0.des0 & RDES0_OWN) != 0
+    }
+
+    pub fn prepare_rx(&mut self, mode: u32, len: usize) {
+        assert_eq!(mode, STMMAC_RING_MODE);
+
+        let mut des1 = self.0.des1;
+
+        des1 &= !RDES1_BUFFER1_SIZE_MASK;
+        des1 |= (len as u32) & RDES1_BUFFER1_SIZE_MASK;
+
+        self.0.des1 = des1;
+    }
+
+    pub fn dump(&self) {
+        info!("des0: {:#08x}", self.0.des0);
+        info!("des1: {:#08x}", self.0.des1);
+        info!("des2: {:#08x}", self.0.des2);
+        info!("des3: {:#08x}", self.0.des3);
     }
 }
 
 struct TxQueue {
     index: usize,
-    dma_tx: MiniBox<[DmaDesc; TX_NUM_DESC]>,
+    dma_tx: MiniBox<[TxDesc; TX_NUM_DESC]>,
     next_idx: usize,
     sending_idx: usize,
 }
 
 impl TxQueue {
     pub fn new(index: usize, al: AllocRef) -> Self {
-        let mut dma_tx: MiniBox<[DmaDesc; TX_NUM_DESC]> = unsafe { MiniBox::new_zeroed(al) };
+        let mut dma_tx: MiniBox<[TxDesc; TX_NUM_DESC]> = unsafe { MiniBox::new_zeroed(al) };
+        info!("ADDR TxQueue dma: {:#x}", dma_tx.as_ptr() as usize);
         for (i, desc) in dma_tx.iter_mut().enumerate() {
             desc.init_tx(i == TX_NUM_DESC - 1);
         }
@@ -402,12 +551,67 @@ impl TxQueue {
                 break;
             }
 
+            info!("vacuum index: {}", self.sending_idx);
+
             // TODO mark transaction successful?
 
             self.sending_idx = (self.sending_idx + 1) % TX_NUM_DESC;
         }
     }
+}
 
+struct RxQueue {
+    index: usize,
+    dma_rx: MiniBox<[RxDesc; RX_NUM_DESC]>,
+    next_idx: usize,
+    receive_idx: usize,
+}
+
+impl RxQueue {
+    pub fn new(index: usize, al: AllocRef) -> Self {
+        let mut dma_rx: MiniBox<[RxDesc; RX_NUM_DESC]> = unsafe { MiniBox::new_zeroed(al) };
+        info!("ADDR RxQueue dma: {:#x}", dma_rx.as_ptr() as usize);
+        for (i, desc) in dma_rx.iter_mut().enumerate() {
+            desc.init_rx(i == RX_NUM_DESC - 1);
+        }
+
+        Self {
+            index,
+            dma_rx,
+            next_idx: 0,
+            receive_idx: 0,
+        }
+    }
+
+    pub fn next_id(&mut self) -> Option<usize> {
+        let idx = self.next_idx;
+        let next = (idx + 1) % RX_NUM_DESC;
+        if next == self.receive_idx {
+            return None
+        }
+        self.next_idx = next;
+        Some(idx)
+    }
+
+    pub fn process_received(&mut self, mut callback: &mut dyn FnMut(usize, usize)) {
+        while self.receive_idx != self.next_idx {
+            if self.dma_rx[self.receive_idx].is_owned_by_dma() {
+                break;
+            }
+
+            let des0 = self.dma_rx[self.receive_idx].0.des0;
+            assert_ne!(des0 & RDES0_FIRST_DESCRIPTOR, 0);
+            assert_ne!(des0 & RDES0_LAST_DESCRIPTOR, 0);
+
+            let length = (des0 & RDES0_FRAME_LEN_MASK) >> RDES0_FRAME_LEN_SHIFT;
+
+            callback(self.receive_idx, length as usize);
+
+            self.dma_rx[self.receive_idx].set_owned_by_dma();
+
+            self.receive_idx = (self.receive_idx + 1) % RX_NUM_DESC;
+        }
+    }
 }
 
 #[derive(Default)]
@@ -524,7 +728,8 @@ fn hw_setup(dev: &mut GmacDevice, rings: &mut GmacRings) {
     // mac_set()
     {
         let mut value = read_u32(BASE + GMAC_CONTROL);
-        value |= (MAC_ENABLE_TX);
+        value |= MAC_ENABLE_TX;
+        // value |= MAC_ENABLE_RX;
         write_u32(BASE + GMAC_CONTROL, value);
     }
 
@@ -565,6 +770,13 @@ fn hw_setup(dev: &mut GmacDevice, rings: &mut GmacRings) {
         value |= DMA_CONTROL_ST;
         write_u32(BASE + DMA_CONTROL, value);
     }
+
+    // for i in 0..dev.platform.rx_queues_to_use {
+    //     assert_eq!(i, 0);
+    //     let mut value = read_u32(BASE + DMA_CONTROL);
+    //     value |= DMA_CONTROL_SR;
+    //     write_u32(BASE + DMA_CONTROL, value);
+    // }
 }
 
 fn init_dma_engine(dev: &mut GmacDevice, rings: &mut GmacRings) {
@@ -594,6 +806,16 @@ fn init_dma_engine(dev: &mut GmacDevice, rings: &mut GmacRings) {
         assert_eq!(i, 0);
         write_u32(BASE + DMA_TX_BASE_ADDR, ptr as u32);
     }
+
+    // set rx chan
+    // for i in 0..dev.platform.rx_queues_to_use {
+    //     let ptr = rings.rx_rings[i].rx_queue.dma_rx.as_ptr() as u64;
+    //     assert!(ptr < u32::max_value() as u64);
+    //     assert_eq!(i, 0);
+    //     write_u32(BASE + DMA_RCV_BASE_ADDR, ptr as u32);
+    // }
+
+
 }
 
 fn dma_reset() {
@@ -662,7 +884,7 @@ fn gmac_core_init(dev: &mut GmacDevice) {
 
     {
         assert_eq!(dev.speed, 1000);
-        value |= GMAC_CONTROL_TE;
+        value |= GMAC_CONTROL_TE; // | GMAC_CONTROL_RE;
 
         // clear any speed flags...
         // value &= !(GMAC_CONTROL_PS | GMAC_CONTROL_FES);
