@@ -104,11 +104,10 @@ fn network_thread() -> ! {
 
 
         net.tcp.add_listening_port((my_ip, 100), Box::new(|sink, source| {
-            let mut proc = KernelProcess::kernel_process_old(String::from("net thread2"), my_net_thread2)
+            let mut proc = KernelProcess::kernel_process(String::from("net shell"), my_net_shell)
                 .or(ioerr!(Other, "foo"))?;
 
-            proc.detail.file_descriptors.push(FileDescriptor::read(Arc::new(source)));
-            proc.detail.file_descriptors.push(FileDescriptor::write(Arc::new(sink)));
+            proc.set_stdio(Arc::new(source), Arc::new(sink));
 
             KERNEL_SCHEDULER.add(proc);
 
@@ -123,14 +122,10 @@ fn network_thread() -> ! {
     }
 }
 
-fn my_net_thread2() -> ! {
-    let pid: Id = kernel_api::syscall::getpid();
-    let (source, sink) = KERNEL_SCHEDULER.crit_process(pid, |f| {
-        let f = f.unwrap();
-        (f.detail.file_descriptors[0].read.as_ref().unwrap().clone(), f.detail.file_descriptors[1].write.as_ref().unwrap().clone())
-    });
+fn my_net_shell(ctx: KernProcessCtx)  {
+    let (source, sink) = ctx.get_stdio_or_panic();
 
-    shell::Shell::new("% ", SourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
+    shell::Shell::new("% ", WaitingSourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
 
     kernel_api::syscall::exit();
 }
