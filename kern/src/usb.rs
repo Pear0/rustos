@@ -14,7 +14,7 @@ use shim::path::PathBuf;
 use usb_host::{USBErrorKind, USBHost, USBResult};
 use usb_host::consts::USBSpeed;
 use usb_host::drivers::hub::HubDriver;
-use usb_host::drivers::keyboard::HIDKeyboard;
+use usb_host::drivers::keyboard::{HIDKeyboard, HIDKeyboardCallback};
 use usb_host::drivers::mass_storage::{MassStorageDriver, MSDCallback, SimpleBlockDevice, TransparentSCSI};
 use usb_host::structs::{DeviceState, USBDevice};
 use xhci::FlushType;
@@ -68,6 +68,14 @@ impl xhci::XhciHAL for XHCIHal {
     }
 }
 
+struct HIDCallbacks;
+
+impl HIDKeyboardCallback for HIDCallbacks {
+    fn key_down(ascii: u8) {
+        info!("key press: {}", String::from_utf8_lossy(core::slice::from_ref(&ascii)));
+    }
+}
+
 struct USBDriver();
 
 impl usb_host::HostCallbacks<XHCIHal> for USBDriver {
@@ -109,7 +117,7 @@ impl usb_host::HostCallbacks<XHCIHal> for USBDriver {
                     break;
                 }
             }
-            if let Err(e) = HIDKeyboard::<XHCIHal>::probe(&device, interface) {
+            if let Err(e) = HIDKeyboard::<XHCIHal, HIDCallbacks>::probe(&device, interface) {
                 error!("failed to probe msd: {:?}", e);
             }
             {

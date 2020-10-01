@@ -26,6 +26,8 @@ use crate::mdio::{mdio_read, mdio_write, MY_MII};
 use core::ops::DerefMut;
 use log::Level::{Debug, Info};
 use core::marker::PhantomData;
+use crate::volatile::Volatile;
+use core::fmt;
 
 mod common_h;
 mod descs_h;
@@ -35,6 +37,7 @@ mod dwmac_h;
 mod mac_h;
 mod mdio;
 mod meson8b;
+mod volatile;
 
 pub(crate) fn read_u32(addr: usize) -> u32 {
     unsafe { (addr as *const u32).read_volatile() }
@@ -78,6 +81,7 @@ static MY_ARP_PACKET: MyArp = MyArp([
 
 const BASE: usize = 0xff3f0000;
 
+const GMAC_CUR_HOST_TX_DESC: usize = 0x1048;
 const GMAC_CUR_HOST_RX_DESC: usize = 0x104c;
 const CHECK_ALL_RX_DESC: bool = true;
 
@@ -101,7 +105,7 @@ pub trait Hooks: Default {
     fn flush_cache(addr: u64, len: u64, flush: FlushType);
 }
 
-struct Gmac<H: Hooks> {
+pub struct Gmac<H: Hooks> {
     dev: GmacDevice<H>,
     rings: GmacRings,
 }
@@ -148,6 +152,30 @@ impl<H: Hooks> Gmac<H> {
             rings,
         })
     }
+
+    pub fn transmit_frame(&mut self, frame: &[u8]) -> Result<(), Error> {
+        self.rings.tx_rings[0].transmit_frame::<H>(frame)
+    }
+
+    pub fn receive_frames(&mut self, max_frames: usize, callback: &mut dyn FnMut(&[u8])) -> Result<(), Error> {
+        self.rings.rx_rings[0].receive_frames::<H>(max_frames, callback)
+    }
+
+    pub fn debug_dump(&self, w: &mut dyn fmt::Write) -> fmt::Result {
+
+        writeln!(w, "tx dma:")?;
+        {
+            writeln!(w, "  sending_idx: {}", self.rings.tx_rings[0].tx_queue.sending_idx)?;
+            writeln!(w, "  next_idx: {}", self.rings.tx_rings[0].tx_queue.next_idx)?;
+
+            let tx_dma_base = read_u32(BASE + DMA_TX_BASE_ADDR);
+            let tx_dma = read_u32(BASE + GMAC_CUR_HOST_TX_DESC);
+            let dma_idx = tx_dma.wrapping_sub(tx_dma_base) as usize / core::mem::size_of::<TxDesc>();
+
+            writeln!(w, "  dma_idx: {}", dma_idx)?;
+        }
+        Ok(())
+    }
 }
 
 
@@ -187,7 +215,7 @@ pub fn do_stuff<H: Hooks>(al: AllocRef) {
 
             loop {
                 info!("receive...");
-                gmac.rings.rx_rings[0].receive_frames::<H>(&mut |buf| {
+                gmac.rings.rx_rings[0].receive_frames::<H>(100, &mut |buf| {
                     info!("Received: {:?}", buf);
                 });
 
@@ -204,7 +232,7 @@ const RX_NUM_DESC: usize = 32;
 const MAX_FRAME_BODY: usize = 1600; // add 100 so the buffer is divisible by 8 (RDES1[10:0])
 
 #[derive(Debug, Clone)]
-enum Error {
+pub enum Error {
     Str(&'static str),
 }
 
@@ -273,8 +301,8 @@ impl GmacTxRing {
 
         let idx = self.tx_queue.next_id().ok_or("no free tx queue space")?;
 
-        if log_enabled!(Debug) {
-            debug!("using buf index: {}", idx);
+        if log_enabled!(Info) {
+            info!("using buf index: {}", idx);
         }
 
         (&mut self.buffer_idx(idx)[..frame_len]).copy_from_slice(frame);
@@ -325,10 +353,10 @@ impl GmacRxRing {
         &buffer[MAX_FRAME_BODY * i..MAX_FRAME_BODY * (i + 1)]
     }
 
-    pub fn receive_frames<H: Hooks>(&mut self, mut callback: &mut dyn FnMut(&[u8])) -> Result<(), Error> {
+    pub fn receive_frames<H: Hooks>(&mut self, max_frames: usize, mut callback: &mut dyn FnMut(&[u8])) -> Result<(), Error> {
         let Self { rx_queue, rx_buffer } = self;
 
-        rx_queue.process_received::<H>(&mut |idx, len| {
+        rx_queue.process_received::<H>(max_frames, &mut |idx, len| {
             callback(&Self::buffer_idx(rx_buffer.as_ref(), idx)[..len]);
         });
 
@@ -403,10 +431,10 @@ impl Default for TxQueueCfg {
 #[derive(Clone, Default)]
 #[repr(C, packed)]
 struct DmaDesc {
-    des0: u32,
-    des1: u32,
-    des2: u32,
-    des3: u32,
+    des0: Volatile<u32>,
+    des1: Volatile<u32>,
+    des2: Volatile<u32>,
+    des3: Volatile<u32>,
 }
 
 #[derive(Clone, Default)]
@@ -417,7 +445,7 @@ const_assert_size!(TxDesc, 16);
 
 impl TxDesc {
     pub fn clear(&mut self) {
-        self.0.des2 = 0; // only des2 needs to be zeroed to clear it for the dma.
+        self.0.des2.set(0); // only des2 needs to be zeroed to clear it for the dma.
     }
 
     pub fn init_tx(&mut self, end: bool) {
@@ -432,7 +460,7 @@ impl TxDesc {
 
     pub fn set_address(&mut self, addr: usize) {
         assert!(addr < u32::max_value() as usize);
-        self.0.des2 = addr as u32;
+        self.0.des2.set(addr as u32);
     }
 
     pub fn set_owner(&mut self) {
@@ -444,11 +472,11 @@ impl TxDesc {
     }
 
     pub fn is_owned_by_dma(&self) -> bool {
-        (self.0.des0 & TDES0_OWN) != 0
+        (self.0.des0.get() & TDES0_OWN) != 0
     }
 
     pub fn prepare_tx(&mut self, first_segment: bool, last_segment: bool, insert_checksum: bool, mode: u32, len: usize) {
-        let mut des1 = self.0.des1;
+        let mut des1 = self.0.des1.get();
         if first_segment {
             des1 |= TDES1_FIRST_SEGMENT;
         } else {
@@ -470,14 +498,16 @@ impl TxDesc {
         des1 &= !TDES1_BUFFER1_SIZE_MASK;
         des1 |= (len as u32) & TDES1_BUFFER1_SIZE_MASK;
 
-        self.0.des1 = des1;
+        des1 &= !TDES1_BUFFER2_SIZE_MASK;
+
+        self.0.des1.set(des1);
     }
 
     pub fn dump(&self) {
-        info!("des0: {:#08x}", self.0.des0);
-        info!("des1: {:#08x}", self.0.des1);
-        info!("des2: {:#08x}", self.0.des2);
-        info!("des3: {:#08x}", self.0.des3);
+        info!("des0: {:#08x}", self.0.des0.get());
+        info!("des1: {:#08x}", self.0.des1.get());
+        info!("des2: {:#08x}", self.0.des2.get());
+        info!("des3: {:#08x}", self.0.des3.get());
     }
 }
 
@@ -487,7 +517,7 @@ struct RxDesc(DmaDesc);
 
 impl RxDesc {
     pub fn clear(&mut self) {
-        self.0.des2 = 0; // only des2 needs to be zeroed to clear it for the dma.
+        self.0.des2.set(0); // only des2 needs to be zeroed to clear it for the dma.
     }
 
     pub fn init_rx(&mut self, end: bool) {
@@ -503,7 +533,7 @@ impl RxDesc {
 
     pub fn set_address(&mut self, addr: usize) {
         assert!(addr < u32::max_value() as usize);
-        self.0.des2 = addr as u32;
+        self.0.des2.set(addr as u32);
     }
 
     pub fn set_owned_by_dma(&mut self) {
@@ -515,25 +545,25 @@ impl RxDesc {
     }
 
     pub fn is_owned_by_dma(&self) -> bool {
-        (self.0.des0 & RDES0_OWN) != 0
+        (self.0.des0.get() & RDES0_OWN) != 0
     }
 
     pub fn prepare_rx(&mut self, mode: u32, len: usize) {
         assert_eq!(mode, STMMAC_RING_MODE);
 
-        let mut des1 = self.0.des1;
+        let mut des1 = self.0.des1.get();
 
         des1 &= !RDES1_BUFFER1_SIZE_MASK;
         des1 |= (len as u32) & RDES1_BUFFER1_SIZE_MASK;
 
-        self.0.des1 = des1;
+        self.0.des1.set(des1);
     }
 
     pub fn dump(&self) {
-        info!("des0: {:#08x}", self.0.des0);
-        info!("des1: {:#08x}", self.0.des1);
-        info!("des2: {:#08x}", self.0.des2);
-        info!("des3: {:#08x}", self.0.des3);
+        info!("des0: {:#08x}", self.0.des0.get());
+        info!("des1: {:#08x}", self.0.des1.get());
+        info!("des2: {:#08x}", self.0.des2.get());
+        info!("des3: {:#08x}", self.0.des3.get());
     }
 }
 
@@ -572,13 +602,14 @@ impl TxQueue {
     }
 
     pub fn vacuum(&mut self) {
+        info!("vacuum sending:{} next:{}", self.sending_idx, self.next_idx);
         while self.sending_idx != self.next_idx {
             if self.dma_tx[self.sending_idx].is_owned_by_dma() {
                 break;
             }
 
-            if log_enabled!(Debug) {
-                debug!("vacuum index: {}", self.sending_idx);
+            if log_enabled!(Info) {
+                info!("vacuum index: {}", self.sending_idx);
             }
 
             // TODO mark transaction successful?
@@ -610,8 +641,12 @@ impl RxQueue {
         }
     }
 
-    pub fn process_received<H: Hooks>(&mut self, mut callback: &mut dyn FnMut(usize, usize)) {
+    pub fn process_received<H: Hooks>(&mut self, mut max_frames: usize, mut callback: &mut dyn FnMut(usize, usize)) {
         for _ in 0..RX_NUM_DESC {
+            if max_frames == 0 {
+                break;
+            }
+
             let desc_addr = (&self.dma_rx[self.receive_idx]) as *const RxDesc as u64;
             H::flush_cache(desc_addr, core::mem::size_of::<RxDesc>() as u64, FlushType::Invalidate);
 
@@ -633,9 +668,9 @@ impl RxQueue {
             debug!("rx desc addr: {:#x}", (&self.dma_rx[self.receive_idx]) as *const RxDesc as usize);
             debug!("rx desc ptr: {:#x}", read_u32(BASE + GMAC_CUR_HOST_RX_DESC));
 
-            let des0 = self.dma_rx[self.receive_idx].0.des0;
+            let des0 = self.dma_rx[self.receive_idx].0.des0.get();
             debug!("des0: {:#x}", des0);
-            let des1 = self.dma_rx[self.receive_idx].0.des1;
+            let des1 = self.dma_rx[self.receive_idx].0.des1.get();
             debug!("des1: {:#x}", des1);
 
             if des0 == 0 {
@@ -657,6 +692,7 @@ impl RxQueue {
 
                     debug!("got frame length: {}", length);
                     callback(self.receive_idx, length as usize);
+                    max_frames -= 1;
                 }
             }
 
@@ -889,7 +925,7 @@ impl<H: Hooks> GmacDevice<H> {
     fn dma_init(atds: bool) {
         // programmable burst length
         let pbl = 8;
-        let pblx8 = true;
+        let pblx8 = false; // true;
         let aal = false; // address-aligned beats
         let fixed_burst = false;
         let mixed_burst = false;

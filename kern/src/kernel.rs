@@ -34,6 +34,7 @@ use crate::usb::usb_thread;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicUsize;
 use crate::mini_allocators::NOCACHE_PAGE_ALLOC;
+use crate::hw::ArchVariant;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -50,9 +51,13 @@ fn network_thread() -> ! {
     //     kernel_api::syscall::exit();
     // }
 
-    pi::timer::spin_sleep(Duration::from_millis(100));
-    crate::mbox::with_mbox(|mbox| mbox.set_power_state(0x00000003, true));
-    pi::timer::spin_sleep(Duration::from_millis(5));
+    info!("starting net thread...");
+
+    if !hw::not_pi() {
+        timing::sleep_phys(Duration::from_millis(100));
+        crate::mbox::with_mbox(|mbox| mbox.set_power_state(0x00000003, true));
+    }
+    timing::sleep_phys(Duration::from_millis(5));
 
     unsafe {
         NET.initialize();
@@ -183,26 +188,6 @@ fn configure_timer() {
     }
 }
 
-#[derive(Default)]
-struct DwMacHooks;
-
-impl dwmac::Hooks for DwMacHooks {
-    fn sleep(dur: Duration) {
-        timing::sleep_phys(dur);
-    }
-
-    fn memory_barrier() {
-        aarch64::dmb();
-    }
-
-    fn flush_cache(addr: u64, len: u64, flush: dwmac::FlushType) {
-        match flush {
-            dwmac::FlushType::Clean => aarch64::clean_data_cache_region(addr, len),
-            dwmac::FlushType::Invalidate => aarch64::invalidate_data_cache_region(addr, len),
-            dwmac::FlushType::CleanAndInvalidate => aarch64::clean_and_invalidate_data_cache_region(addr, len),
-        }
-    }
-}
 
 pub fn kernel_main() -> ! {
     info!("init irq");
@@ -339,15 +324,15 @@ pub fn kernel_main() -> ! {
         KERNEL_SCHEDULER.add(proc);
     }
 
-    // if !hw::is_qemu() {
-    //     let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
-    //     proc.affinity.set_only(0);
-    //     KERNEL_SCHEDULER.add(proc);
-    // }
+    if !hw::is_qemu() || matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
+        let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
+        proc.affinity.set_only(0);
+        KERNEL_SCHEDULER.add(proc);
+    }
 
     {
         let proc = KernelProcess::kernel_process("dwmac".to_owned(), |ctx| {
-            dwmac::do_stuff::<DwMacHooks>(&NOCACHE_PAGE_ALLOC);
+            // dwmac::do_stuff::<DwMacHooks>(&NOCACHE_PAGE_ALLOC);
         }).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }

@@ -9,7 +9,7 @@ pub struct ArchInitInfo {
     pub entry_regs: [u64; 3],
 }
 
-pub fn is_qemu() -> bool {
+fn has_crypto() -> bool {
     let mut aes = false;
     let mut sha1 = false;
     let mut sha2 = false;
@@ -29,6 +29,10 @@ pub fn is_qemu() -> bool {
     }
 
     aes && sha1 && sha2
+}
+
+pub fn is_qemu() -> bool {
+    !matches!(arch_variant(), &ArchVariant::Khadas(_)) && has_crypto()
 }
 
 pub fn not_pi() -> bool {

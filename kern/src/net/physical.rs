@@ -57,6 +57,16 @@ pub trait Physical : Sync + Send {
 
     fn receive_frame(&self, frame: &mut Frame) -> Option<()>;
 
+    // Optional functions
+
+    fn name(&self) -> &'static str {
+        "[unknown]"
+    }
+
+    fn debug_dump(&self, w: &mut dyn fmt::Write) -> fmt::Result {
+        Err(fmt::Error)
+    }
+
     // Provided functions
 
     fn is_connected(&self) -> bool {

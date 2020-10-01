@@ -264,7 +264,7 @@ impl GlobalNetHandler {
     pub fn initialize_with(&self, usb: Arc<dyn Physical>) {
         let net = NetHandler::new(usb).expect("create net handler");
 
-        debug!("created net");
+        info!("created net");
 
         m_lock!(self.0).replace(net);
     }
@@ -276,7 +276,12 @@ impl GlobalNetHandler {
         if BootVariant::kernel_in_hypervisor() {
             phys = Arc::new(VirtNIC());
         } else if BootVariant::kernel() {
-            if hw::is_qemu() {
+            if hw::not_pi() {
+                info!("choose dwmac net");
+
+                let mac = crate::driver::net::dwmac::DwMac1000::open().expect("failed to initialize dwmac");
+                phys = Arc::new(mac);
+            } else if hw::is_qemu() {
                 phys = Arc::new(physical::NilDevice());
             } else {
                 let usb = unsafe { Usb::new() }.expect("failed to initialize usb");
@@ -286,7 +291,7 @@ impl GlobalNetHandler {
             panic!("todo, net stack in hypervisor");
         }
 
-        debug!("created nic");
+        info!("created nic");
 
         self.initialize_with(phys);
     }

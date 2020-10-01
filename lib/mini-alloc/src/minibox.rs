@@ -49,6 +49,10 @@ impl<T> MiniBox<T> {
 
 }
 
+unsafe impl<T: Send + ?Sized> Send for MiniBox<T> {}
+
+unsafe impl<T: Sync + ?Sized> Sync for MiniBox<T> {}
+
 impl<T: ?Sized> Deref for MiniBox<T> {
     type Target = T;
 

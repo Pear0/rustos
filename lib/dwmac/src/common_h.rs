@@ -1,5 +1,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(dead_code)]
 
 /* Synopsys Core versions */
 pub const DWMAC_CORE_3_40: usize = 0x34;

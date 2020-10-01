@@ -1,5 +1,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(dead_code)]
 
 /* DMA CRS Control and Status Register Mapping */
 pub const DMA_BUS_MODE: usize = 0x00001000;	/* Bus Mode */
