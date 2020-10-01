@@ -183,6 +183,7 @@ fn configure_timer() {
     }
 }
 
+#[derive(Default)]
 struct DwMacHooks;
 
 impl dwmac::Hooks for DwMacHooks {

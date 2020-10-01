@@ -145,6 +145,7 @@ pub const GMAC_FRAME_FILTER_HMC: u32 = 0x00000004;	/* Hash Multicast */
 pub const GMAC_FRAME_FILTER_DAIF: u32 = 0x00000008;	/* DA Inverse Filtering */
 pub const GMAC_FRAME_FILTER_PM: u32 = 0x00000010;	/* Pass all multicast */
 pub const GMAC_FRAME_FILTER_DBF: u32 = 0x00000020;	/* Disable Broadcast frames */
+pub const GMAC_FRAME_FILTER_PCF: u32 = 0x00000080;	/* Pass Control frames */
 pub const GMAC_FRAME_FILTER_SAIF: u32 = 0x00000100;	/* Inverse Filtering */
 pub const GMAC_FRAME_FILTER_SAF: u32 = 0x00000200;	/* Source Address Filter */
 pub const GMAC_FRAME_FILTER_HPF: u32 = 0x00000400;	/* Hash or perfect Filter */
@@ -339,6 +340,8 @@ pub const DMA_CONTROL_OSF: u32 = 0x00000004;	/* Operate on second frame */
 pub const GMAC_MMC_CTRL: usize = 0x100;
 pub const GMAC_MMC_RX_INTR: usize = 0x104;
 pub const GMAC_MMC_TX_INTR: usize = 0x108;
+pub const GMAC_MMC_RXFRMCNT_GB: usize = 0x180;
+pub const GMAC_MMC_RXOCTETCNT_G: usize = 0x188;
 pub const GMAC_MMC_RX_CSUM_OFFLOAD: usize = 0x208;
 pub const GMAC_EXTHASH_BASE: usize = 0x500;
 
