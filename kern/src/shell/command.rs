@@ -7,6 +7,7 @@ use crate::shell::Shell;
 use core::fmt;
 use alloc::string::String;
 use core::num::ParseIntError;
+use crate::net;
 
 #[derive(Debug)]
 pub enum CommandError {
@@ -19,6 +20,7 @@ pub enum CommandError {
     Io(io::Error),
     Gimli(gimli::read::Error),
     FmtError,
+    NetError(net::NetErrorKind),
 }
 
 impl From<core::num::ParseIntError> for CommandError {
@@ -72,6 +74,12 @@ impl From<gimli::read::Error> for CommandError {
 impl From<fmt::Error> for CommandError {
     fn from(_: fmt::Error) -> Self {
         CommandError::FmtError
+    }
+}
+
+impl From<net::NetErrorKind> for CommandError {
+    fn from(e: net::NetErrorKind) -> Self {
+        CommandError::NetError(e)
     }
 }
 

@@ -275,7 +275,7 @@ impl KernPageTable {
         }
     }
 
-    pub fn create_l3_entry(addr: usize, attr: u64) -> RawL3Entry {
+    pub fn create_l3_entry(addr: usize, mut attr: u64) -> RawL3Entry {
         assert_eq!(addr % PAGE_SIZE, 0);
 
         let mut entry = RawL3Entry::new(0);
@@ -286,10 +286,14 @@ impl KernPageTable {
         entry.set_value(1, RawL3Entry::NS);
 
         if (addr >= IO_BASE && addr < IO_BASE_END) || (addr >= 0xff800000) {
-            entry.set_value(EntrySh::OSh, RawL3Entry::SH);
-            entry.set_value(EntryAttr::Dev, RawL3Entry::ATTR);
-        } else {
+            attr = EntryAttr::Dev;
+        }
+
+        if attr == EntryAttr::Mem {
             entry.set_value(EntrySh::ISh, RawL3Entry::SH);
+            entry.set_value(EntryAttr::Mem, RawL3Entry::ATTR);
+        } else {
+            entry.set_value(EntrySh::OSh, RawL3Entry::SH);
             entry.set_value(attr, RawL3Entry::ATTR);
         }
 

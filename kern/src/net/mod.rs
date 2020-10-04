@@ -15,6 +15,7 @@ use core::ops::Deref;
 use shim::{io, newioerr};
 use crate::net::physical::{VirtNIC, Physical};
 use crate::{BootVariant, hw};
+use crate::net::udp::UdpFrame;
 
 pub mod arp;
 pub mod buffer;
@@ -23,6 +24,7 @@ pub mod icmp;
 pub mod ipv4;
 pub mod physical;
 pub mod tcp;
+pub mod udp;
 pub mod util;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -242,6 +244,15 @@ impl NetHandler {
         let me = self.ip.address();
 
         self.arp.resolve_or_request_address(arp::PROT_ADDR_IP, addr, me, self.eth.clone())
+    }
+
+    pub fn send_datagram(&self, addr: ipv4::Address, src_port: u16, dst_port: u16, payload: &[u8]) -> NetResult<()> {
+        let udp = UdpFrame {
+            header: udp::Header::new(src_port, dst_port),
+            payload: Box::from(payload),
+        };
+
+        self.ip.send(addr, &udp)
     }
 
     pub fn dispatch(&self) -> bool {

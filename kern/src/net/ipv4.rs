@@ -17,6 +17,12 @@ use core::num::ParseIntError;
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Address([u8; 4]);
 
+impl Address {
+    pub fn is_multicast(&self) -> bool {
+        224 <= self.0[0] && self.0[0] < 240
+    }
+}
+
 impl From<&[u8]> for Address {
     fn from(buf: &[u8]) -> Self {
         assert_eq!(buf.len(), 4);
@@ -264,6 +270,22 @@ impl Interface {
         576 - 20 // maximum size minus 20 byte ip header. we never send larger ip headers
     }
 
+    pub fn resolve_address(&self, to: Address, from: Address, eth: Arc<ether::Interface>) -> NetResult<ether::Mac> {
+        if to.is_multicast() {
+            // https://tools.ietf.org/html/rfc1112#section-6.4
+            let mut mac = ether::Mac::from(&[0x01, 0x00, 0x5e, 0, 0, 0]);
+            // highest bit is always zero.
+            mac.0[3] = to.0[1] & 0x7f;
+            mac.0[4] = to.0[2] & 0x7f;
+            mac.0[5] = to.0[3] & 0x7f;
+            Ok(mac)
+        } else {
+            self.inner.lock()
+                .arp_resolver
+                .resolve_or_request_address(arp::PROT_ADDR_IP, to, from, eth)
+        }
+    }
+
     pub fn send<T: IPv4Payload>(&self, to: Address, payload: &T) -> NetResult<()> {
         // this is significantly oversized to catch packet issues in a friendlier way.
         // we do not support IP fragmentation.
@@ -273,7 +295,7 @@ impl Interface {
         let eth_clone = m_lock!(self.inner).eth.clone();
         let address = self.address();
 
-        let mac = m_lock!(self.inner).arp_resolver.resolve_or_request_address(arp::PROT_ADDR_IP, to, address, eth_clone)?;
+        let mac = self.resolve_address(to, address, eth_clone)?;
 
         let header = IPv4Header::new(T::PROTOCOL_NUMBER, self.address(), to, 0);
 

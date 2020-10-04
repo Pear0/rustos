@@ -163,6 +163,11 @@ impl<H: Hooks> Gmac<H> {
 
     pub fn debug_dump(&self, w: &mut dyn fmt::Write) -> fmt::Result {
 
+        writeln!(w, "dma:")?;
+        {
+            writeln!(w, "  status: {:#x}", read_u32(BASE + DMA_STATUS))?;
+        }
+
         writeln!(w, "tx dma:")?;
         {
             writeln!(w, "  sending_idx: {}", self.rings.tx_rings[0].tx_queue.sending_idx)?;
@@ -170,9 +175,9 @@ impl<H: Hooks> Gmac<H> {
 
             let tx_dma_base = read_u32(BASE + DMA_TX_BASE_ADDR);
             let tx_dma = read_u32(BASE + GMAC_CUR_HOST_TX_DESC);
-            let dma_idx = tx_dma.wrapping_sub(tx_dma_base) as usize / core::mem::size_of::<TxDesc>();
+            let dma_idx = self.rings.tx_rings[0].tx_queue.get_debug_dma_desc_idx();
 
-            writeln!(w, "  dma_idx: {}", dma_idx)?;
+            writeln!(w, "  dma_idx: {}, dma_base: {:#x}, dma_ptr: {:#x}", dma_idx, tx_dma_base, tx_dma)?;
         }
         Ok(())
     }
@@ -297,7 +302,7 @@ impl GmacTxRing {
             return Err(Error::Str("frame too large"));
         }
 
-        self.tx_queue.vacuum();
+        self.tx_queue.vacuum::<H>();
 
         let idx = self.tx_queue.next_id().ok_or("no free tx queue space")?;
 
@@ -307,9 +312,11 @@ impl GmacTxRing {
 
         (&mut self.buffer_idx(idx)[..frame_len]).copy_from_slice(frame);
 
+        self.tx_queue.dma_tx[idx].init_tx(idx + 1 == TX_NUM_DESC);
         self.tx_queue.dma_tx[idx].prepare_tx(true, true, false, STMMAC_RING_MODE, frame_len);
         let ptr = self.buffer_idx(idx).as_ptr() as usize;
         self.tx_queue.dma_tx[idx].set_address(ptr);
+        H::memory_barrier();
         self.tx_queue.dma_tx[idx].set_owner();
 
         H::memory_barrier();
@@ -445,17 +452,22 @@ const_assert_size!(TxDesc, 16);
 
 impl TxDesc {
     pub fn clear(&mut self) {
-        self.0.des2.set(0); // only des2 needs to be zeroed to clear it for the dma.
+        self.0.des2.set(0);
+        self.0.des3.set(0);
     }
 
     pub fn init_tx(&mut self, end: bool) {
         self.0.des0 &= !TDES0_OWN;
+        self.0.des1.set(0);
         // assuming ring mode
         if end {
             self.0.des1 |= TDES1_END_RING;
         } else {
             self.0.des1 &= !TDES1_END_RING;
         }
+
+        self.0.des2.set(0);
+        self.0.des3.set(0xdeadbeef);
     }
 
     pub fn set_address(&mut self, addr: usize) {
@@ -499,6 +511,8 @@ impl TxDesc {
         des1 |= (len as u32) & TDES1_BUFFER1_SIZE_MASK;
 
         des1 &= !TDES1_BUFFER2_SIZE_MASK;
+
+        des1 &= !TDES1_SECOND_ADDRESS_CHAINED;
 
         self.0.des1.set(des1);
     }
@@ -601,21 +615,44 @@ impl TxQueue {
         Some(idx)
     }
 
-    pub fn vacuum(&mut self) {
+    pub fn vacuum<H: Hooks>(&mut self) {
         info!("vacuum sending:{} next:{}", self.sending_idx, self.next_idx);
         while self.sending_idx != self.next_idx {
+            H::memory_barrier();
+
+            {
+                let des0 = self.dma_tx[self.sending_idx].0.des0.get();
+                let des1 = self.dma_tx[self.sending_idx].0.des1.get();
+                info!("sending[{}]: des0:{:#x}, des1:{:#x}", self.sending_idx, des0, des1);
+            }
+
             if self.dma_tx[self.sending_idx].is_owned_by_dma() {
                 break;
             }
+
+            H::memory_barrier();
 
             if log_enabled!(Info) {
                 info!("vacuum index: {}", self.sending_idx);
             }
 
+            self.dma_tx[self.sending_idx].clear();
+
             // TODO mark transaction successful?
 
             self.sending_idx = (self.sending_idx + 1) % TX_NUM_DESC;
         }
+
+        // if !seen_dma {
+        //     warn!("vacuum resetting sending_idx: {{sending_idx: {} -> {}, next_idx: {}, dma_idx: {}}}", start_sending_idx, self.sending_idx, self.next_idx, dma_idx);
+        //     self.sending_idx = dma_idx;
+        // }
+    }
+
+    pub fn get_debug_dma_desc_idx(&self) -> usize {
+        let tx_dma_base = read_u32(BASE + DMA_TX_BASE_ADDR);
+        let tx_dma = read_u32(BASE + GMAC_CUR_HOST_TX_DESC);
+        tx_dma.wrapping_sub(tx_dma_base) as usize / core::mem::size_of::<TxDesc>()
     }
 }
 

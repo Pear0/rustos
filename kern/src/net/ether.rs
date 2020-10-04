@@ -14,7 +14,7 @@ use crate::net::physical::{Physical, Frame};
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Mac([u8; 6]);
+pub struct Mac(pub [u8; 6]);
 
 impl Mac {
     pub fn broadcast() -> Mac {

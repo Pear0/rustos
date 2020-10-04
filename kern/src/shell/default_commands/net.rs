@@ -32,6 +32,19 @@ impl<R: io::Read, W: io::Write> NetCmd<R, W> {
         Ok(())
     }
 
+    fn udp_send(sh: &mut Shell<R, W>, _cmd: &CommandArgs) -> Result<(), CommandError> {
+        use crate::net::ipv4::Address;
+        use core::str::FromStr;
+
+        NET.critical(|net| {
+            let msg = "hello world!";
+            net.send_datagram("239.15.55.200".parse()?, 4001, 4000, msg.as_bytes())
+                .map_err(|e| CommandError::from(e))
+        })?;
+
+        Ok(())
+    }
+
     pub fn process(sh: &mut Shell<R, W>, cmd: &CommandArgs) -> Result<(), CommandError> {
         // cmd.args == ["net", "sub-command", ""]
 
@@ -45,6 +58,7 @@ impl<R: io::Read, W: io::Write> NetCmd<R, W> {
         match cmd.args[1] {
             "tcp" => Self::tcp(sh, cmd),
             "phy" => Self::phy(sh, cmd),
+            "udpsend" => Self::udp_send(sh, cmd),
             c => {
                 writeln!(sh.writer, "unknown subcommand: {}", c)?;
                 Ok(())
