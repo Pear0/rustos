@@ -1,5 +1,6 @@
 #![feature(alloc_error_handler)]
 #![feature(const_fn)]
+#![feature(const_fn_fn_ptr_basics)]
 #![feature(decl_macro)]
 #![feature(llvm_asm)]
 #![feature(track_caller)]
@@ -12,6 +13,8 @@
 #![feature(panic_info_message)]
 #![feature(c_variadic)]
 #![feature(naked_functions)]
+#![feature(const_caller_location)]
+
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
