@@ -38,7 +38,7 @@ img_build: build
 	cp build/$(KERN).bin kern-image/root/
 	kern-image/build-image.sh
 
-qemu: img_build
+qemu: build
 	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS)
 
 qemu-trace: build

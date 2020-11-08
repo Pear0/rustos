@@ -17,7 +17,7 @@ use crate::uart::LsrStatus::{DataReady, TxAvailable};
 const MU_REG_BASE: usize = IO_BASE + 0x215040;
 
 /// The `AUXENB` register from page 9 of the BCM2837 documentation.
-const AUX_ENABLES: *mut Volatile<u8> = (IO_BASE + 0x215004) as *mut Volatile<u8>;
+const AUX_ENABLES: *mut Volatile<u32> = (IO_BASE + 0x215004) as *mut Volatile<u32>;
 
 /// Enum representing bit fields of the `AUX_MU_LSR_REG` register.
 #[repr(u8)]
@@ -29,27 +29,17 @@ enum LsrStatus {
 #[repr(C)]
 #[allow(non_snake_case)]
 struct Registers {
-    IO_REG: Volatile<u8>,
-    __r0: [Reserved<u8>; 3],
-    IER_REG: Volatile<u8>,
-    __r1: [Reserved<u8>; 3],
-    IIR_REG: Volatile<u8>,
-    __r2: [Reserved<u8>; 3],
-    LCR_REG: Volatile<u8>,
-    __r3: [Reserved<u8>; 3],
-    MCR_REG: Volatile<u8>,
-    __r4: [Reserved<u8>; 3],
-    LSR_REG: Volatile<u8>,
-    __r5: [Reserved<u8>; 3],
-    MSR_REG: Volatile<u8>,
-    __r6: [Reserved<u8>; 3],
-    SCRATCH: Volatile<u8>,
-    __r7: [Reserved<u8>; 3],
-    CNTL_REG: Volatile<u8>,
-    __r8: [Reserved<u8>; 3],
+    IO_REG: Volatile<u32>,
+    IER_REG: Volatile<u32>,
+    IIR_REG: Volatile<u32>,
+    LCR_REG: Volatile<u32>,
+    MCR_REG: Volatile<u32>,
+    LSR_REG: Volatile<u32>,
+    MSR_REG: Volatile<u32>,
+    SCRATCH: Volatile<u32>,
+    CNTL_REG: Volatile<u32>,
     STAT_REG: Volatile<u32>,
-    BAUD_REG: Volatile<u16>,
-    __r9: [Reserved<u8>; 2],
+    BAUD_REG: Volatile<u32>,
 }
 
 const_assert_size!(Registers, 44);
@@ -118,7 +108,7 @@ impl MiniUart {
     }
 
     pub fn can_send(&self) -> bool {
-        (self.registers.LSR_REG.read() & (TxAvailable as u8)) != 0
+        ((self.registers.LSR_REG.read() as u8) & (TxAvailable as u8)) != 0
     }
 
     pub fn set_send_interrupt_enabled(&self, enabled: bool) {
@@ -137,14 +127,14 @@ impl MiniUart {
     /// in the output FIFO.
     pub fn write_byte(&self, byte: u8) {
         while !self.can_send() {}
-        self.unsafe_mut().registers.IO_REG.write(byte);
+        self.unsafe_mut().registers.IO_REG.write(byte as u32);
     }
 
     /// Returns `true` if there is at least one byte ready to be read. If this
     /// method returns `true`, a subsequent call to `read_byte` is guaranteed to
     /// return immediately. This method does not block.
     pub fn has_byte(&self) -> bool {
-        (self.registers.LSR_REG.read() & (DataReady as u8)) != 0
+        ((self.registers.LSR_REG.read() as u8) & (DataReady as u8)) != 0
     }
 
     /// Blocks until there is a byte ready to read. If a read timeout is set,
@@ -178,7 +168,7 @@ impl MiniUart {
     /// Reads a byte. Blocks indefinitely until a byte is ready to be read.
     pub fn read_byte(&self) -> u8 {
         while !self.has_byte() {}
-        self.unsafe_mut().registers.IO_REG.read()
+        self.unsafe_mut().registers.IO_REG.read() as u8
     }
 
     pub fn read_nonblocking(&mut self, buf: &mut [u8]) -> io::Result<usize> {
