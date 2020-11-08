@@ -4,7 +4,7 @@ pub mod raw;
 pub use self::atag::*;
 
 /// The address at which the firmware loads the ATAGS.
-const ATAG_BASE: usize = 0x100;
+pub(crate) const ATAG_BASE: usize = 0x100;
 
 /// An iterator over the ATAGS on this system.
 pub struct Atags {

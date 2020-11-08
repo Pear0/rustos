@@ -11,7 +11,7 @@ QEMU_GUI_ARGS ?= -display cocoa
 TRACE_FILE ?= kernel_trace.log
 # -net nic,model=virtio -smp 4
 
-.PHONY: all build qemu transmit objdump nm check clean install test img_build
+.PHONY: all build build_uimage qemu transmit objdump nm check clean install test img_build
 
 all: build
 
@@ -26,8 +26,9 @@ build:
 
 	# mkimage -A arm64 -C none -f auto -a 0x80000 -e 0x80000 -n 'kernel' -d build/$(KERN).bin:build/$(KERN).elf build/uImage
 	gzip -fk build/$(KERN).elf
+
+build_uimage: build
 	mkimage -f uboot_img.its build/uImage
-	# -i build/$(KERN).elf
 
 check:
 	@cargo xcheck
@@ -82,11 +83,11 @@ clean:
 	cargo clean
 	rm -rf build
 
-install: build
+install: build_uimage
 	@echo "+ Installing build/$(KERN).elf [install-kernel.py]"
 	@$(ROOT)/bin/install-kernel.py build/$(KERN).elf - build/uImage ./uboot.ini build/$(KERN).elf.gz build/$(KERN).elf
 
-minstall: build
+minstall: build_uimage
 	@udiskie-mount -a
 	@echo "+ Installing build/$(KERN).elf [install-kernel.py]"
 	@$(ROOT)/bin/install-kernel.py build/$(KERN).elf - build/uImage ./uboot.ini build/$(KERN).elf.gz build/$(KERN).elf

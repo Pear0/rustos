@@ -194,7 +194,7 @@ unsafe fn kinit(boot_x0: u64, boot_x1: u64, boot_x2: u64) -> ! {
         entry_regs: [boot_x0, boot_x1, boot_x2],
     });
 
-    khadas::uart::print("hello world 2\r\n");
+    // khadas::uart::print("hello world 2\r\n");
     hw::arch().early_print().write_str("HAL hello world!\r\n");
 
     switch_to_el2();

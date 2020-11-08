@@ -2,7 +2,7 @@
 <module type="CPP_MODULE" version="4">
   <component name="FacetManager">
     <facet type="Python" name="Python facet">
-      <configuration sdkName="Python 3.6" />
+      <configuration sdkName="" />
     </facet>
   </component>
   <component name="NewModuleRootManager">
@@ -30,6 +30,11 @@
       <sourceFolder url="file://$MODULE_DIR$/lib/dsx/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/lib/mpalloc/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/lib/dwmac/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tut/1-blinky/phase4/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/boot/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/user/long/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/lib/pictl/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/boot/target" />
       <excludeFolder url="file://$MODULE_DIR$/kern/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/aarch64/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/common/target" />
@@ -43,6 +48,7 @@
       <excludeFolder url="file://$MODULE_DIR$/lib/mountfs/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/mpalloc/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/pi/target" />
+      <excludeFolder url="file://$MODULE_DIR$/lib/pictl/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/pigrate-core/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/shim/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/shutil/target" />
@@ -53,9 +59,10 @@
       <excludeFolder url="file://$MODULE_DIR$/lib/volatile/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/xhci/target" />
       <excludeFolder url="file://$MODULE_DIR$/lib/xmodem/target" />
+      <excludeFolder url="file://$MODULE_DIR$/tut/1-blinky/phase4/target" />
+      <excludeFolder url="file://$MODULE_DIR$/user/long/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="Python 3.6 interpreter library" level="application" />
   </component>
 </module>

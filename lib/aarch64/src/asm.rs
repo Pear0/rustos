@@ -10,6 +10,11 @@ pub fn wfi() {
     unsafe { llvm_asm!("wfi" :::: "volatile") };
 }
 
+pub fn halt_loop() -> ! {
+    loop {
+        wfi();
+    }
+}
 
 /// A NOOP that won't be optimized out.
 #[inline(always)]

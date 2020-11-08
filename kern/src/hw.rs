@@ -44,33 +44,40 @@ static CORE_DMA_CONTROLLERS: usize = 0;
 pub enum ArchVariant {
     Uninit,
     Khadas(khadas::KhadasArch),
+    Pi(pi::PiArch),
 }
 
 static mut BIGLY_ARCH: ArchVariant = ArchVariant::Uninit;
 
 pub unsafe fn init_hal(info: ArchInitInfo) {
+    if let Some(arch) = pi::PiArch::new() {
+        BIGLY_ARCH = ArchVariant::Pi(arch);
+        return;
+    }
+
     if let Some(arch) = khadas::KhadasArch::new(info.entry_regs[0]) {
         BIGLY_ARCH = ArchVariant::Khadas(arch);
-    } else {
-        loop{}
+        return;
     }
+
+    aarch64::halt_loop();
 }
 
 pub fn maybe_arch() -> Option<&'static dyn Arch> {
     unsafe {
         match &BIGLY_ARCH {
             ArchVariant::Khadas(khadas) => Some(khadas),
+            ArchVariant::Pi(arch) => Some(arch),
             ArchVariant::Uninit => None,
         }
     }
 }
 
 pub fn arch() -> &'static dyn Arch {
-    unsafe {
-        match &BIGLY_ARCH {
-            ArchVariant::Khadas(khadas) => khadas,
-            ArchVariant::Uninit => loop {}
-        }
+    if let Some(arch) = maybe_arch() {
+        arch
+    } else {
+        aarch64::halt_loop();
     }
 }
 
