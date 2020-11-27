@@ -135,7 +135,7 @@ impl VMManager {
             asm!("dsb ish");
             isb();
 
-            debug!("about to enable mmu old SCTLR_EL1 = {:#x}", SCTLR_EL1.get());
+            info!("about to enable mmu old SCTLR_EL1 = {:#x}", SCTLR_EL1.get());
             SCTLR_EL1.set(SCTLR_EL1.get() | SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M);
 
             isb();
@@ -143,7 +143,7 @@ impl VMManager {
             // hw::arch().early_print().write_str("WOW MMU works\n");
 
             // SCTLR_EL1.set(SCTLR_EL1.get() & !(SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M));
-            debug!("enabled mmu");
+            info!("enabled mmu");
 
             // hw::arch().early_print().write_str("WOW MMU works 2\n");
 

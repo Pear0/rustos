@@ -12,12 +12,13 @@ use aarch64::vmsa::*;
 use aarch64::vmsa::EntryPerm::{KERN_RW, USER_RW};
 use shim::const_assert_size;
 
-use crate::allocator;
+use crate::{allocator, hw};
 use crate::ALLOCATOR;
 use crate::param::*;
 use crate::process::HyperProcess;
 use crate::traps::HyperTrapFrame;
 use crate::vm::{PhysicalAddr, VirtualAddr};
+use crate::hw::ArchVariant;
 
 #[repr(C)]
 pub struct Page([u8; PAGE_SIZE]);
@@ -243,14 +244,27 @@ impl KernPageTable {
             table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Mem));
         }
 
-        // for addr in (IO_BASE..IO_BASE_END).step_by(PAGE_SIZE) {
-        //     // attr not actually used here
-        //     table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Dev));
-        // }
+        match hw::arch_variant() {
+            ArchVariant::Pi(_) => {
+                for addr in (IO_BASE..IO_BASE_END).step_by(PAGE_SIZE) {
+                    // attr not actually used here
+                    table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Dev));
+                }
 
-        for addr in (0xf500_0000..0xffff_ffff).step_by(PAGE_SIZE) {
-            // attr not actually used here
-            table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Dev));
+                // fake qemu xgmac
+                let xgmac = 0x41000000;
+                for addr in (xgmac..(xgmac + 0x1000)).step_by(PAGE_SIZE) {
+                    // attr not actually used here
+                    table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Dev));
+                }
+            }
+            ArchVariant::Khadas(_) => {
+                for addr in (0xf500_0000..0xffff_ffff).step_by(PAGE_SIZE) {
+                    // attr not actually used here
+                    table.set_entry(VirtualAddr::from(addr), KernPageTable::create_l3_entry(addr, EntryAttr::Dev));
+                }
+            }
+            ArchVariant::Uninit => {},
         }
 
         KernPageTable(table)

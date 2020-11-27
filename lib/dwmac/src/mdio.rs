@@ -1,5 +1,6 @@
 
 use crate::dwmac_h::*;
+use crate::Hooks;
 
 const MII_BUSY: u32 = 0x00000001;
 const MII_WRITE: u32 = 0x00000002;
@@ -28,7 +29,7 @@ pub static MY_MII: MiiRegs = MiiRegs {
 };
 
 
-pub fn mdio_write(io_base: usize, mii_hw: &MiiRegs, phy_addr: u32, phy_reg: u32, phy_data: u16) {
+pub fn mdio_write<H: Hooks>(io_base: usize, mii_hw: &MiiRegs, phy_addr: u32, phy_reg: u32, phy_data: u16) {
     let mut value = MII_BUSY | MII_WRITE;
     let clk_csr = 0;
 
@@ -36,15 +37,15 @@ pub fn mdio_write(io_base: usize, mii_hw: &MiiRegs, phy_addr: u32, phy_reg: u32,
     value |= (phy_reg << mii_hw.reg_shift) & mii_hw.reg_mask;
     value |= (clk_csr << mii_hw.clk_csr_shift) & mii_hw.clk_csr_mask;
 
-    crate::read_u32_poll(io_base + mii_hw.addr as usize, None, |v| (v & MII_BUSY) == 0);
+    crate::read_u32_poll::<H, _>(io_base + mii_hw.addr as usize, None, |v| (v & MII_BUSY) == 0);
 
     crate::write_u32(io_base + mii_hw.data as usize, phy_data as u32);
     crate::write_u32(io_base + mii_hw.addr as usize, value);
 
-    crate::read_u32_poll(io_base + mii_hw.addr as usize, None, |v| (v & MII_BUSY) == 0);
+    crate::read_u32_poll::<H, _>(io_base + mii_hw.addr as usize, None, |v| (v & MII_BUSY) == 0);
 }
 
-pub fn mdio_read(io_base: usize, mii_hw: &MiiRegs, phy_addr: u32, phy_reg: u32) -> u16 {
+pub fn mdio_read<H: Hooks>(io_base: usize, mii_hw: &MiiRegs, phy_addr: u32, phy_reg: u32) -> u16 {
     let mut value = MII_BUSY;
     let clk_csr = 0;
 
@@ -52,12 +53,12 @@ pub fn mdio_read(io_base: usize, mii_hw: &MiiRegs, phy_addr: u32, phy_reg: u32) 
     value |= (phy_reg << mii_hw.reg_shift) & mii_hw.reg_mask;
     value |= (clk_csr << mii_hw.clk_csr_shift) & mii_hw.clk_csr_mask;
 
-    crate::read_u32_poll(io_base + mii_hw.addr as usize, None, |v| (v & MII_BUSY) == 0);
+    crate::read_u32_poll::<H, _>(io_base + mii_hw.addr as usize, None, |v| (v & MII_BUSY) == 0);
 
     crate::write_u32(io_base + mii_hw.data as usize, 0);
     crate::write_u32(io_base + mii_hw.addr as usize, value);
 
-    crate::read_u32_poll(io_base + mii_hw.addr as usize, None, |v| (v & MII_BUSY) == 0);
+    crate::read_u32_poll::<H, _>(io_base + mii_hw.addr as usize, None, |v| (v & MII_BUSY) == 0);
 
     (crate::read_u32(io_base + mii_hw.data as usize) & MII_DATA_MASK) as u16
 }

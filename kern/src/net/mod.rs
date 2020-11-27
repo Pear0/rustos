@@ -287,7 +287,7 @@ impl GlobalNetHandler {
         if BootVariant::kernel_in_hypervisor() {
             phys = Arc::new(VirtNIC());
         } else if BootVariant::kernel() {
-            if hw::not_pi() {
+            if hw::not_pi() || hw::is_qemu() {
                 info!("choose dwmac net");
 
                 let mac = crate::driver::net::dwmac::DwMac1000::open().expect("failed to initialize dwmac");

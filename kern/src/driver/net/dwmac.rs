@@ -17,6 +17,10 @@ impl dwmac::Hooks for DwMacHooks {
         timing::sleep_phys(dur);
     }
 
+    fn system_time() -> Duration {
+        timing::clock_time_phys()
+    }
+
     fn memory_barrier() {
         aarch64::dsb();
     }

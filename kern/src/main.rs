@@ -1,6 +1,6 @@
 #![feature(alloc_error_handler)]
 #![feature(const_fn)]
-#![feature(const_fn_fn_ptr_basics)]
+// #![feature(const_fn_fn_ptr_basics)]
 #![feature(decl_macro)]
 #![feature(asm)]
 #![feature(llvm_asm)]

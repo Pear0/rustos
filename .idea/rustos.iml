@@ -1,68 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<module type="CPP_MODULE" version="4">
+<module classpath="CMake" type="CPP_MODULE" version="4">
   <component name="FacetManager">
     <facet type="Python" name="Python facet">
       <configuration sdkName="" />
     </facet>
-  </component>
-  <component name="NewModuleRootManager">
-    <content url="file://$MODULE_DIR$">
-      <sourceFolder url="file://$MODULE_DIR$/kern/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/aarch64/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/common/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/fat32/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/kernel_api/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/mini-alloc/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/mountfs/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/pi/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/pigrate-core/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/shim/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/shutil/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/small_io/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/stack-vec/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/ttywrite/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/volatile/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/xmodem/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/khadas/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/karch/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/xhci/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/usb-host-rs/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/dsx/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/mpalloc/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/dwmac/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/tut/1-blinky/phase4/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/boot/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/user/long/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/lib/pictl/src" isTestSource="false" />
-      <excludeFolder url="file://$MODULE_DIR$/boot/target" />
-      <excludeFolder url="file://$MODULE_DIR$/kern/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/aarch64/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/common/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/dsx/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/dwmac/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/fat32/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/karch/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/kernel_api/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/khadas/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/mini-alloc/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/mountfs/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/mpalloc/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/pi/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/pictl/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/pigrate-core/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/shim/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/shutil/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/small_io/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/stack-vec/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/ttywrite/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/usb-host-rs/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/volatile/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/xhci/target" />
-      <excludeFolder url="file://$MODULE_DIR$/lib/xmodem/target" />
-      <excludeFolder url="file://$MODULE_DIR$/tut/1-blinky/phase4/target" />
-      <excludeFolder url="file://$MODULE_DIR$/user/long/target" />
-    </content>
-    <orderEntry type="inheritedJdk" />
-    <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

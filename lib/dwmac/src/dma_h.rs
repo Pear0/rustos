@@ -3,25 +3,28 @@
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
 
+// pub const DMA_OFFSET: usize = 0x1000;
+pub const DMA_OFFSET: usize = 0x0f00;
+
 /* DMA CRS Control and Status Register Mapping */
-pub const DMA_BUS_MODE: usize = 0x00001000;	/* Bus Mode */
-pub const DMA_XMT_POLL_DEMAND: usize = 0x00001004;	/* Transmit Poll Demand */
-pub const DMA_RCV_POLL_DEMAND: usize = 0x00001008;	/* Received Poll Demand */
-pub const DMA_RCV_BASE_ADDR: usize = 0x0000100c;	/* Receive List Base */
-pub const DMA_TX_BASE_ADDR: usize = 0x00001010;	/* Transmit List Base */
-pub const DMA_STATUS: usize = 0x00001014;	/* Status Register */
-pub const DMA_CONTROL: usize = 0x00001018;	/* Ctrl (Operational Mode) */
-pub const DMA_INTR_ENA: usize = 0x0000101c;	/* Interrupt Enable */
-pub const DMA_MISSED_FRAME_CTR: usize = 0x00001020;	/* Missed Frame Counter */
+pub const DMA_BUS_MODE: usize = DMA_OFFSET + 0x00000000;	/* Bus Mode */
+pub const DMA_XMT_POLL_DEMAND: usize = DMA_OFFSET + 0x00000004;	/* Transmit Poll Demand */
+pub const DMA_RCV_POLL_DEMAND: usize = DMA_OFFSET + 0x00000008;	/* Received Poll Demand */
+pub const DMA_RCV_BASE_ADDR: usize = DMA_OFFSET + 0x0000000c;	/* Receive List Base */
+pub const DMA_TX_BASE_ADDR: usize = DMA_OFFSET + 0x00000010;	/* Transmit List Base */
+pub const DMA_STATUS: usize = DMA_OFFSET + 0x00000014;	/* Status Register */
+pub const DMA_CONTROL: usize = DMA_OFFSET + 0x00000018;	/* Ctrl (Operational Mode) */
+pub const DMA_INTR_ENA: usize = DMA_OFFSET + 0x0000001c;	/* Interrupt Enable */
+pub const DMA_MISSED_FRAME_CTR: usize = DMA_OFFSET + 0x00000020;	/* Missed Frame Counter */
 
 /* SW Reset */
 pub const DMA_BUS_MODE_SFT_RESET: u32 = 0x00000001;	/* Software Reset */
 
 /* Rx watchdog register */
-pub const DMA_RX_WATCHDOG: usize = 0x00001024;
+pub const DMA_RX_WATCHDOG: usize = DMA_OFFSET + 0x00000024;
 
 /* AXI Master Bus Mode */
-pub const DMA_AXI_BUS_MODE: usize = 0x00001028;
+pub const DMA_AXI_BUS_MODE: usize = DMA_OFFSET + 0x00000028;
 
 pub const DMA_AXI_EN_LPI: u32 = 1 << 31;
 pub const DMA_AXI_LPI_XIT_FRM: u32 = 1 << 30;
@@ -53,9 +56,9 @@ pub const DMA_AXI_UNDEF: u32 = 1 << 0;
 
 pub const DMA_AXI_BURST_LEN_MASK: u32 = 0x000000FE;
 
-pub const DMA_CUR_TX_BUF_ADDR: usize = 0x00001050;	/* Current Host Tx Buffer */
-pub const DMA_CUR_RX_BUF_ADDR: usize = 0x00001054;	/* Current Host Rx Buffer */
-pub const DMA_HW_FEATURE: usize = 0x00001058;	/* HW Feature Register */
+pub const DMA_CUR_TX_BUF_ADDR: usize = DMA_OFFSET + 0x00000050;	/* Current Host Tx Buffer */
+pub const DMA_CUR_RX_BUF_ADDR: usize = DMA_OFFSET + 0x00000054;	/* Current Host Rx Buffer */
+pub const DMA_HW_FEATURE: usize = DMA_OFFSET + 0x00000058;	/* HW Feature Register */
 
 /* DMA Control register defines */
 pub const DMA_CONTROL_ST: u32 = 0x00002000;	/* Start/Stop Transmission */

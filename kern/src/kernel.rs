@@ -222,13 +222,17 @@ pub fn kernel_main() -> ! {
     // error!("init VMM data structures");
     VMM.init_only();
 
+    info!("setup kernel");
+
     // error!("enabling VMM on all cores!");
     smp::run_on_all_cores(|| {
         VMM.setup_kernel();
     });
 
     info!("init irqs");
-    khadas::irq::init_stuff();
+    if matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
+        khadas::irq::init_stuff();
+    }
     info!("done irqs");
 
     if BootVariant::kernel_in_hypervisor() {
@@ -258,13 +262,15 @@ pub fn kernel_main() -> ! {
     info!("perf::prepare();");
     perf::prepare();
 
-    // spam on clock gating
-    unsafe {
-        for addr in [0xff63_c148u64, 0xff63c_0c8u64, 0xff63_c140u64, 0xff63_c0c0u64].iter() {
-            let addr = (*addr) as *mut u32;
-            info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
-            addr.write_volatile(0xffff_ffff);
-            info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
+    if matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
+        // spam on clock gating
+        unsafe {
+            for addr in [0xff63_c148u64, 0xff63c_0c8u64, 0xff63_c140u64, 0xff63_c0c0u64].iter() {
+                let addr = (*addr) as *mut u32;
+                info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
+                addr.write_volatile(0xffff_ffff);
+                info!("Addr: {:#x} => {:#032b}", addr as u64, addr.read_volatile());
+            }
         }
     }
     // #define DWC3_REG_OFFSET				0xC100
@@ -294,8 +300,10 @@ pub fn kernel_main() -> ! {
         info!("Hello: {:?}", loc);
     }
 
-    let b = khadas::uart::get_status_and_control();
-    info!("UART regs: ({:#b}, {:#b})", b.0, b.1);
+    if matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
+        let b = khadas::uart::get_status_and_control();
+        info!("UART regs: ({:#b}, {:#b})", b.0, b.1);
+    }
 
     // UART regs: (0b10000100000011111100000000, 0b1011000000000000)
 
@@ -319,7 +327,7 @@ pub fn kernel_main() -> ! {
         KERNEL_SCHEDULER.add(proc);
     }
 
-    if !hw::is_qemu() || matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
+    if true || !hw::is_qemu() || matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
         let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
         proc.affinity.set_only(0);
         KERNEL_SCHEDULER.add(proc);

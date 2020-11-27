@@ -47,15 +47,18 @@ pub(crate) fn write_u32(addr: usize, value: u32) {
     unsafe { (addr as *mut u32).write_volatile(value) }
 }
 
-pub(crate) fn read_u32_poll<F>(addr: usize, mut val: Option<&mut u32>, break_fn: F) where F: Fn(u32) -> bool {
+pub(crate) fn read_u32_poll<H: Hooks, F>(addr: usize, mut val: Option<&mut u32>, break_fn: F) where F: Fn(u32) -> bool {
+    let end = H::system_time() + Duration::from_secs(1);
+
     loop {
         let v = read_u32(addr);
         if let Some(p) = &mut val {
             **p = v;
         }
-        if break_fn(v) {
+        if break_fn(v) || H::system_time() > end {
             break;
         }
+        H::loop_yield();
     }
 }
 
@@ -79,10 +82,11 @@ static MY_ARP_PACKET: MyArp = MyArp([
     // 0, 0, 0, 0, // eth crc
 ]);
 
-const BASE: usize = 0xff3f0000;
+// const BASE: usize = 0xff3f0000;
+const BASE: usize = 0x41000000;
 
-const GMAC_CUR_HOST_TX_DESC: usize = 0x1048;
-const GMAC_CUR_HOST_RX_DESC: usize = 0x104c;
+const GMAC_CUR_HOST_TX_DESC: usize = DMA_HOST_TX_DESC;
+const GMAC_CUR_HOST_RX_DESC: usize = DMA_HOST_RX_DESC;
 const CHECK_ALL_RX_DESC: bool = true;
 
 
@@ -100,9 +104,14 @@ pub enum FlushType {
 pub trait Hooks: Default {
     fn sleep(dur: Duration);
 
+    fn system_time() -> Duration;
+
     fn memory_barrier();
 
     fn flush_cache(addr: u64, len: u64, flush: FlushType);
+
+    fn loop_yield() {
+    }
 }
 
 pub struct Gmac<H: Hooks> {
@@ -116,7 +125,7 @@ impl<H: Hooks> Gmac<H> {
 
         info!("dwmac");
 
-        meson8b::init();
+        // meson8b::init();
         H::sleep(Duration::from_millis(10));
 
         let mut dev = GmacDevice::<H>::default();
@@ -128,6 +137,12 @@ impl<H: Hooks> Gmac<H> {
 
             info!("dma cap: {:#08x}", value);
             info!("dma cap: {:?}", &dev.dma_features);
+
+            if value == 0 {
+                info!("dma features are zero -> providing defaults...");
+                dev.dma_features.tx_coe = 1;
+            }
+
         }
 
         let mut rings = dev.device_init(al);
@@ -212,7 +227,6 @@ pub fn do_stuff<H: Hooks>(al: AllocRef) {
                 info!("all rx frames: {}", read_u32(BASE + GMAC_MMC_RXFRMCNT_GB));
                 info!("all rx good bytes: {}", read_u32(BASE + GMAC_MMC_RXOCTETCNT_G));
 
-                const GMAC_CUR_HOST_RX_DESC: usize = 0x104c;
                 info!("rx desc ptr: {:#x}", read_u32(BASE + GMAC_CUR_HOST_RX_DESC));
 
                 H::sleep(Duration::from_millis(500));
@@ -791,11 +805,11 @@ impl<H: Hooks> GmacDevice<H> {
 
         // phy_start()
         {
-            mdio_write(BASE, &MY_MII, 0, 0, 1 << 15);
+            mdio_write::<H>(BASE, &MY_MII, 0, 0, 1 << 15);
             H::sleep(Duration::from_secs(2));
 
             for i in 4..=8 {
-                info!("mdio reg {} : {:#04x}", i, mdio_read(BASE, &MY_MII, 0, i));
+                info!("mdio reg {} : {:#04x}", i, mdio_read::<H>(BASE, &MY_MII, 0, i));
             }
         }
 
@@ -811,19 +825,19 @@ impl<H: Hooks> GmacDevice<H> {
     }
 
     fn init_phy(&mut self) {
-        mdio_write(BASE, &MY_MII, 0, 0, 1 << 15);
+        mdio_write::<H>(BASE, &MY_MII, 0, 0, 1 << 15);
 
         H::sleep(Duration::from_millis(10));
 
-        mdio_write(BASE, &MY_MII, 0, 0, 1 << 9);
+        mdio_write::<H>(BASE, &MY_MII, 0, 0, 1 << 9);
 
         H::sleep(Duration::from_millis(10));
 
-        let control = mdio_read(BASE, &MY_MII, 0, 0);
-        let status = mdio_read(BASE, &MY_MII, 0, 1);
+        let control = mdio_read::<H>(BASE, &MY_MII, 0, 0);
+        let status = mdio_read::<H>(BASE, &MY_MII, 0, 1);
         info!("mdio control:{:#04x}, status:{:#04x}", control, status);
 
-        let status_15 = mdio_read(BASE, &MY_MII, 0, 15);
+        let status_15 = mdio_read::<H>(BASE, &MY_MII, 0, 15);
         info!("mdio status_15:{:#04x}", status_15);
     }
 
@@ -956,7 +970,7 @@ impl<H: Hooks> GmacDevice<H> {
         let mut value = read_u32(BASE + DMA_BUS_MODE);
         value |= DMA_BUS_MODE_SFT_RESET;
         write_u32(BASE + DMA_BUS_MODE, value);
-        read_u32_poll(BASE + DMA_BUS_MODE, None, |v| (v & DMA_BUS_MODE_SFT_RESET) == 0);
+        read_u32_poll::<H, _>(BASE + DMA_BUS_MODE, None, |v| (v & DMA_BUS_MODE_SFT_RESET) == 0);
     }
 
     fn dma_init(atds: bool) {

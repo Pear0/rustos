@@ -21,6 +21,7 @@ use xhci::FlushType;
 
 use crate::{FILESYSTEM2, timing, can_make_syscall};
 use crate::arm::PhysicalCounter;
+use crate::hw::{self, ArchVariant};
 use crate::iosync::Global;
 use crate::process::KernProcessCtx;
 
@@ -201,6 +202,10 @@ fn process_event_queue() {
 
 pub fn usb_thread(ctx: KernProcessCtx) {
     use usb_host::traits::*;
+
+    if !matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
+        return;
+    }
 
     let addr = 0xff500000u64;
 

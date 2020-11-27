@@ -6,6 +6,8 @@
 // converted from linux/drivers/net/ethernet/stmicro/stmmac/dwmac1000.h
 
 
+use crate::dma_h::DMA_OFFSET;
+
 pub const fn GENMASK(h: usize, l: usize) -> u32 {
     ((u32::max_value() - (1u32 << l) + 1) & (u32::max_value() >> (32 - 1 - h)))
 }
@@ -230,8 +232,8 @@ pub const DMA_BUS_MODE_MAXPBL: u32 = 0x01000000;
 pub const DMA_BUS_MODE_AAL: u32 = 0x02000000;
 
 /* DMA CRS Control and Status Register Mapping */
-pub const DMA_HOST_TX_DESC: u32 = 0x00001048;	/* Current Host Tx descriptor */
-pub const DMA_HOST_RX_DESC: u32 = 0x0000104c;	/* Current Host Rx descriptor */
+pub const DMA_HOST_TX_DESC: usize = DMA_OFFSET + 0x00000048;	/* Current Host Tx descriptor */
+pub const DMA_HOST_RX_DESC: usize = DMA_OFFSET + 0x0000004c;	/* Current Host Rx descriptor */
 /*  DMA Bus Mode register defines */
 pub const DMA_BUS_PR_RATIO_MASK: u32 = 0x0000c000;	/* Rx/Tx priority ratio */
 pub const DMA_BUS_PR_RATIO_SHIFT: usize = 14;

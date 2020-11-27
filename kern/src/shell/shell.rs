@@ -252,7 +252,11 @@ impl<'a, R: io::Read, W: io::Write> Shell<'a, R, W> {
                 }
             }
             "panic" => {
-                panic!("Oh no, panic!");
+
+                KERNEL_SCHEDULER.critical(|_| {
+                    panic!("Oh no, panic!");
+                });
+
             }
             "exit" => {
                 self.dead_shell = true;

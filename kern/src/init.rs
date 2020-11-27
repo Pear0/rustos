@@ -215,13 +215,13 @@ unsafe fn kinit(boot_x0: u64, boot_x1: u64, boot_x2: u64) -> ! {
     // for now, always boot hypervisor
     if current_el() == 2 && false {
         el2_init();
-        khadas::uart::print("hello world 2int El2\r\n");
+        // khadas::uart::print("hello world 2int El2\r\n");
         kmain(true);
     } else {
         el2_init();
         switch_to_el1();
         el1_init();
-        khadas::uart::print("hello world into EL1\r\n");
+        // khadas::uart::print("hello world into EL1\r\n");
         kmain(false);
     }
 }
