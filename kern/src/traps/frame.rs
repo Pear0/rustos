@@ -8,6 +8,10 @@ pub trait Frame {
     fn get_id(&self) -> u64;
 
     fn set_id(&mut self, val: u64);
+
+    fn get_elr(&self) -> u64 {
+        0
+    }
 }
 
 impl KernelTrapFrame {
@@ -65,6 +69,10 @@ impl Frame for KernelTrapFrame {
 
     fn set_id(&mut self, val: u64) {
         self.TPIDR_EL0 = val;
+    }
+
+    fn get_elr(&self) -> u64 {
+        self.ELR_EL1
     }
 }
 

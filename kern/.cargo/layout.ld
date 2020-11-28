@@ -1,4 +1,6 @@
 SECTIONS {
+  .note.gnu.build-id : { *(.note.gnu.build-id) }
+
   . = 0x80000; /* Raspbery Pi 3 Aarch64 (kernel8.img) load address */
 
   /* start of the binary */

@@ -20,6 +20,8 @@ build:
 	@cargo xbuild --release
 	@mkdir -p build
 	@cp -f $(TARGET) build/$(KERN).elf
+	@echo "+ Post processing build/$(KERN).elf [post_process_elf.py]"
+	@python3 $(ROOT)/bin/post_process_elf.py build/$(KERN).elf
 
 	@echo "+ Building build/$(KERN).bin [objcopy]"
 	@$(OBJCPY) $(TARGET) build/$(KERN).bin
@@ -40,6 +42,12 @@ img_build: build
 
 qemu: build
 	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS)
+
+qemu_no_build:
+	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd $(QEMU_ARGS)
+
+clean_qemu:
+
 
 qemu-trace: build
 	./qemu.sh build/$(KERN).bin -drive file=$(SDCARD),format=raw,if=sd -trace enable=guest_mem_before_exec,file=$(TRACE_FILE) $(QEMU_ARGS)

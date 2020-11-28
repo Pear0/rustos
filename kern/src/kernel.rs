@@ -160,11 +160,17 @@ fn configure_timer() {
     if smp::core() == 0 {
         // perf::prepare();
 
+        let mut sample_delay = Duration::from_micros(10);
+        // TODO is qemu
+        if true {
+            sample_delay = Duration::from_millis(10);
+        }
+
         KERNEL_TIMER.critical(|timer| {
-            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_micros(10)), Box::new(|ctx| {
+            timer.add(timing::time_to_cycles::<VirtualCounter>(sample_delay), Box::new(move |ctx| {
 
                 if perf::record_event_kernel(ctx.data) {
-                    ctx.set_period(timing::time_to_cycles::<VirtualCounter>(Duration::from_micros(10)));
+                    ctx.set_period(timing::time_to_cycles::<VirtualCounter>(sample_delay));
                 } else {
                     ctx.set_period(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(100)));
                 }
@@ -197,11 +203,13 @@ pub fn kernel_main() -> ! {
     }));
 
     // initialize local timers for all cores
-    // unsafe { (0x4000_0008 as *mut u32).write_volatile(0x8000_0000) };
-    // unsafe { (0x4000_0040 as *mut u32).write_volatile(0b1010) };
-    // unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
-    // unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
-    // unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
+    if matches!(hw::arch_variant(), ArchVariant::Pi(_)) {
+        unsafe { (0x4000_0008 as *mut u32).write_volatile(0x8000_0000) };
+        unsafe { (0x4000_0040 as *mut u32).write_volatile(0b1010) };
+        unsafe { (0x4000_0044 as *mut u32).write_volatile(0b1010) };
+        unsafe { (0x4000_0048 as *mut u32).write_volatile(0b1010) };
+        unsafe { (0x4000_004C as *mut u32).write_volatile(0b1010) };
+    }
 
     info!("init irq3");
 
@@ -277,9 +285,10 @@ pub fn kernel_main() -> ! {
 
     // DTB items: usb_pwr, usb3_pcie_phy
 
-    debug!("start some processes");
-
-    // pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
+    if matches!(hw::arch_variant(), ArchVariant::Pi(_)) {
+        // TODO this causes problems on qemu...
+        // pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
+    }
 
     // Stable
 
@@ -307,9 +316,10 @@ pub fn kernel_main() -> ! {
 
     // UART regs: (0b10000100000011111100000000, 0b1011000000000000)
 
+    info!("filesystem init");
     unsafe { FILESYSTEM2.initialize() };
 
-
+    info!("start some processes");
     {
         let mut proc = KernelProcess::kernel_process("shell".to_owned(), my_thread).unwrap();
         proc.set_stdio(Arc::new(Source::KernSerial), Arc::new(Sink::KernSerial));
@@ -318,7 +328,7 @@ pub fn kernel_main() -> ! {
 
     {
         let mut proc = KernelProcess::kernel_process_old("pipe".to_owned(), PipeService::task_func).unwrap();
-        proc.priority = Priority::Highest;
+        // proc.priority = Priority::Highest;
         KERNEL_SCHEDULER.add(proc);
     }
 
@@ -334,9 +344,7 @@ pub fn kernel_main() -> ! {
     }
 
     {
-        let proc = KernelProcess::kernel_process("dwmac".to_owned(), |ctx| {
-            // dwmac::do_stuff::<DwMacHooks>(&NOCACHE_PAGE_ALLOC);
-        }).unwrap();
+        let proc = KernelProcess::kernel_process("perf streamer".to_owned(), perf::perf_stream_proc).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
 
@@ -375,6 +383,7 @@ pub fn kernel_main() -> ! {
     //     kprintln!("Baz");
     // });
 
+    info!("Starting other cores");
     smp::run_no_return(|| {
         let core = smp::core();
         pi::timer::spin_sleep(Duration::from_millis(4 * core as u64));
@@ -385,7 +394,7 @@ pub fn kernel_main() -> ! {
     });
 
     timing::sleep_phys(Duration::from_millis(50));
-    debug!("Core 0 starting scheduler");
+    info!("Core 0 starting scheduler");
 
     KERNEL_SCHEDULER.start();
 }

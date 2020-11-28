@@ -9,6 +9,9 @@ rustflags = [
     "-C", "link-arg=--no-dynamic-linker",
     "-C", "link-arg=--no-dynamic-linker",
 
+    # add a build id the ELF
+    "-C", "link-arg=--build-id=sha1",
+
     "-C", "force-frame-pointers=on",
 
     # link to libsd.a

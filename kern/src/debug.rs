@@ -18,6 +18,9 @@ extern "C" {
     static __code_end: u8;
 }
 
+#[no_mangle]
+pub static BUILD_ID: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+
 pub fn address_maybe_code(num: u64) -> bool {
     unsafe { num >= (&__code_beg as *const u8 as u64) && num <= (&__code_end as *const u8 as u64) }
 }

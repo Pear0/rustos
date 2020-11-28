@@ -48,7 +48,7 @@ pub(crate) fn write_u32(addr: usize, value: u32) {
 }
 
 pub(crate) fn read_u32_poll<H: Hooks, F>(addr: usize, mut val: Option<&mut u32>, break_fn: F) where F: Fn(u32) -> bool {
-    let end = H::system_time() + Duration::from_secs(1);
+    let end = H::system_time() + Duration::from_millis(50);
 
     loop {
         let v = read_u32(addr);

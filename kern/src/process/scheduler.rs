@@ -89,8 +89,11 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
 
     fn switch_to_locked(scheduler: &mut Scheduler<T>, tf: &mut T::Frame) -> Id {
         if let Some(id) = scheduler.switch_to(tf) {
+            // let proc = scheduler.processes.iter().find(|f| f.context.get_id() == id);
+            // info!("switched to {} {:#x} - {}", id, tf.get_elr(), proc.map(|f| f.name.as_str()).unwrap_or("<unknown>"));
             id
         } else {
+            // info!("idle");
             scheduler.schedule_idle_task(tf)
         }
     }
@@ -189,7 +192,7 @@ impl GlobalScheduler<KernelImpl> {
 
         KERNEL_TIMER.critical(|timer| {
             let mut skip_ticks = AtomicU32::new(10);
-            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(5)), Box::new(move |ctx| {
+            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(10)), Box::new(move |ctx| {
                 if IRQ_RECURSION_DEPTH.get() > 1 {
                     ctx.no_reschedule();
                 } else {
