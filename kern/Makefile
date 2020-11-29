@@ -24,7 +24,7 @@ build:
 	@python3 $(ROOT)/bin/post_process_elf.py build/$(KERN).elf
 
 	@echo "+ Building build/$(KERN).bin [objcopy]"
-	@$(OBJCPY) $(TARGET) build/$(KERN).bin
+	@$(OBJCPY) build/$(KERN).elf build/$(KERN).bin
 
 	# mkimage -A arm64 -C none -f auto -a 0x80000 -e 0x80000 -n 'kernel' -d build/$(KERN).bin:build/$(KERN).elf build/uImage
 	gzip -fk build/$(KERN).elf

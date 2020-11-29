@@ -147,6 +147,17 @@ impl MutexGuard<'_, Console> {
         }
     }
 
+    fn try_write_byte(&mut self, byte: u8) -> bool {
+        if let Some(ext) = &mut self.ext {
+            let inserted = ext.send_buffer.insert(byte);
+            self.send_and_update_interrupts();
+            inserted
+        } else {
+            self.inner().write_byte(byte);
+            true // MiniUart::write_byte() will wait for us.
+        }
+    }
+
     pub fn flush(&mut self) {
         if let None = &self.ext {
             return;

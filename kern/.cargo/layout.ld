@@ -1,6 +1,4 @@
 SECTIONS {
-  .note.gnu.build-id : { *(.note.gnu.build-id) }
-
   . = 0x80000; /* Raspbery Pi 3 Aarch64 (kernel8.img) load address */
 
   /* start of the binary */
@@ -38,6 +36,8 @@ SECTIONS {
   /* number of bytes in BSS section and complete binary */
   __bss_len = (__bss_end - __bss_beg);
   __text_len = (__text_end - __text_beg);
+
+  .note.gnu.build-id : { *(.note.gnu.build-id) }
 
   /DISCARD/ : { *(.comment) *(.gnu*) *(.note*) *(.eh_frame*) }
 }
