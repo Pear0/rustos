@@ -19,9 +19,13 @@ build:
 	@echo "+ Building build/$(KERN).elf [xbuild/$@]"
 	@cargo xbuild --release
 	@mkdir -p build
-	@cp -f $(TARGET) build/$(KERN).elf
 	@echo "+ Post processing build/$(KERN).elf [post_process_elf.py]"
-	@python3 $(ROOT)/bin/post_process_elf.py build/$(KERN).elf
+	@python3 $(ROOT)/bin/post_process_elf.py $(TARGET)
+
+	# force an atomic rename to build/$(KERN).elf for anything
+	# watching the file.
+	@cp -f $(TARGET) build/$(KERN).elf.new
+	@mv -f build/$(KERN).elf.new build/$(KERN).elf
 
 	@echo "+ Building build/$(KERN).bin [objcopy]"
 	@$(OBJCPY) build/$(KERN).elf build/$(KERN).bin

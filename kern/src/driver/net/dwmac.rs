@@ -53,7 +53,7 @@ impl Physical for DwMac1000 {
 
     fn send_frame(&self, frame: &Frame) -> Option<()> {
         let mut gmac = self.gmac.lock();
-        info!("sending frame... {}", frame.1);
+        debug!("sending frame... {}", frame.1);
         if let Err(e) = gmac.transmit_frame(frame.as_slice()) {
             info!("failed to send frame: {:?}", e);
             return None;

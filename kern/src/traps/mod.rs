@@ -56,6 +56,7 @@ pub struct Info {
 pub static IRQ_RECURSION_DEPTH: CoreLocal<Cell<i32>> = CoreLocal::new_cell(0);
 pub static IRQ_ESR: CoreLocal<Cell<u32>> = CoreLocal::new_cell(0xFF_FF_FF_FF);
 pub static IRQ_EL: CoreLocal<Cell<u64>> = CoreLocal::new_cell(0xFF_FF_FF_FF);
+pub static IRQ_FP: CoreLocal<Cell<u64>> = CoreLocal::new_cell(0xFF_FF_FF_FF);
 pub static IRQ_INFO: CoreLocal<Cell<Info>> = CoreLocal::new_cell(Info { kind: Kind::None, source: Source::CurrentSpEl0 });
 
 pub fn irq_depth() -> i32 {

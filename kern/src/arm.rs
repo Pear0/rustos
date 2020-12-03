@@ -4,6 +4,7 @@ use core::marker::PhantomData;
 use core::time::Duration;
 
 use aarch64::regs::*;
+use crate::mutex::Mutex;
 
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 
@@ -173,56 +174,108 @@ impl<'a, T> TimerCtx<'a, T> {
 type TimerFunc<T> = Box<dyn Fn(&mut TimerCtx<T>) + Send>;
 
 struct Timer<T> {
+    priority: u64,
     cycle_period: u64,
     next_compare: u64,
-    func: TimerFunc<T>,
+    enabled: bool,
+    func: Option<TimerFunc<T>>,
 }
 
-pub struct TimerController<T, C: GenericCounterImpl> {
+struct TimerControllerImpl<T, C: GenericCounterImpl> {
     timers: Vec<Timer<T>>,
-    remove_list: Vec<usize>,
+    min_priority: u64,
     _phantom: PhantomData<C>,
 }
 
-impl<T, C: GenericCounterImpl> TimerController<T, C> {
-    pub fn new() -> Self {
-        Self { timers: Vec::new(), remove_list: Vec::new(), _phantom: PhantomData::default() }
-    }
-
+impl<T, C: GenericCounterImpl> TimerControllerImpl<T, C> {
     fn set_compare(&mut self) {
-        let min = self.timers.iter().map(|x| x.next_compare).min();
+        let min = self.timers.iter()
+            .filter(|x| x.enabled)
+            .map(|x| x.next_compare)
+            .min();
         if let Some(min) = min {
             C::set_compare(min);
         }
         C::set_interrupt_enabled(self.timers.len() > 0);
     }
+}
 
-    pub fn add(&mut self, period: u64, func: TimerFunc<T>) {
+pub struct TimerController<T, C: GenericCounterImpl> {
+    inner: Mutex<TimerControllerImpl<T, C>>
+}
+
+impl<T, C: GenericCounterImpl> TimerController<T, C> {
+    pub fn new() -> Self {
+        Self {
+            inner: Mutex::new(TimerControllerImpl {
+                timers: Vec::new(),
+                min_priority: 0,
+                _phantom: PhantomData::default()
+            })
+        }
+    }
+
+    pub fn add(&self, priority: u64, period: u64, func: TimerFunc<T>) {
+        let mut lock = self.inner.lock();
+
         let compare = C::get_counter() + period;
-        self.timers.push(Timer { cycle_period: period, next_compare: compare, func });
-        self.timers.sort_by_key(|x| x.cycle_period);
+        lock.timers.push(Timer {
+            priority,
+            cycle_period: period,
+            next_compare: compare,
+            enabled: true,
+            func: Some(func),
+        });
+        lock.timers.sort_by_key(|x| x.cycle_period);
 
-        self.set_compare();
+        lock.set_compare();
     }
 
     // returns true if interrupts must be disabled.
-    pub fn process_timers(&mut self, data: &mut T) -> bool {
+    //noinspection RsDropRef
+    #[inline(never)]
+    pub fn process_timers<F>(&self, data: &mut T, mut int_func: F) -> bool where F: FnMut(&mut dyn FnMut()) {
         if !C::interrupted() {
             return false;
         }
 
-        self.remove_list.clear();
+        let mut lock = self.inner.lock();
 
         let mut updated_compare = false;
 
         let now = C::get_counter();
-        for (i, timer) in self.timers.iter_mut().enumerate() {
-            if now >= timer.next_compare {
+        let mut i = 0;
+        while i < lock.timers.len() {
+            let lock_min_priority = lock.min_priority;
+            let mut timer = &mut lock.timers[i];
+            let timer_priority = timer.priority;
+
+            if timer.enabled && now >= timer.next_compare && timer_priority >= lock_min_priority {
                 let mut ctx = TimerCtx::new(data);
-                (timer.func)(&mut ctx);
+
+                // take ownership of function then drop reference.
+                // This way we can access raw lock again and open a lock recursion context.
+                let mut func = core::mem::replace(&mut timer.func, None);
+                core::mem::drop(timer);
+
+                // upgrade priority so that only higher priority timers execute.
+                lock.min_priority = timer_priority + 1;
+
+                lock.recursion(|| {
+
+                    int_func(&mut || {
+                        (func.as_mut().unwrap())(&mut ctx);
+                    });
+
+                });
+
+                lock.min_priority = lock_min_priority;
+
+                let mut timer = &mut lock.timers[i];
+                timer.func = func;
 
                 if ctx.remove {
-                    self.remove_list.push(i);
+                    timer.enabled = false;
                     continue;
                 }
 
@@ -235,14 +288,12 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
                     updated_compare = true;
                 }
             }
-        }
 
-        for i in self.remove_list.drain(..).rev() {
-            self.timers.remove(i);
+            i += 1;
         }
 
         if updated_compare {
-            self.set_compare();
+            lock.set_compare();
         }
 
         !updated_compare

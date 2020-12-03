@@ -91,6 +91,12 @@ pub fn stack_walker() -> impl Iterator<Item=StackFrame> {
     StackIter(ptr)
 }
 
+#[inline(never)]
+pub unsafe fn stack_walker_bp(bp: u64) -> impl Iterator<Item=StackFrame> {
+    let ptr = bp as *const StackFrame;
+    StackIter(ptr)
+}
+
 /// Simple unsafe container to hold globally allocated debug data.
 struct UnsafeContainer<T> {
     inner: UnsafeCell<T>,

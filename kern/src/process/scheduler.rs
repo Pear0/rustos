@@ -190,20 +190,18 @@ impl GlobalScheduler<KernelImpl> {
         //     reset_timer();
         // }));
 
-        KERNEL_TIMER.critical(|timer| {
-            let mut skip_ticks = AtomicU32::new(10);
-            timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(10)), Box::new(move |ctx| {
-                if IRQ_RECURSION_DEPTH.get() > 1 {
-                    ctx.no_reschedule();
+        let mut skip_ticks = AtomicU32::new(10);
+        KERNEL_TIMER.add(5, timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(10)), Box::new(move |ctx| {
+            if IRQ_RECURSION_DEPTH.get() > 1 {
+                ctx.no_reschedule();
+            } else {
+                if skip_ticks.load(Ordering::Relaxed) <= 0 {
+                    KERNEL_SCHEDULER.switch(State::Ready, ctx.data);
                 } else {
-                    if skip_ticks.load(Ordering::Relaxed) <= 0 {
-                        KERNEL_SCHEDULER.switch(State::Ready, ctx.data);
-                    } else {
-                        skip_ticks.fetch_sub(1, Ordering::Relaxed);
-                    }
+                    skip_ticks.fetch_sub(1, Ordering::Relaxed);
                 }
-            }));
-        });
+            }
+        }));
     }
 }
 
@@ -218,7 +216,7 @@ impl GlobalScheduler<HyperImpl> {
         }
 
         HYPER_TIMER.critical(|timer| {
-            timer.add(timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_millis(5)), Box::new(|ctx| {
+            timer.add(5, timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_millis(5)), Box::new(|ctx| {
                 if IRQ_RECURSION_DEPTH.get() > 1 {
                     ctx.no_reschedule();
                 } else {

@@ -20,7 +20,7 @@ use crate::process::{GlobalScheduler, Id, KernelImpl, KernelProcess, KernProcess
 use crate::process::fd::FileDescriptor;
 use crate::traps::irq::Irq;
 use crate::vm::VMManager;
-use crate::cls::{CoreGlobal, CoreLocal};
+use crate::cls::{CoreGlobal, CoreLocal, CoreLazy};
 use crate::arm::{TimerController, VirtualCounter, PhysicalCounter};
 use crate::traps::KernelTrapFrame;
 use crate::debug::initialize_debug;
@@ -39,10 +39,10 @@ use crate::hw::ArchVariant;
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
 
-pub static KERNEL_TIMER: CoreGlobal<TimerController<KernelTrapFrame, VirtualCounter>> = CoreLocal::new_global(|| TimerController::new());
+pub static KERNEL_TIMER: CoreLazy<TimerController<KernelTrapFrame, VirtualCounter>> = CoreLocal::new_lazy(|| TimerController::new());
 
 
-fn network_thread() -> ! {
+fn network_thread(ctx: KernProcessCtx) {
 
     // let serial = crate::mbox::with_mbox(|mbox| mbox.serial_number()).expect("could not get serial number");
     //
@@ -153,7 +153,7 @@ fn configure_timer() {
     // TODO only used on Pi
     KERNEL_IRQ.register_core(crate::smp::core(), CoreInterrupt::CNTVIRQ, Box::new(|tf| {
         smp::no_interrupt(|| {
-            KERNEL_TIMER.critical(|timer| timer.process_timers(tf));
+            KERNEL_TIMER.process_timers(tf, |func| func());
         });
     }));
 
@@ -163,29 +163,27 @@ fn configure_timer() {
         let mut sample_delay = Duration::from_micros(10);
         // TODO is qemu
         if true {
-            sample_delay = Duration::from_millis(10);
+            sample_delay = Duration::from_micros(500);
         }
 
-        KERNEL_TIMER.critical(|timer| {
-            timer.add(timing::time_to_cycles::<VirtualCounter>(sample_delay), Box::new(move |ctx| {
+        KERNEL_TIMER.add(10, timing::time_to_cycles::<VirtualCounter>(sample_delay), Box::new(move |ctx| {
 
-                if perf::record_event_kernel(ctx.data) {
-                    ctx.set_period(timing::time_to_cycles::<VirtualCounter>(sample_delay));
-                } else {
-                    ctx.set_period(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(100)));
-                }
-                // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);
-                // if IRQ_RECURSION_DEPTH.get() > 1 {
-                //     TIMER_EVENTS_EXC.fetch_add(1, Ordering::Relaxed);
-                // }
-            }));
+            if perf::record_event_kernel(ctx.data) {
+                ctx.set_period(timing::time_to_cycles::<VirtualCounter>(sample_delay));
+            } else {
+                ctx.set_period(timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(100)));
+            }
+            // TIMER_EVENTS.fetch_add(1, Ordering::Relaxed);
+            // if IRQ_RECURSION_DEPTH.get() > 1 {
+            //     TIMER_EVENTS_EXC.fetch_add(1, Ordering::Relaxed);
+            // }
+        }));
 
-            // timer.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_secs(50)), Box::new(|ctx| {
-            //     ctx.remove_timer();
-            //     // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
-            //     perf::dump_events();
-            // }));
-        });
+        // KERNEL_TIMER.add(timing::time_to_cycles::<VirtualCounter>(Duration::from_secs(50)), Box::new(|ctx| {
+        //     ctx.remove_timer();
+        //     // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
+        //     perf::dump_events();
+        // }));
     }
 }
 
@@ -338,7 +336,7 @@ pub fn kernel_main() -> ! {
     }
 
     if true || !hw::is_qemu() || matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
-        let mut proc = KernelProcess::kernel_process_old("net thread".to_owned(), network_thread).unwrap();
+        let mut proc = KernelProcess::kernel_process("net thread".to_owned(), network_thread).unwrap();
         proc.affinity.set_only(0);
         KERNEL_SCHEDULER.add(proc);
     }

@@ -55,6 +55,9 @@ kernel_context_save:
     // Save our link register because we need to return here
     stp xzr, lr, [SP, #-16]!
 
+    // zero frame register for any stack unwinding
+    mov x29, xzr
+
     bl kernel_handle_exception
 
     ldp xzr, lr, [SP], #16

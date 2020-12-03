@@ -282,18 +282,18 @@ impl<T> Mutex<T> {
         if !Self::has_mmu() {
             panic!("cannot use increment_recursion() before CAS is available");
         }
-        let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Relaxed));
+        let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Acquire));
         unit.recursion += 1;
-        self.inner.lock_unit.store(encode_unit(unit), Ordering::Relaxed);
+        self.inner.lock_unit.store(encode_unit(unit), Ordering::Release);
     }
 
     fn decrement_recursion(&self) {
         if !Self::has_mmu() {
             panic!("cannot use increment_recursion() before CAS is available");
         }
-        let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Relaxed));
+        let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Acquire));
         unit.recursion -= 1;
-        self.inner.lock_unit.store(encode_unit(unit), Ordering::Relaxed);
+        self.inner.lock_unit.store(encode_unit(unit), Ordering::Release);
     }
 
     fn unlock(&self) {

@@ -7,7 +7,7 @@ use crate::{debug, shell, smp, hw, timing};
 use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER, KERNEL_TIMER};
 use crate::param::{PAGE_MASK, PAGE_SIZE, USER_IMG_BASE};
 use crate::process::State;
-use crate::traps::{Info, IRQ_EL, IRQ_ESR, IRQ_INFO, IRQ_RECURSION_DEPTH, KernelTrapFrame, Kind};
+use crate::traps::{Info, IRQ_EL, IRQ_ESR, IRQ_INFO, IRQ_RECURSION_DEPTH, KernelTrapFrame, Kind, IRQ_FP};
 use crate::traps::Kind::Synchronous;
 use crate::traps::syndrome::Syndrome;
 use crate::traps::syscall::handle_syscall;
@@ -25,7 +25,7 @@ enum IrqVariant {
 fn handle_irqs(tf: &mut KernelTrapFrame) {
 
     if hw::not_pi() {
-        KERNEL_TIMER.critical(|d| d.process_timers(tf));
+        KERNEL_TIMER.process_timers(tf, |func| func());
         return;
     }
 
@@ -177,7 +177,7 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
             IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
 
             // interrupts are disabled here:
-            disable_interrupts = KERNEL_TIMER.critical(|timer| timer.process_timers(tf));
+            disable_interrupts = KERNEL_TIMER.process_timers(tf, |func| func());
 
             IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
         }
@@ -193,11 +193,23 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
         IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
         IRQ_ESR.set(esr);
         IRQ_EL.set(tf.ELR_EL1);
+        IRQ_FP.set(tf.regs[29]);
         IRQ_INFO.set(info);
 
         // try to handle timers sooner
         if is_timer {
-            KERNEL_TIMER.critical(|timer| timer.process_timers(tf));
+            KERNEL_TIMER.process_timers(tf, |func| {
+
+                // enable general IRQ, so we can get interrupted by the timer.
+                unsafe { DAIF.set(DAIF::D | DAIF::A | DAIF::F) };
+
+                func();
+
+                // disable interrupts again, IRQ_RECURSION_DEPTH will be wrong and a recursive
+                // interrupt won't realize it is recursive.
+                unsafe { DAIF.set(DAIF::D | DAIF::A | DAIF::I | DAIF::F) };
+
+            });
         }
 
         {
@@ -210,6 +222,8 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
             // interrupt won't realize it is recursive.
             unsafe { DAIF.set(DAIF::D | DAIF::A | DAIF::I | DAIF::F) };
         }
+
+        IRQ_EL.set(0xFF_FF_FF_FF);
 
         IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
     }

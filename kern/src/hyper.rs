@@ -111,7 +111,7 @@ static foo: AtomicUsize = AtomicUsize::new(0);
 fn configure_timer() {
     HYPER_IRQ.register_core(crate::smp::core(), CoreInterrupt::CNTHPIRQ, Box::new(|tf| {
         smp::no_interrupt(|| {
-            HYPER_TIMER.critical(|timer| timer.process_timers(tf));
+            HYPER_TIMER.critical(|timer| timer.process_timers(tf, |func| func()));
         });
     }));
 
@@ -119,7 +119,7 @@ fn configure_timer() {
         perf::prepare();
 
         HYPER_TIMER.critical(|timer| {
-            timer.add(timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_micros(10)), Box::new(|ctx| {
+            timer.add(10, timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_micros(10)), Box::new(|ctx| {
                 if foo.fetch_add(1, Ordering::Relaxed) < 10 {
                     return;
                 }
@@ -133,7 +133,7 @@ fn configure_timer() {
                 // }
             }));
 
-            timer.add(timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_secs(50)), Box::new(|ctx| {
+            timer.add(10, timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_secs(50)), Box::new(|ctx| {
                 ctx.remove_timer();
                 // info!("Timer events: {}, exc:{}", TIMER_EVENTS.load(Ordering::Relaxed), TIMER_EVENTS_EXC.load(Ordering::Relaxed));
                 perf::dump_events();

@@ -2,7 +2,7 @@ use core::ops::Deref;
 use core::cell::Cell;
 use aarch64::MPIDR_EL1;
 use crate::mutex::{MutexGuard, Mutex};
-use crate::iosync::Global;
+use crate::iosync::{Global, Lazy};
 
 const CORE_COUNT: usize = 4;
 
@@ -14,14 +14,6 @@ unsafe impl<T> Sync for CoreLocal<T> {}
 impl<T> CoreLocal<T> {
     pub fn new_func<F: Fn() -> T>(init: F) -> Self {
         CoreLocal([init(), init(), init(), init()])
-    }
-
-    pub const fn new_global(init: fn() -> T) -> CoreLocal<Global<T>> {
-        CoreLocal([Global::new(init), Global::new(init), Global::new(init), Global::new(init)])
-    }
-
-    pub fn cross(&self, core: usize) -> &T {
-        &self.0[core]
     }
 }
 
@@ -37,9 +29,31 @@ impl<T: Copy> CoreLocal<T> {
     }
 }
 
+impl<T> CoreLocal<Global<T>> {
+    #[track_caller]
+    pub const fn new_global(init: fn() -> T) -> Self {
+        CoreLocal([Global::new(init), Global::new(init), Global::new(init), Global::new(init)])
+    }
+
+    pub fn cross(&self, core: usize) -> &Global<T> {
+        &self.0[core]
+    }
+}
+
+impl<T> CoreLocal<Lazy<T>> {
+    #[track_caller]
+    pub const fn new_lazy(init: fn() -> T) -> Self {
+        CoreLocal([Lazy::new(init), Lazy::new(init), Lazy::new(init), Lazy::new(init)])
+    }
+}
+
 impl<T: Copy> CoreLocal<Cell<T>> {
     pub const fn new_cell(init: T) -> Self {
         CoreLocal([Cell::new(init), Cell::new(init), Cell::new(init), Cell::new(init)])
+    }
+
+    pub fn cross(&self, core: usize) -> &Cell<T> {
+        &self.0[core]
     }
 }
 
@@ -102,4 +116,4 @@ impl<T> Deref for CoreMutex<T>  {
 }
 
 pub type CoreGlobal<T> = CoreLocal<Global<T>>;
-
+pub type CoreLazy<T> = CoreLocal<Lazy<T>>;

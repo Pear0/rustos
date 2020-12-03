@@ -89,7 +89,7 @@ const GMAC_CUR_HOST_TX_DESC: usize = DMA_HOST_TX_DESC;
 const GMAC_CUR_HOST_RX_DESC: usize = DMA_HOST_RX_DESC;
 const CHECK_ALL_RX_DESC: bool = true;
 
-
+const LOGGING: bool = false;
 
 #[derive(Copy, Clone, Debug)]
 pub enum FlushType {
@@ -320,7 +320,7 @@ impl GmacTxRing {
 
         let idx = self.tx_queue.next_id().ok_or("no free tx queue space")?;
 
-        if log_enabled!(Info) {
+        if LOGGING && log_enabled!(Info) {
             info!("using buf index: {}", idx);
         }
 
@@ -630,11 +630,13 @@ impl TxQueue {
     }
 
     pub fn vacuum<H: Hooks>(&mut self) {
-        info!("vacuum sending:{} next:{}", self.sending_idx, self.next_idx);
+        if LOGGING && log_enabled!(Info) {
+            info!("vacuum sending:{} next:{}", self.sending_idx, self.next_idx);
+        }
         while self.sending_idx != self.next_idx {
             H::memory_barrier();
 
-            {
+            if LOGGING && log_enabled!(Info) {
                 let des0 = self.dma_tx[self.sending_idx].0.des0.get();
                 let des1 = self.dma_tx[self.sending_idx].0.des1.get();
                 info!("sending[{}]: des0:{:#x}, des1:{:#x}", self.sending_idx, des0, des1);
@@ -646,7 +648,7 @@ impl TxQueue {
 
             H::memory_barrier();
 
-            if log_enabled!(Info) {
+            if LOGGING && log_enabled!(Info) {
                 info!("vacuum index: {}", self.sending_idx);
             }
 

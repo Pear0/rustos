@@ -211,7 +211,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
             IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() + 1);
 
             // interrupts are disabled here:
-            disable_interrupts = HYPER_TIMER.critical(|timer| timer.process_timers(tf));
+            disable_interrupts = HYPER_TIMER.critical(|timer| timer.process_timers(tf, |func| func()));
 
             IRQ_RECURSION_DEPTH.set(IRQ_RECURSION_DEPTH.get() - 1);
         }
@@ -231,7 +231,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
 
         // try to handle timers sooner
         if is_timer {
-            HYPER_TIMER.critical(|timer| timer.process_timers(tf));
+            HYPER_TIMER.critical(|timer| timer.process_timers(tf, |func| func()));
         }
 
         {
