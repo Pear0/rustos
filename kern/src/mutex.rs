@@ -1,25 +1,30 @@
+use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::fmt::Alignment::Left;
+use core::intrinsics::likely;
 use core::ops::{Deref, DerefMut, Drop};
 use core::panic::Location;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::sync::atomic::AtomicU64;
 use core::time::Duration;
 
+use crossbeam_utils::atomic::AtomicCell;
+
 use aarch64::{MPIDR_EL1, SCTLR_EL1, SCTLR_EL2, SP};
 
-use crate::{smp, timing, traps, hw};
-use crate::sync::atomic_registry::{RegistryGuard, RegistryGuarded, Registry};
-use crossbeam_utils::atomic::AtomicCell;
-use alloc::sync::Arc;
+use crate::{hw, smp, timing, traps};
 use crate::arm::PhysicalCounter;
+use crate::sync::atomic_registry::{Registry, RegistryGuard, RegistryGuarded};
 
 type EncUnit = u64;
 
 struct Unit {
-    core: u64, // max u2
-    count: u64, // max u16
+    /// max u2
+    core: u64,
+
+    /// max u16
+    count: u64,
     recursion: u64, // max u16
 }
 
@@ -42,7 +47,6 @@ pub unsafe fn init_registry() {
 
     let reg = Registry::new_size(10000);
     MUTEX_REGISTRY.store(Some(reg));
-
 }
 
 // all the shared fields
@@ -65,7 +69,7 @@ impl RegistryGuarded for MutexInner {
     }
 }
 
-#[repr(align(32))]
+#[repr(align(64))]
 pub struct Mutex<T> {
     pub inner: MutexInner,
     data: UnsafeCell<T>,
@@ -147,7 +151,7 @@ impl<T> Mutex<T> {
     // need any real synchronization.
     #[track_caller]
     pub fn try_lock(&self, trying_for: Duration) -> Option<MutexGuard<T>> {
-        if Self::has_mmu() {
+        if unsafe { likely(Self::has_mmu()) } {
             let this = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
             let current_unit = self.inner.lock_unit.load(Ordering::Relaxed);
             let mut unit = decode_unit(current_unit);
@@ -172,7 +176,7 @@ impl<T> Mutex<T> {
             }
 
             self.inner.owner.store(this, Ordering::Relaxed);
-            self.inner.locked_at.store( timing::clock_time::<PhysicalCounter>().as_millis() as u64, Ordering::SeqCst);
+            self.inner.locked_at.store(timing::clock_time::<PhysicalCounter>().as_millis() as u64, Ordering::SeqCst);
 
             unsafe { *self.inner.lock_name.get() = Location::caller() };
 
@@ -212,11 +216,17 @@ impl<T> Mutex<T> {
     #[inline(always)]
     #[track_caller]
     pub fn lock(&self) -> MutexGuard<T> {
-        use core::fmt::Write;
-
         if let Some(g) = self.lock_timeout(Duration::from_secs(30)) {
             return g;
         }
+
+        self.lock_failed(Location::caller())
+    }
+
+    #[inline(never)]
+    #[track_caller]
+    fn lock_failed(&self, loc: &'static Location) -> ! {
+        use core::fmt::Write;
 
         // grab lock
         while ERR_LOCK.compare_and_swap(false, true, Ordering::SeqCst) != false {}
@@ -240,7 +250,7 @@ impl<T> Mutex<T> {
         let core = smp::core();
         let irq = traps::irq_depth();
 
-        writeln!(&mut uart, "my trace: {} @ {:?}    irqd={}", core, Location::caller(), irq);
+        writeln!(&mut uart, "my trace: {} @ {:?}    irqd={}", core, loc, irq);
         for addr in crate::debug::stack_scanner(sp, None) {
             writeln!(&mut uart, "0x{:08x}", addr);
         }
