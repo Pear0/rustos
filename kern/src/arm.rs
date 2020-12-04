@@ -178,7 +178,17 @@ struct Timer<T> {
     cycle_period: u64,
     next_compare: u64,
     enabled: bool,
+    stat_check_count: usize,
     func: Option<TimerFunc<T>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TimerInfo {
+    pub priority: u64,
+    pub cycle_period: u64,
+    pub next_compare: u64,
+    pub enabled: bool,
+    pub stat_check_count: usize,
 }
 
 struct TimerControllerImpl<T, C: GenericCounterImpl> {
@@ -224,6 +234,7 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
             cycle_period: period,
             next_compare: compare,
             enabled: true,
+            stat_check_count: 0,
             func: Some(func),
         });
         lock.timers.sort_by_key(|x| x.cycle_period);
@@ -249,6 +260,8 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
             let lock_min_priority = lock.min_priority;
             let mut timer = &mut lock.timers[i];
             let timer_priority = timer.priority;
+
+            timer.stat_check_count += 1;
 
             if timer.enabled && now >= timer.next_compare && timer_priority >= lock_min_priority {
                 let mut ctx = TimerCtx::new(data);
@@ -298,6 +311,28 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
 
         !updated_compare
     }
+
+    pub fn get_timer_info(&self, infos: &mut Vec<TimerInfo>) -> usize {
+        let mut lock = self.inner.lock();
+
+        infos.clear();
+        for timer in &lock.timers {
+            if infos.len() == infos.capacity() {
+                break;
+            }
+
+            infos.push(TimerInfo {
+                priority: timer.priority,
+                cycle_period: timer.cycle_period,
+                next_compare: timer.next_compare,
+                enabled: timer.enabled,
+                stat_check_count: timer.stat_check_count,
+            })
+        }
+
+        lock.timers.len()
+    }
+
 }
 
 

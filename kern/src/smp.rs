@@ -7,6 +7,7 @@ use crate::{init, BootVariant};
 use crate::mutex::Mutex;
 use crate::console::{CONSOLE, console_flush};
 use crate::mbox::EveryTimer;
+use crate::traps::IRQ_RECURSION_DEPTH;
 
 pub const MAX_CORES: usize = 4;
 
@@ -168,31 +169,50 @@ pub fn run_on_all_cores(func: fn()) {
     run_on_secondary_cores(func);
 }
 
-#[inline(always)]
-pub fn no_interrupt<T, R>(func: T) -> R
-    where T: (FnOnce() -> R) {
-    use aarch64::regs::*;
+pub struct CriticalGuard {
+    restore_daif: u64,
+}
 
-    let int = DAIF::D | DAIF::A | DAIF::I | DAIF::F;
+impl !Sync for CriticalGuard {}
+impl !Send for CriticalGuard {}
 
-    unsafe {
-        let orig = DAIF.get_masked(int);
-        DAIF.set(int);
-        aarch64::dsb();
-        let r = func();
-        aarch64::dsb();
-        DAIF.set(orig);
-        r
+impl Drop for CriticalGuard {
+    fn drop(&mut self) {
+        use aarch64::regs::*;
+        unsafe {
+            aarch64::dsb();
+            DAIF.set(self.restore_daif);
+        }
     }
 }
 
+pub fn interrupt_guard() -> CriticalGuard {
+    use aarch64::regs::*;
+    let full_mask = DAIF::D | DAIF::A | DAIF::I | DAIF::F;
 
+    unsafe {
+        let restore_daif = DAIF.get_masked(full_mask);
+        DAIF.set(full_mask);
+        aarch64::dsb();
 
+        CriticalGuard { restore_daif }
+    }
+}
 
+pub fn interrupt_guard_outside_exc() -> Option<CriticalGuard> {
+    if IRQ_RECURSION_DEPTH.get() == 0 {
+        Some(interrupt_guard())
+    } else {
+        None
+    }
+}
 
+#[inline(always)]
+pub fn no_interrupt<T, R>(func: T) -> R
+    where T: (FnOnce() -> R) {
 
-
-
-
-
-
+    let guard = interrupt_guard();
+    let r = func();
+    drop(guard);
+    r
+}

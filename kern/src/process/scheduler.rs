@@ -36,7 +36,10 @@ fn reset_timer() {
     use aarch64::regs::*;
 
     match BootVariant::get_variant() {
-        BootVariant::Kernel => VirtualCounter::set_timer_duration(Duration::from_millis(10)),
+        BootVariant::Kernel => {
+
+            // VirtualCounter::set_timer_duration(Duration::from_millis(10))
+        },
         BootVariant::Hypervisor => HyperPhysicalCounter::set_timer_duration(Duration::from_millis(5)),
         _ => panic!("somehow got unknown boot variant"),
     }
@@ -50,19 +53,25 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
 
     /// Enter a critical region and execute the provided closure with the
     /// internal scheduler.
+    #[track_caller]
     #[inline(always)]
     pub fn critical<F, R>(&self, f: F) -> R
         where
             F: FnOnce(&mut Scheduler<T>) -> R,
     {
-        smp::no_interrupt(|| {
-            let mut guard = m_lock!(self.0);
-            let r = f(guard.as_mut().expect("scheduler uninitialized"));
-            core::mem::drop(guard);
-            r
-        })
+        // take guard only if we are not in an exception context.
+        // this way the profiling timer can inspect exception context scheduler behavior.
+        // TODO refactor so that a scheduler guard does not need to block interrupts at all.
+        let int_guard = smp::interrupt_guard_outside_exc();
+
+        let mut guard = self.0.lock();
+        let r = f(guard.as_mut().expect("scheduler uninitialized"));
+        drop(guard);
+        drop(int_guard);
+        r
     }
 
+    #[track_caller]
     #[inline(always)]
     pub fn crit_process<F, R>(&self, id: Id, f: F) -> R
         where
@@ -155,10 +164,9 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         // timer::tick_in(TICK);
         // interrupt::Controller::new().enable(pi::interrupt::Interrupt::Timer1);
 
-        use aarch64::regs::*;
+        // use aarch64::regs::*;
 
-        let core = smp::core();
-
+        // let core = smp::core();
         // unsafe { ((0x4000_0040 + 4 * core) as *mut u32).write_volatile(0b1010) };
         aarch64::dsb();
 

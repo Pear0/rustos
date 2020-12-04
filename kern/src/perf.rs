@@ -2,7 +2,7 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 
 use hashbrown::HashMap;
@@ -10,13 +10,16 @@ use hashbrown::HashMap;
 use common::fmt::ByteSize;
 use tracing;
 
-use crate::{debug, NET};
+use crate::{debug, NET, smp};
 use crate::cls::{CoreLocal, CoreMutex};
-use crate::iosync::Global;
+use crate::iosync::{Global, Lazy};
 use crate::net::ipv4;
 use crate::process::KernProcessCtx;
 use crate::traps::{HyperTrapFrame, IRQ_EL, IRQ_FP, IRQ_RECURSION_DEPTH, KernelTrapFrame};
 use crate::traps::hyper::{TM_TOTAL_COUNT, TM_TOTAL_TIME};
+use crate::kernel::{kernel_main, KERNEL_TIMER};
+use crate::arm::VirtualCounter;
+use gimli::AttributeValue::Virtuality;
 
 static CORE_EVENTS: CoreLocal<Global<EventData>> = CoreLocal::new_global(|| EventData {
     initialized: false,
@@ -25,6 +28,10 @@ static CORE_EVENTS: CoreLocal<Global<EventData>> = CoreLocal::new_global(|| Even
     dropped_sample_count: 0,
     dropped_event_count: 0,
     events: VecDeque::new(),
+});
+
+static CORE_STATS: CoreLocal<Lazy<CoreStats>> = CoreLocal::new_lazy(|| CoreStats {
+    total_tick_count: AtomicU64::new(0),
 });
 
 struct EventData {
@@ -62,6 +69,11 @@ impl EventData {
         false
     }
 }
+
+struct CoreStats {
+    pub total_tick_count: AtomicU64,
+}
+
 
 #[derive(Clone, Copy, Debug)]
 struct GuestEvent {
@@ -147,6 +159,7 @@ pub fn record_event_hyper(tf: &mut HyperTrapFrame) -> bool {
 }
 
 pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
+    CORE_STATS.total_tick_count.fetch_add(1, Ordering::Relaxed);
     let mut events = [PerfEvent::Empty; 50];
     let mut events_len = 0;
     let mut append = |event: PerfEvent| {
@@ -218,6 +231,9 @@ pub fn dump_events() {
               ByteSize::from(perf_event),
               ByteSize::from(perf_event * events.events.len()),
               ByteSize::from(perf_event * events.events.capacity()));
+
+        info!("total perf ticks: {}", CORE_STATS.total_tick_count.load(Ordering::Relaxed));
+
     });
 }
 
@@ -367,7 +383,9 @@ impl EventStreamer {
                     return !self.event_queue.is_empty();
                 }
                 Err(size) => {
-                    info!("tried to send {} events, but size {} > {}", num_events, size, MAX_SIZE);
+                    if num_events == 1 {
+                        warn!("tried to send {} events, but size {} > {}", num_events, size, MAX_SIZE);
+                    }
                 }
             }
         }
@@ -409,16 +427,18 @@ pub fn perf_stream_proc(ctx: KernProcessCtx) {
     let mut streamer = EventStreamer::new(build_id);
 
     loop {
-        let mut sleep = true;
-        if streamer.try_process_event() {
-            sleep = false;
+        let mut only_yield = false;
+        while streamer.try_process_event() {
+            only_yield = true;
         }
 
-        if streamer.send_events(address) {
-            sleep = false;
+        while streamer.send_events(address) {
+            only_yield = true;
         }
 
-        if sleep {
+        if only_yield {
+            kernel_api::syscall::sched_yield();
+        } else {
             kernel_api::syscall::sleep(Duration::from_millis(10));
         }
     }
