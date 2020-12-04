@@ -17,22 +17,23 @@ memcpy = true
 debug = true
 
 [dependencies]
+aarch64 = { path = "../lib/aarch64/" }
 common = { path = "../lib/common" }
 dsx = { path = "../lib/dsx", default-features = false, features = ["kern"] }
 dwmac = { path = "../lib/dwmac" }
+fat32 = { path = "../lib/fat32/", features = ["no_std"] }
+karch = { path = "../lib/karch" }
+kernel_api = { path = "../lib/kernel_api" }
+khadas = { path = "../lib/khadas" }
 mini-alloc = { path = "../lib/mini-alloc" }
+mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
 mpalloc = { path = "../lib/mpalloc" }
 pi = { path = "../lib/pi" }
-khadas = { path = "../lib/khadas" }
-karch = { path = "../lib/karch" }
-shutil = { path = "../lib/shutil" }
-shim = { path = "../lib/shim", features = ["no_std", "alloc"] }
-stack-vec = { path = "../lib/stack-vec/" }
-fat32 = { path = "../lib/fat32/", features = ["no_std"] }
-mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
-aarch64 = { path = "../lib/aarch64/" }
-kernel_api = { path = "../lib/kernel_api" }
 pigrate-core = { path = "../lib/pigrate-core" }
+shim = { path = "../lib/shim", features = ["no_std", "alloc"] }
+shutil = { path = "../lib/shutil" }
+stack-vec = { path = "../lib/stack-vec/" }
+tracing = { path = "../lib/tracing/" }
 usb-host = { path = "../lib/usb-host-rs" }
 xhci = { path = "../lib/xhci" }
 

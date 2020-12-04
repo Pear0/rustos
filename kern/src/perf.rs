@@ -1,20 +1,22 @@
+use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::collections::VecDeque;
 use core::fmt::Write;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 
 use hashbrown::HashMap;
 
+use common::fmt::ByteSize;
+use tracing;
+
+use crate::{debug, NET};
 use crate::cls::{CoreLocal, CoreMutex};
 use crate::iosync::Global;
-use crate::traps::{HyperTrapFrame, IRQ_EL, IRQ_RECURSION_DEPTH, KernelTrapFrame, IRQ_FP};
-use crate::traps::hyper::{TM_TOTAL_COUNT, TM_TOTAL_TIME};
-use common::fmt::ByteSize;
-use crate::process::KernProcessCtx;
-use crate::{NET, debug};
 use crate::net::ipv4;
+use crate::process::KernProcessCtx;
+use crate::traps::{HyperTrapFrame, IRQ_EL, IRQ_FP, IRQ_RECURSION_DEPTH, KernelTrapFrame};
+use crate::traps::hyper::{TM_TOTAL_COUNT, TM_TOTAL_TIME};
 
 static CORE_EVENTS: CoreLocal<Global<EventData>> = CoreLocal::new_global(|| EventData {
     initialized: false,
@@ -158,10 +160,6 @@ pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
     let is_exc = IRQ_RECURSION_DEPTH.get() > 1;
     let kern_thread = tf.is_el1();
 
-    if !is_exc {
-        return true;
-    }
-
     append(PerfEvent::Header(HeaderEvent {
         timestamp,
         tpidr: tf.TPIDR_EL0,
@@ -220,39 +218,60 @@ pub fn dump_events() {
               ByteSize::from(perf_event),
               ByteSize::from(perf_event * events.events.len()),
               ByteSize::from(perf_event * events.events.capacity()));
-
     });
 }
 
-pub fn perf_stream_proc(ctx: KernProcessCtx) {
-    const MAGIC: u32 = 0x54445254;
-    const VERSION: u16 = 1;
-    const MAX_SIZE: usize = 512;
+struct EventStreamer {
+    /// Store events ready to be sent.
+    event_queue: Vec<tracing::TraceEvent>,
 
-    info!("perf_stream_proc()");
-    info!("BUILD_ID: {:?}", &crate::debug::BUILD_ID);
+    /// Store TraceEvent structures after they've
+    /// been used so that the resources (frames vec)
+    /// can be reused.
+    event_cache: Vec<tracing::TraceEvent>,
 
-    let address = "239.15.55.200".parse::<ipv4::Address>().unwrap();
+    event_limit: usize,
 
-    // wait for network...
-    while !NET.is_initialized() {
-        kernel_api::syscall::sleep(Duration::from_millis(200));
+    event_index: u64,
+    build_id: u64,
+}
+
+impl EventStreamer {
+    pub fn new(build_id: u64) -> Self {
+        Self {
+            event_queue: Vec::new(),
+            event_cache: Vec::new(),
+            event_limit: 10,
+            event_index: 0,
+            build_id,
+        }
     }
 
-    let mut event_index: u64 = 0;
+    fn get_or_create_event(&mut self) -> Option<tracing::TraceEvent> {
+        if self.event_cache.len() > 0 {
+            return self.event_cache.pop();
+        }
 
-    let mut full_message: Vec<u8> = Vec::new();
-    full_message.reserve(2000);
-    let mut event_buf: Vec<u8> = Vec::new();
-    event_buf.reserve(2000);
+        if self.event_queue.len() + self.event_cache.len() < self.event_limit {
+            // we can allocate one
+            return Some(tracing::TraceEvent::default());
+        }
 
-    loop {
-        let mut num_events: u16 = 0;
+        None
+    }
 
-        full_message.clear();
-        full_message.extend_from_slice(&MAGIC.to_le_bytes());
-        full_message.extend_from_slice(&VERSION.to_le_bytes());
-        full_message.extend_from_slice(&0u16.to_le_bytes()); // num_events
+    /// Try parse raw event data into event structs. Return true if we parsed an event.
+    fn try_process_event(&mut self) -> bool {
+        let mut event = match self.get_or_create_event() {
+            Some(e) => e,
+            None => return false
+        };
+
+        event.event_index = self.event_index;
+        event.frames.clear();
+        event.frames.reserve(100);
+
+        let mut wrote_event = false;
 
         CORE_EVENTS.critical(|events| {
             while let Some(header_ev) = events.events.pop_front() {
@@ -260,18 +279,11 @@ pub fn perf_stream_proc(ctx: KernProcessCtx) {
                     PerfEvent::Header(h) => h,
                     e => {
                         error!("got unexpected event: {:?}", e);
-                        continue
+                        continue;
                     }
                 };
 
-                let timestamp = header.timestamp.as_nanos() as u64;
-
-                event_buf.clear();
-                event_buf.extend_from_slice(&timestamp.to_le_bytes());
-                event_buf.extend_from_slice(&event_index.to_le_bytes());
-                event_buf.extend_from_slice(&0u16.to_le_bytes()); // num frames
-
-                let mut num_frames = 0u16;
+                event.timestamp = header.timestamp.as_nanos() as u64;
 
                 while let Some(ev) = events.events.pop_front() {
                     match ev {
@@ -281,69 +293,134 @@ pub fn perf_stream_proc(ctx: KernProcessCtx) {
                             break;
                         }
                         PerfEvent::Exc(e) => {
-                            event_buf.extend_from_slice(&e.lr.to_le_bytes());
-                            num_frames += 1;
+                            if event.frames.len() < event.frames.capacity() {
+                                event.frames.push(tracing::TraceFrame { pc: e.lr });
+                            }
                         }
                         PerfEvent::Kernel(e) => {
-                            event_buf.extend_from_slice(&e.lr.to_le_bytes());
-                            num_frames += 1;
+                            if event.frames.len() < event.frames.capacity() {
+                                event.frames.push(tracing::TraceFrame { pc: e.lr });
+                            }
                         }
                         PerfEvent::Guest(e) => {
-                            event_buf.extend_from_slice(&e.lr.to_le_bytes());
-                            num_frames += 1;
+                            if event.frames.len() < event.frames.capacity() {
+                                event.frames.push(tracing::TraceFrame { pc: e.lr });
+                            }
                         }
                     }
                 }
 
-                {
-                    let bytes = num_frames.to_le_bytes();
-                    event_buf[16] = bytes[0];
-                    event_buf[17] = bytes[1];
-                }
-
-                if full_message.len() + event_buf.len() > MAX_SIZE || num_events > 100 {
-                    // roll everything back...
-
-                    // but, drop this event if it's the only one and it's too big
-                    if num_events > 0 {
-                        continue;
-                    }
-
-                    events.events.push_front(header_ev);
-                    break;
-                }
-
-                // otherwise, we are good to add...
-                full_message.append(&mut event_buf);
-                num_events += 1;
-                event_index += 1;
+                wrote_event = true;
+                break;
             }
         });
 
-        // early exit with optimistically longer delay
-        if num_events == 0 {
-            kernel_api::syscall::sleep(Duration::from_millis(150));
-            continue;
+        if wrote_event {
+            self.event_queue.push(event);
+            true
+        } else {
+            event.frames.clear();
+            event.event_index = 0;
+            self.event_cache.push(event);
+            false
+        }
+    }
+
+    fn recycle_events(&mut self, count: usize) {
+        for mut event in self.event_queue.drain(..count) {
+            event.event_index = 0;
+            event.timestamp = 0;
+            event.frames.clear();
+            self.event_cache.push(event);
+        }
+    }
+
+    /// send some events over UDP. return true if more events to send.
+    fn send_events(&mut self, address: ipv4::Address) -> bool {
+        const MAX_SIZE: usize = 512;
+        let mut send_buffer = [0u8; MAX_SIZE];
+
+        if self.event_queue.is_empty() {
+            return false;
         }
 
-        {
-            let bytes = num_events.to_le_bytes();
-            full_message[6] = bytes[0];
-            full_message[7] = bytes[1];
+        for num_events in (1..=self.event_queue.len()).rev() {
+            match tracing::encode_events(&mut send_buffer, self.build_id, &self.event_queue[..num_events]) {
+                Ok(size) => {
+
+                    // info!("{}", pretty_hex::pretty_hex(&&send_buffer[..size]));
+
+                    let result = NET.critical(|net| {
+                        net.send_datagram(address, 4005, 4000, &send_buffer[..size])
+                    });
+
+                    if let Err(e) = result {
+                        info!("failed to send data: {:?}", e);
+                    }
+
+                    // remove events we sent
+                    self.recycle_events(num_events);
+
+                    // info!("sent {} events, with size {}", num_events, size);
+
+                    // are there any more events?
+                    return !self.event_queue.is_empty();
+                }
+                Err(size) => {
+                    info!("tried to send {} events, but size {} > {}", num_events, size, MAX_SIZE);
+                }
+            }
         }
 
-        assert!(full_message.len() <= MAX_SIZE);
+        // if we are here, then we failed to send even 1 event.
+        // in that case, lets drop the event in case it is too large to send.
+        self.recycle_events(1);
 
-        let result = NET.critical(|net| {
-            let msg = "hello world!";
-            net.send_datagram(address, 4005, 4000, full_message.as_slice())
-        });
+        !self.event_queue.is_empty()
+    }
+}
 
-        if let Err(e) = result {
-            info!("failed to send data: {:?}", e);
+#[inline(never)]
+fn create_build_id(id: &[u8]) -> u64 {
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&id[..8]);
+    u64::from_le_bytes(bytes)
+}
+
+pub fn perf_stream_proc(ctx: KernProcessCtx) {
+    const MAGIC: u32 = 0x54445254;
+    const VERSION: u16 = 1;
+    const MAX_SIZE: usize = 512;
+
+    info!("perf_stream_proc()");
+    info!("BUILD_ID: {:?}", crate::debug::build_id());
+
+    let build_id = create_build_id(crate::debug::build_id());
+
+    info!("BUILD_ID: {:#x}", build_id);
+
+    let address = "239.15.55.200".parse::<ipv4::Address>().unwrap();
+
+    // wait for network...
+    while !NET.is_initialized() {
+        kernel_api::syscall::sleep(Duration::from_millis(200));
+    }
+
+    let mut streamer = EventStreamer::new(build_id);
+
+    loop {
+        let mut sleep = true;
+        if streamer.try_process_event() {
+            sleep = false;
         }
 
-        kernel_api::syscall::sleep(Duration::from_millis(5));
+        if streamer.send_events(address) {
+            sleep = false;
+        }
+
+        if sleep {
+            kernel_api::syscall::sleep(Duration::from_millis(10));
+        }
     }
 }
 

@@ -311,11 +311,12 @@ impl GlobalNetHandler {
         m_lock!(self.0).is_some()
     }
 
+    #[track_caller]
     pub fn critical<F, R>(&self, f: F) -> R
         where
             F: FnOnce(&mut NetHandler) -> R,
     {
-        let mut guard = m_lock!(self.0);
+        let mut guard = self.0.lock();
         f(guard.as_mut().expect("net uninitialized"))
     }
 
