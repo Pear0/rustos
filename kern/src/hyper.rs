@@ -228,12 +228,6 @@ pub fn hyper_main() -> ! {
     //     }
     // });
 
-    {
-        // mutex fun!!!
-        unsafe { crate::mutex::init_registry() };
-    }
-
-
     error!("Add kernel process");
 
     {

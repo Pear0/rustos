@@ -10,7 +10,7 @@ use pi::gpio;
 use pi::interrupt::{Interrupt, CoreInterrupt};
 use shim::{io, ioerr};
 
-use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM, FILESYSTEM2, perf};
+use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM, FILESYSTEM2, perf, EXEC_CONTEXT};
 use crate::console::{CONSOLE, console_ext_init, console_interrupt_handler};
 use crate::fs::handle::{Sink, SinkWrapper, Source, SourceWrapper, WaitingSourceWrapper};
 use crate::fs::service::PipeService;
@@ -35,6 +35,8 @@ use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicUsize;
 use crate::mini_allocators::NOCACHE_PAGE_ALLOC;
 use crate::hw::ArchVariant;
+use enumset::EnumSet;
+use karch::capability::ExecCapability;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -216,13 +218,17 @@ pub fn kernel_main() -> ! {
     let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
     info!("cpu attrs: {:?}", attrs);
 
-    let enable_many_cores = !BootVariant::kernel_in_hypervisor() && false;
+    let enable_many_cores = !BootVariant::kernel_in_hypervisor();
 
     if true {
         let cores = if enable_many_cores { 4 } else { 1 };
         unsafe { smp::initialize(cores); }
         smp::wait_for_cores(cores);
     }
+
+    smp::run_on_secondary_cores(|| {
+        EXEC_CONTEXT.add_capabilities(EnumSet::only(ExecCapability::Allocation));
+    });
 
     info!("VMM init");
     // error!("init VMM data structures");
@@ -384,7 +390,7 @@ pub fn kernel_main() -> ! {
     info!("Starting other cores");
     smp::run_no_return(|| {
         let core = smp::core();
-        pi::timer::spin_sleep(Duration::from_millis(4 * core as u64));
+        timing::sleep_phys(Duration::from_millis(4 * core as u64));
         debug!("Core {} starting scheduler", core);
         KERNEL_SCHEDULER.start();
 

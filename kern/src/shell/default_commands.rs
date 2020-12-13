@@ -435,17 +435,12 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .name("reg")
         .func_result(|sh, _cmd| {
 
-            let ptr = unsafe { &*MUTEX_REGISTRY.as_ptr() };
-            if let Some(reg) = ptr {
+            let _guard = smp::interrupt_guard();
 
-                reg.for_all(|entry| {
-                    if let Some(entry) = entry {
-                        info!("Mutex: {} -> waiting: {:?}", entry.name, timing::cycles_to_time::<PhysicalCounter>(entry.total_waiting_time.load(Ordering::Relaxed)));
-                    }
-                });
+            info!("registry op count: {}, size: {}", MUTEX_REGISTRY.op_count(), MUTEX_REGISTRY.size());
 
-            } else {
-                info!("No registry");
+            for entry in MUTEX_REGISTRY.iter_ref() {
+                info!("Mutex: {} -> waiting: {:?}", entry.name, timing::cycles_to_time::<PhysicalCounter>(entry.total_waiting_time.load(Ordering::Relaxed)));
             }
 
             Ok(())

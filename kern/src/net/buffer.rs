@@ -22,7 +22,7 @@ pub struct BufferHandle(Arc<Mutex<Buffer>>);
 
 impl BufferHandle {
     pub fn new() -> Self {
-        BufferHandle(Arc::new(mutex_new!(Buffer {
+        BufferHandle(Arc::new(Mutex::new(Buffer {
             deque: VecDeque::new(),
             max_size: 4096,
         })))
@@ -32,7 +32,7 @@ impl BufferHandle {
         where
             F: FnOnce(&mut Buffer) -> R,
     {
-        let mut guard = m_lock!(self.0);
+        let mut guard = self.0.lock();
         let r = f(guard.deref_mut());
         aarch64::sev();
         r

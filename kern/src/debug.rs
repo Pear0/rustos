@@ -81,7 +81,7 @@ impl Iterator for StackIter {
     type Item = StackFrame;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.0.is_null() {
+        if self.0.is_null() || (self.0 as u64) > 1024 * 1024 * 1024 {
             None
         } else {
             let frame = unsafe { self.0.read() };

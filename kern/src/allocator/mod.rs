@@ -83,7 +83,7 @@ impl Allocator {
     }
 
     pub unsafe fn alloc_tag(&self, layout: Layout, tag: MemTag) -> *mut u8 {
-        // let _guard = smp::interrupt_guard_outside_exc();
+        let _guard = smp::interrupt_guard_outside_exc();
 
         let v = EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
 
@@ -100,7 +100,7 @@ impl Allocator {
     }
 
     pub unsafe fn dealloc_tag(&self, ptr: *mut u8, layout: Layout, tag: MemTag) {
-        // let _guard = smp::interrupt_guard_outside_exc();
+        let _guard = smp::interrupt_guard_outside_exc();
 
         EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
 

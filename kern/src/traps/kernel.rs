@@ -7,7 +7,7 @@ use crate::{debug, shell, smp, hw, timing};
 use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER, KERNEL_TIMER};
 use crate::param::{PAGE_MASK, PAGE_SIZE, USER_IMG_BASE};
 use crate::process::State;
-use crate::traps::{Info, IRQ_EL, IRQ_ESR, IRQ_INFO, IRQ_RECURSION_DEPTH, KernelTrapFrame, Kind, IRQ_FP};
+use crate::traps::{Info, IRQ_EL, IRQ_ESR, IRQ_INFO, IRQ_RECURSION_DEPTH, KernelTrapFrame, Kind, IRQ_FP, Source};
 use crate::traps::Kind::Synchronous;
 use crate::traps::syndrome::Syndrome;
 use crate::traps::syscall::handle_syscall;
@@ -163,6 +163,13 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
 
     if IRQ_RECURSION_DEPTH.get() > 1 {
         kprintln!("Recursive IRQ: {:?}", info);
+        if matches!(info.kind, Synchronous) {
+            kprintln!("synchronous ESR: {:?}", Syndrome::from(esr));
+            if matches!(Syndrome::from(esr), Syndrome::DataAbort(_)) {
+                kprintln!("FAR_EL1 = {:#?}", unsafe { aarch64::FAR_EL1.get() });
+            }
+        }
+        kprintln!("ELR: {:#x}", tf.ELR_EL1);
         shell::shell("#>");
     }
 

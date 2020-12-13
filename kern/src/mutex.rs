@@ -10,12 +10,12 @@ use core::sync::atomic::AtomicU64;
 use core::time::Duration;
 
 use crossbeam_utils::atomic::AtomicCell;
+use dsx::collections::registry_list::{IntrusiveInfo, IntrusiveNode, RegistryList};
 
 use aarch64::{MPIDR_EL1, SCTLR_EL1, SCTLR_EL2, SP};
 
 use crate::{hw, smp, timing, traps};
 use crate::arm::PhysicalCounter;
-use crate::sync::atomic_registry::{Registry, RegistryGuard, RegistryGuarded};
 
 type EncUnit = u64;
 
@@ -40,14 +40,7 @@ fn decode_unit(unit: u64) -> Unit {
     }
 }
 
-pub static MUTEX_REGISTRY: AtomicCell<Option<Arc<Registry<MutexInner>>>> = AtomicCell::new(None);
-
-pub unsafe fn init_registry() {
-    // unsafe because this MUST only be init'd once.
-
-    let reg = Registry::new_size(10000);
-    MUTEX_REGISTRY.store(Some(reg));
-}
+pub static MUTEX_REGISTRY: RegistryList<MutexInner> = RegistryList::new_const();
 
 // all the shared fields
 pub struct MutexInner {
@@ -59,6 +52,7 @@ pub struct MutexInner {
     lock_name: UnsafeCell<&'static Location<'static>>,
     lock_trace: UnsafeCell<[u64; 50]>,
     pub registry_guard: RegistryGuard<Self>,
+    intrusive_info: IntrusiveInfo<Self>,
 }
 
 unsafe impl Sync for MutexInner {}
@@ -66,6 +60,12 @@ unsafe impl Sync for MutexInner {}
 impl RegistryGuarded for MutexInner {
     fn guard(&self) -> &RegistryGuard<Self> {
         &self.registry_guard
+    }
+}
+
+impl IntrusiveNode for MutexInner {
+    fn get_info(&self) -> &IntrusiveInfo<Self> where Self: Sized {
+        &self.intrusive_info
     }
 }
 
@@ -102,6 +102,7 @@ impl<T> Mutex<T> {
                 lock_name: UnsafeCell::new(loc),
                 lock_trace: UnsafeCell::new([0; 50]),
                 registry_guard: RegistryGuard::new(),
+                intrusive_info: IntrusiveInfo::new(),
             },
             data: UnsafeCell::new(val),
         }
@@ -183,20 +184,19 @@ impl<T> Mutex<T> {
             self.inner.total_waiting_time.fetch_add(crate::timing::time_to_cycles::<PhysicalCounter>(trying_for), Ordering::Relaxed);
 
             {
-                // this assumes that registry is only ever init'ed once.
-                let ptr = unsafe { &*MUTEX_REGISTRY.as_ptr() };
-                if let Some(reg) = ptr {
-                    if !self.inner.registry_guard.is_registered() {
-                        Registry::register(reg, &self.inner);
+                smp::no_interrupt(|| {
+                    if !self.inner.intrusive_info.in_list() {
+                        unsafe { MUTEX_REGISTRY.insert(&self.inner) };
                     }
-                }
+                });
             }
 
             let sp = SP.get();
 
             use crate::debug;
-            // debug::read_into_slice_clear(unsafe { &mut *self.lock_trace.get() }, debug::stack_scanner(sp, None));
-            // aarch64::dsb();
+            debug::read_into_slice_clear(unsafe { &mut *self.inner.lock_trace.get() },
+                                         debug::stack_walker().map(|x| x.link_register));
+            aarch64::dsb();
 
             Some(MutexGuard { lock: &self, recursion_enabled_count: 0 })
         } else {
@@ -251,8 +251,8 @@ impl<T> Mutex<T> {
         let irq = traps::irq_depth();
 
         writeln!(&mut uart, "my trace: {} @ {:?}    irqd={}", core, loc, irq);
-        for addr in crate::debug::stack_scanner(sp, None) {
-            writeln!(&mut uart, "0x{:08x}", addr);
+        for frame in crate::debug::stack_walker() {
+            writeln!(&mut uart, "0x{:08x}", frame.link_register);
         }
 
         if irq > 0 {
@@ -272,13 +272,13 @@ impl<T> Mutex<T> {
     pub fn lock_timeout(&self, timeout: Duration) -> Option<MutexGuard<T>> {
         let start = timing::clock_time::<PhysicalCounter>();
         let end = start + timeout;
-        let mut wait_amt = Duration::from_micros(1);
+        let mut wait_amt = Duration::from_micros(5);
         loop {
             match self.try_lock(timing::clock_time::<PhysicalCounter>() - start) {
                 Some(guard) => return Some(guard),
                 None => {
                     timing::sleep_phys(wait_amt);
-                    wait_amt += wait_amt; // double wait amt
+                    // wait_amt *= 2; // double wait amt
 
                     if timing::clock_time::<PhysicalCounter>() > end {
                         return None;
@@ -317,6 +317,16 @@ impl<T> Mutex<T> {
         } else {
             self.inner.lock_unit.store(0, Ordering::Relaxed);
         }
+    }
+}
+
+impl<T> Drop for Mutex<T> {
+    fn drop(&mut self) {
+        smp::no_interrupt(|| {
+            if self.inner.intrusive_info.in_list() {
+                MUTEX_REGISTRY.remove(&self.inner);
+            }
+        });
     }
 }
 

@@ -64,7 +64,9 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         // take guard only if we are not in an exception context.
         // this way the profiling timer can inspect exception context scheduler behavior.
         // TODO refactor so that a scheduler guard does not need to block interrupts at all.
-        // let int_guard = smp::interrupt_guard_outside_exc();
+        let int_guard = smp::interrupt_guard_outside_exc();
+
+        assert!(EXEC_CONTEXT.has_capabilities(EnumSet::only(ExecCapability::Allocation)));
 
         let r = EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Scheduler), || {
             let mut guard = self.0.lock();
