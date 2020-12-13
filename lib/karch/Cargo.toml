@@ -7,6 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-volatile = { path = "../volatile" }
-shim = { path = "../shim", features = ["no_std"] }
 aarch64 = { path = "../aarch64" }
+shim = { path = "../shim", features = ["no_std"] }
+volatile = { path = "../volatile" }
+
+enumset = "1.0.1"

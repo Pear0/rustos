@@ -1,5 +1,10 @@
 #![cfg_attr(not(test), no_std)]
 
+pub mod capability;
+
+#[macro_use]
+extern crate enumset;
+
 use shim::io;
 use core::fmt;
 

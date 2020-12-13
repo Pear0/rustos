@@ -166,9 +166,15 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
         shell::shell("#>");
     }
 
+    const TIMER_YIELD: u16 = crate::kernel_call::NR_YIELD_FOR_TIMERS as u16;
+
     // recursive irq for profiling
     let is_recursive = IRQ_RECURSION_DEPTH.get() == 1;
-    let mut is_timer = info.kind == Kind::Irq && VirtualCounter::interrupted();
+    let (is_timer, is_timer_yield) = match info.kind {
+        Kind::Irq => (VirtualCounter::interrupted(), false),
+        Kind::Synchronous => (matches!(Syndrome::from(esr), Syndrome::Svc(TIMER_YIELD)), true),
+        _ => (false, false),
+    };
 
     if is_recursive {
         let mut disable_interrupts = true;

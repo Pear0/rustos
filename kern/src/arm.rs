@@ -5,6 +5,10 @@ use core::time::Duration;
 
 use aarch64::regs::*;
 use crate::mutex::Mutex;
+use enumset::EnumSet;
+use karch::capability::ExecCapability;
+use crate::EXEC_CONTEXT;
+use downcast_rs::__std::sync::atomic::Ordering;
 
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 
@@ -146,6 +150,7 @@ pub struct TimerCtx<'a, T> {
     remove: bool,
     no_reschedule: bool,
     new_period: Option<u64>,
+    defer_timer: bool,
 }
 
 impl<'a, T> TimerCtx<'a, T> {
@@ -155,7 +160,12 @@ impl<'a, T> TimerCtx<'a, T> {
             remove: false,
             no_reschedule: false,
             new_period: None,
+            defer_timer: false,
         }
+    }
+
+    pub fn defer_timer(&mut self) {
+        self.defer_timer = true;
     }
 
     pub fn remove_timer(&mut self) {
@@ -180,6 +190,7 @@ struct Timer<T> {
     enabled: bool,
     stat_check_count: usize,
     func: Option<TimerFunc<T>>,
+    is_deferred: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -200,7 +211,7 @@ struct TimerControllerImpl<T, C: GenericCounterImpl> {
 impl<T, C: GenericCounterImpl> TimerControllerImpl<T, C> {
     fn set_compare(&mut self) {
         let min = self.timers.iter()
-            .filter(|x| x.enabled)
+            .filter(|x| x.enabled && !x.is_deferred)
             .map(|x| x.next_compare)
             .min();
         if let Some(min) = min {
@@ -236,6 +247,7 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
             enabled: true,
             stat_check_count: 0,
             func: Some(func),
+            is_deferred: false,
         });
         lock.timers.sort_by_key(|x| x.cycle_period);
 
@@ -287,6 +299,9 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
                 let mut timer = &mut lock.timers[i];
                 timer.func = func;
 
+                timer.is_deferred = ctx.defer_timer;
+                updated_compare |= ctx.defer_timer;
+
                 if ctx.remove {
                     timer.enabled = false;
                     continue;
@@ -307,6 +322,9 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
 
         if updated_compare {
             lock.set_compare();
+
+            let any_deferred = lock.timers.iter().any(|x| x.is_deferred);
+            EXEC_CONTEXT.yielded_timers.store(any_deferred, Ordering::Release);
         }
 
         !updated_compare

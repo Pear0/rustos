@@ -8,8 +8,10 @@ use shim::io;
 use crate::allocator::tags::{MemTag, TaggingAlloc};
 use crate::init::SAFE_ALLOC_START;
 use crate::mutex::Mutex;
-use crate::{smp, hw};
+use crate::{smp, hw, EXEC_CONTEXT};
 use core::cell::UnsafeCell;
+use karch::capability::ExecCapability;
+use enumset::EnumSet;
 
 mod linked_list;
 pub mod tags;
@@ -81,21 +83,35 @@ impl Allocator {
     }
 
     pub unsafe fn alloc_tag(&self, layout: Layout, tag: MemTag) -> *mut u8 {
-        smp::no_interrupt(|| {
-            m_lock!(self.0)
+        // let _guard = smp::interrupt_guard_outside_exc();
+
+        let v = EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
+
+            self.0.lock()
                 .as_mut()
                 .expect("allocator uninitialized")
                 .alloc_tag(layout, tag)
-        })
+
+        });
+
+        // drop(_guard);
+
+        v
     }
 
     pub unsafe fn dealloc_tag(&self, ptr: *mut u8, layout: Layout, tag: MemTag) {
-        smp::no_interrupt(|| {
-            m_lock!(self.0)
+        // let _guard = smp::interrupt_guard_outside_exc();
+
+        EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
+
+            self.0.lock()
                 .as_mut()
                 .expect("allocator uninitialized")
                 .dealloc_tag(ptr, layout, tag);
-        })
+
+        });
+
+        // drop(_guard)
     }
 }
 

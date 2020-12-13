@@ -10,7 +10,7 @@ use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
-use crate::{BootVariant, smp, timing};
+use crate::{BootVariant, smp, timing, EXEC_CONTEXT};
 use crate::arm::{GenericCounterImpl, HyperPhysicalCounter, VirtualCounter};
 use crate::cls::CoreLocal;
 use crate::hyper::HYPER_TIMER;
@@ -22,6 +22,8 @@ use crate::process::process::ProcessImpl;
 use crate::process::snap::SnapProcess;
 use crate::process::state::RunContext;
 use crate::traps::{Frame, HyperTrapFrame, IRQ_RECURSION_DEPTH, KernelTrapFrame};
+use karch::capability::ExecCapability;
+use enumset::EnumSet;
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler<T: ProcessImpl>(Mutex<Option<Scheduler<T>>>);
@@ -62,12 +64,17 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         // take guard only if we are not in an exception context.
         // this way the profiling timer can inspect exception context scheduler behavior.
         // TODO refactor so that a scheduler guard does not need to block interrupts at all.
-        let int_guard = smp::interrupt_guard_outside_exc();
+        // let int_guard = smp::interrupt_guard_outside_exc();
 
-        let mut guard = self.0.lock();
-        let r = f(guard.as_mut().expect("scheduler uninitialized"));
-        drop(guard);
-        drop(int_guard);
+        let r = EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Scheduler), || {
+            let mut guard = self.0.lock();
+            let r = f(guard.as_mut().expect("scheduler uninitialized"));
+            drop(guard);
+
+            r
+        });
+
+        // drop(int_guard);
         r
     }
 
@@ -200,8 +207,12 @@ impl GlobalScheduler<KernelImpl> {
 
         let mut skip_ticks = AtomicU32::new(10);
         KERNEL_TIMER.add(5, timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(10)), Box::new(move |ctx| {
-            if IRQ_RECURSION_DEPTH.get() > 1 {
+            if !EXEC_CONTEXT.has_capabilities(ExecCapability::Allocation | ExecCapability::Scheduler) {
+                ctx.defer_timer();
+
+            } else if IRQ_RECURSION_DEPTH.get() > 1 {
                 ctx.no_reschedule();
+
             } else {
                 if skip_ticks.load(Ordering::Relaxed) <= 0 {
                     KERNEL_SCHEDULER.switch(State::Ready, ctx.data);
@@ -210,6 +221,8 @@ impl GlobalScheduler<KernelImpl> {
                 }
             }
         }));
+
+        EXEC_CONTEXT.add_capabilities(EnumSet::only(ExecCapability::Scheduler));
     }
 }
 

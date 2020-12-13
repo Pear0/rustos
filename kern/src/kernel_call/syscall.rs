@@ -5,7 +5,7 @@ use kernel_api::OsResult;
 use core::time::Duration;
 use alloc::sync::Arc;
 use crate::sync::Waitable;
-use crate::kernel_call::NR_WAIT_WAITABLE;
+use crate::kernel_call::*;
 
 
 /// pretty much requires coerce_unsized feature to be usable.
@@ -29,3 +29,8 @@ pub fn wait_waitable(arc: Arc<dyn Waitable>) {
 
 }
 
+pub fn yield_for_timers() {
+    unsafe {
+        llvm_asm!("svc $0" :: "i"(NR_YIELD_FOR_TIMERS) :: "volatile");
+    }
+}

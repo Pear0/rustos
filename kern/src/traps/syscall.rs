@@ -184,6 +184,9 @@ pub fn handle_syscall(num: u16, tf: &mut KernelTrapFrame) {
         NR_SBRK => {
             sys_sbrk(tf);
         }
+        NR_YIELD_FOR_TIMERS => {
+            // do nothing here, this syscall is handled specially.
+        }
         _ => kprintln!("Unknown syscall: {}", num),
     }
 }
