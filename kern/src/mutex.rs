@@ -51,17 +51,10 @@ pub struct MutexInner {
     pub total_waiting_time: AtomicU64,
     lock_name: UnsafeCell<&'static Location<'static>>,
     lock_trace: UnsafeCell<[u64; 50]>,
-    pub registry_guard: RegistryGuard<Self>,
     intrusive_info: IntrusiveInfo<Self>,
 }
 
 unsafe impl Sync for MutexInner {}
-
-impl RegistryGuarded for MutexInner {
-    fn guard(&self) -> &RegistryGuard<Self> {
-        &self.registry_guard
-    }
-}
 
 impl IntrusiveNode for MutexInner {
     fn get_info(&self) -> &IntrusiveInfo<Self> where Self: Sized {
@@ -101,7 +94,6 @@ impl<T> Mutex<T> {
                 total_waiting_time: AtomicU64::new(0),
                 lock_name: UnsafeCell::new(loc),
                 lock_trace: UnsafeCell::new([0; 50]),
-                registry_guard: RegistryGuard::new(),
                 intrusive_info: IntrusiveInfo::new(),
             },
             data: UnsafeCell::new(val),
