@@ -9,6 +9,7 @@ use shim::path::Path;
 use crate::mutex::Mutex;
 
 pub mod handle;
+pub mod proc;
 pub mod sd;
 pub mod service;
 

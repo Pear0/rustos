@@ -213,6 +213,7 @@ pub trait FileSystem: Send {
 
     fn entries(&self, manager: &fs::FileSystem, dir: Arc<dyn Dir>) -> io::Result<Box<dyn Iterator<Item=DirEntry>>>;
 
+    /// get entry named `path` in `dir`.
     fn dir_entry(&self, manager: &fs::FileSystem, dir: Arc<dyn Dir>, path: &OsStr) -> io::Result<Entry>;
 
 }

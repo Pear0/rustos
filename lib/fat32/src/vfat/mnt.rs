@@ -1,5 +1,4 @@
 use alloc::boxed::Box;
-use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
@@ -18,7 +17,7 @@ use crate::traits::Entry as TraitEntry;
 use crate::vfat::{Dir, Entry, VFat, VFatHandle};
 
 #[derive(Clone)]
-pub struct DynVFatHandle(Rc<Mutex<VFat<Self>>>, usize);
+pub struct DynVFatHandle(Arc<Mutex<VFat<Self>>>, usize);
 
 // These impls are *unsound*. We should use `Arc` instead of `Rc` to implement
 // `Sync` and `Send` trait for `PiVFatHandle`. However, `Arc` uses atomic memory
@@ -38,7 +37,7 @@ impl fmt::Debug for DynVFatHandle {
 
 impl VFatHandle for DynVFatHandle {
     fn new(val: VFat<DynVFatHandle>) -> Self {
-        DynVFatHandle(Rc::new(Mutex::new(val)), 0)
+        DynVFatHandle(Arc::new(Mutex::new(val)), 0)
     }
 
     fn lock<R>(&self, f: impl FnOnce(&mut VFat<DynVFatHandle>) -> R) -> R {

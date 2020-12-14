@@ -8,6 +8,11 @@ use shim::path::Path;
 use shim::path::PathBuf;
 
 use crate::mutex::Mutex;
+use crate::fs::sd;
+use fat32::vfat::{VFat, DynVFatHandle, DynWrapper};
+use crate::hw;
+use crate::hw::ArchVariant;
+use crate::fs::proc::ProcFileSystem;
 
 pub struct FileSystem2(pub Mutex<Option<mountfs::fs::FileSystem>>);
 
@@ -24,6 +29,14 @@ impl FileSystem2 {
 
             fs.mount(Some(&PathBuf::from("/foo")), Box::new(NullFileSystem::new()));
             fs.mount(Some(&PathBuf::from("/bar")), Box::new(NullFileSystem::new()));
+
+            fs.mount(Some(&PathBuf::from("/proc")), Box::new(ProcFileSystem::new()));
+
+            if matches!(hw::arch_variant(), ArchVariant::Pi(_)){
+                let sd = sd::Sd::new().expect("failed to init sd card");
+                let vfat = VFat::<DynVFatHandle>::from(sd).expect("failed to init vfat");
+                fs.mount(Some(&PathBuf::from("/fat")), Box::new(DynWrapper(vfat)));
+            }
 
             fs
         });
