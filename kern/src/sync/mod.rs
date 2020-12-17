@@ -1,8 +1,11 @@
 use alloc::sync::Arc;
-use crate::mutex::Mutex;
 use core::marker::PhantomData;
 use core::ops::Deref;
+
+use dsx::sync::mutex::LockableMutex;
+
 use crate::fs::handle::Sink;
+use crate::mutex::Mutex;
 
 // pub mod atomic_list;
 pub mod atomic_registry;
@@ -36,14 +39,12 @@ impl<T> Completion<T> {
 }
 
 
-pub trait Waitable : Sync + Send {
-
+pub trait Waitable: Sync + Send {
     fn done_waiting(&self) -> bool;
 
     fn name(&self) -> &'static str {
         "[unknown waitable]"
     }
-
 }
 
 

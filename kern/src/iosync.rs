@@ -4,6 +4,8 @@ use core::ops::DerefMut;
 use core::sync::atomic::AtomicBool;
 use core::time::Duration;
 
+use dsx::sync::mutex::LockableMutex;
+
 use pi::uart::MiniUart;
 use shim::io;
 use shim::io::Error;
@@ -93,7 +95,7 @@ impl<T> Global<T> {
     }
 
     pub fn try_critical<R, F: FnOnce(&mut T) -> R>(&self, func: F) -> Option<R> {
-        let mut lock = self.0.try_lock(Duration::default())?;
+        let mut lock = self.0.try_lock()?;
 
         if let GlobalState::Init(f) = lock.deref() {
             *lock = GlobalState::Val(f());

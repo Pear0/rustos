@@ -92,6 +92,7 @@ use karch::capability::ExecCapability;
 use serde::de::Unexpected::Enum;
 use crossbeam_utils::atomic::AtomicCell;
 use kernel_api::syscall::exit;
+use dsx::sys::{SystemHooks, set_system_hooks};
 
 #[macro_use]
 pub mod console;
@@ -257,6 +258,17 @@ pub fn can_make_syscall() -> bool {
     IRQ_RECURSION_DEPTH.get() == 0
 }
 
+struct DsxSystemHooks;
+
+impl SystemHooks for DsxSystemHooks {
+    fn current_time(&self) -> Duration {
+        timing::clock_time_phys()
+    }
+}
+
+static DSX_SYSTEM_HOOKS: DsxSystemHooks = DsxSystemHooks;
+
+
 fn kmain(boot_hypervisor: bool) -> ! {
     // init_jtag();
     use crate::arm::GenericCounterImpl;
@@ -267,6 +279,8 @@ fn kmain(boot_hypervisor: bool) -> ! {
 
     // This is so that the host computer can attach serial console/screen whatever.
     timing::sleep_phys(Duration::from_millis(500));
+
+    unsafe { set_system_hooks(&DSX_SYSTEM_HOOKS) };
 
     kprintln!("early boot");
     logger::register_global_logger();

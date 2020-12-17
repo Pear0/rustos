@@ -1,13 +1,16 @@
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::Ordering;
+
+use dsx::sync::mutex::LockableMutex;
+
 use aarch64::*;
 
+use crate::{BootVariant, hw, smp};
 use crate::mutex::Mutex;
-use crate::param::{KERNEL_MASK_BITS, USER_MASK_BITS, PAGE_MASK, PAGE_SIZE};
+use crate::param::{KERNEL_MASK_BITS, PAGE_MASK, PAGE_SIZE, USER_MASK_BITS};
 
 pub use self::address::{PhysicalAddr, VirtualAddr};
 pub use self::pagetable::*;
-use crate::{smp, BootVariant, hw};
-use core::sync::atomic::Ordering;
-use core::sync::atomic::AtomicU64;
 
 mod address;
 mod pagetable;
@@ -97,32 +100,31 @@ impl VMManager {
     ///
     /// Panics if the current system does not support 64KB memory translation granule size.
     pub fn setup_kernel(&self) {
-
         unsafe {
             assert_eq!(ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::TGran64), 0);
             let ips = ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::PARange);
 
             // (ref. D7.2.70: Memory Attribute Indirection Register)
             MAIR_EL1.set(
-                (0xFF <<  0) |// AttrIdx=0: normal, IWBWA, OWBWA, NTR
-                    (0x04 <<  8) |// AttrIdx=1: device, nGnRE (must be OSH too)
+                (0xFF << 0) |// AttrIdx=0: normal, IWBWA, OWBWA, NTR
+                    (0x04 << 8) |// AttrIdx=1: device, nGnRE (must be OSH too)
                     (0x44 << 16), // AttrIdx=2: non cacheable
             );
             // (ref. D7.2.91: Translation Control Register)
             TCR_EL1.set(
                 (0b00 << 37) |// TBI=0, no tagging
-                    (ips  << 32) |// IPS
+                    (ips << 32) |// IPS
                     (0b11 << 30) |// TG1=64k
                     (0b11 << 28) |// SH1=3 inner
                     (0b01 << 26) |// ORGN1=1 write back
                     (0b01 << 24) |// IRGN1=1 write back
-                    (0b0  << 23) |// EPD1 enables higher half
+                    (0b0 << 23) |// EPD1 enables higher half
                     ((USER_MASK_BITS as u64) << 16) | // T1SZ=34 (1GB)
                     (0b01 << 14) |// TG0=64k
                     (0b11 << 12) |// SH0=3 inner
                     (0b01 << 10) |// ORGN0=1 write back
-                    (0b01 <<  8) |// IRGN0=1 write back
-                    (0b0  <<  7) |// EPD0 enables lower half
+                    (0b01 << 8) |// IRGN0=1 write back
+                    (0b0 << 7) |// EPD0 enables lower half
                     ((KERNEL_MASK_BITS as u64) << 0), // T0SZ=32 (4GB)
             );
             isb();
@@ -151,13 +153,10 @@ impl VMManager {
             isb();
 
             flush_tlbs();
-
-
         }
     }
 
     pub fn setup_hypervisor(&self) {
-
         unsafe {
             assert_eq!(ID_AA64MMFR0_EL1.get_value(ID_AA64MMFR0_EL1::TGran64), 0);
 
@@ -166,8 +165,8 @@ impl VMManager {
 
             // (ref. D7.2.71: Memory Attribute Indirection Register)
             MAIR_EL2.set(
-                (0xFF <<  0) |// AttrIdx=0: normal, IWBWA, OWBWA, NTR
-                    (0x04 <<  8) |// AttrIdx=1: device, nGnRE (must be OSH too)
+                (0xFF << 0) |// AttrIdx=0: normal, IWBWA, OWBWA, NTR
+                    (0x04 << 8) |// AttrIdx=1: device, nGnRE (must be OSH too)
                     (0x44 << 16), // AttrIdx=2: non cacheable
             );
 
@@ -217,12 +216,9 @@ impl VMManager {
             isb();
 
             flush_tlbs();
-
-
         }
-        
     }
-    
+
     /// Returns the base address of the kernel page table as `PhysicalAddr`.
     pub fn get_baddr(&self) -> PhysicalAddr {
         let lock = m_lock!(self.0);

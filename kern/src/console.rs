@@ -1,6 +1,8 @@
 use alloc::boxed::Box;
 use core::fmt;
 
+use dsx::sync::mutex::LockableMutex;
+
 use aarch64::SCTLR_EL1;
 use pi::uart::MiniUart;
 use shim::io;
@@ -43,7 +45,7 @@ impl Console {
     }
 }
 
-impl MutexGuard<'_, Console> {
+impl Console {
     /// Initializes the console if it's not already initialized.
     #[inline]
     fn initialize(&mut self) {
@@ -92,7 +94,6 @@ impl MutexGuard<'_, Console> {
                 buf = &mut buf[1..];
                 read += 1;
             }
-
         } else {
             read = self.inner().read_nonblocking(buf).expect("MiniUart io::Error");
         }
@@ -205,13 +206,13 @@ impl MutexGuard<'_, Console> {
     }
 }
 
-impl io::Read for MutexGuard<'_, Console> {
+impl io::Read for Console {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.read_nonblocking(buf)
     }
 }
 
-impl io::Write for MutexGuard<'_, Console> {
+impl io::Write for Console {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         for byte in buf.iter() {
             if *byte == b'\n' {
@@ -227,7 +228,7 @@ impl io::Write for MutexGuard<'_, Console> {
     }
 }
 
-impl fmt::Write for MutexGuard<'_, Console> {
+impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for byte in s.as_bytes().iter() {
             if *byte == b'\n' {

@@ -6,11 +6,15 @@ use core::borrow::{Borrow, BorrowMut};
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
 
+use dsx::sync::mutex::LockableMutex;
+use enumset::EnumSet;
+use karch::capability::ExecCapability;
+
 use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
-use crate::{BootVariant, smp, timing, EXEC_CONTEXT};
+use crate::{BootVariant, EXEC_CONTEXT, smp, timing};
 use crate::arm::{GenericCounterImpl, HyperPhysicalCounter, VirtualCounter};
 use crate::cls::CoreLocal;
 use crate::hyper::HYPER_TIMER;
@@ -22,8 +26,6 @@ use crate::process::process::ProcessImpl;
 use crate::process::snap::SnapProcess;
 use crate::process::state::RunContext;
 use crate::traps::{Frame, HyperTrapFrame, IRQ_RECURSION_DEPTH, KernelTrapFrame};
-use karch::capability::ExecCapability;
-use enumset::EnumSet;
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler<T: ProcessImpl>(Mutex<Option<Scheduler<T>>>);
@@ -41,7 +43,7 @@ fn reset_timer() {
         BootVariant::Kernel => {
 
             // VirtualCounter::set_timer_duration(Duration::from_millis(10))
-        },
+        }
         BootVariant::Hypervisor => HyperPhysicalCounter::set_timer_duration(Duration::from_millis(5)),
         _ => panic!("somehow got unknown boot variant"),
     }
@@ -211,10 +213,8 @@ impl GlobalScheduler<KernelImpl> {
         KERNEL_TIMER.add(5, timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(10)), Box::new(move |ctx| {
             if !EXEC_CONTEXT.has_capabilities(ExecCapability::Allocation | ExecCapability::Scheduler) {
                 ctx.defer_timer();
-
             } else if IRQ_RECURSION_DEPTH.get() > 1 {
                 ctx.no_reschedule();
-
             } else {
                 if skip_ticks.load(Ordering::Relaxed) <= 0 {
                     KERNEL_SCHEDULER.switch(State::Ready, ctx.data);

@@ -1,16 +1,17 @@
-use core::fmt::Write;
-use core::time::Duration;
 use alloc::boxed::Box;
 use alloc::string::String;
+use core::fmt::Write;
+use core::time::Duration;
 
+use crossbeam_utils::atomic::AtomicCell;
+use dsx::sync::mutex::LockableMutex;
+use hashbrown::HashMap;
 use log::{Level, LevelFilter, Metadata, Record, set_logger};
 
-use crate::console::CONSOLE;
-use crate::{smp, hw};
-use crate::traps::IRQ_RECURSION_DEPTH;
-use crossbeam_utils::atomic::AtomicCell;
-use hashbrown::HashMap;
+use crate::{hw, smp};
 use crate::collections::Rcu;
+use crate::console::CONSOLE;
+use crate::traps::IRQ_RECURSION_DEPTH;
 
 struct SimpleLogger;
 
@@ -82,7 +83,7 @@ impl ModuleLogger {
 
     pub fn set_module_log_level(&self, target: &str, level: Level) {
         self.update(|table| {
-            match table.get_mut(unsafe { &core::mem::transmute::<&str, &'static str>(target) } ) {
+            match table.get_mut(unsafe { &core::mem::transmute::<&str, &'static str>(target) }) {
                 Some(val) => {
                     *val = level;
                 }
@@ -93,7 +94,6 @@ impl ModuleLogger {
             }
         })
     }
-
 }
 
 impl log::Log for ModuleLogger {

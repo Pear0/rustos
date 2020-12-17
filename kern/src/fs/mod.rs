@@ -1,6 +1,8 @@
 use alloc::rc::Rc;
 use core::fmt::{self, Debug};
 
+use dsx::sync::mutex::LockableMutex;
+
 pub use fat32::traits;
 use fat32::vfat::{VFat, VFatHandle};
 use shim::io;
@@ -22,6 +24,7 @@ pub struct PiVFatHandle(Rc<Mutex<VFat<Self>>>);
 // have enabled only one core of the board, these unsound impls will not cause
 // any immediate harm for now. We will fix this in the future.
 unsafe impl Send for PiVFatHandle {}
+
 unsafe impl Sync for PiVFatHandle {}
 
 impl Debug for PiVFatHandle {
@@ -39,6 +42,7 @@ impl VFatHandle for PiVFatHandle {
         f(&mut m_lock!(self.0))
     }
 }
+
 pub struct FileSystem(pub Mutex<Option<PiVFatHandle>>);
 
 impl FileSystem {

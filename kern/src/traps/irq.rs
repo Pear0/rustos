@@ -1,12 +1,14 @@
 use alloc::boxed::Box;
+use core::time::Duration;
 
-use pi::interrupt::{Interrupt, CoreInterrupt};
+use dsx::sync::mutex::LockableMutex;
+
+use pi::interrupt::{CoreInterrupt, Interrupt};
 
 use crate::mutex::Mutex;
-use crate::traps::KernelTrapFrame;
-use crate::smp;
-use core::time::Duration;
 use crate::process::ProcessImpl;
+use crate::smp;
+use crate::traps::KernelTrapFrame;
 
 pub type IrqHandler<T> = Box<dyn FnMut(&mut T) + Send>;
 
@@ -31,7 +33,6 @@ impl<T> IrqEntry<T> {
     fn record_stats(&mut self, _tf: &T) {
         self.stats.count = self.stats.count.wrapping_add(1);
     }
-
 }
 
 type IrqHandlers<T> = [IrqEntry<T>; Interrupt::MAX];
@@ -51,10 +52,12 @@ pub struct Irq<T: ProcessImpl>(Mutex<Option<IrqHandlers<T::Frame>>>, CoreIrq<T::
 
 impl<T: ProcessImpl> Irq<T> {
     pub const fn uninitialized() -> Irq<T> {
-        Irq(mutex_new!(None), CoreIrq { handlers: [
-            mutex_new!(None), mutex_new!(None),
-            mutex_new!(None), mutex_new!(None)
-        ] })
+        Irq(mutex_new!(None), CoreIrq {
+            handlers: [
+                mutex_new!(None), mutex_new!(None),
+                mutex_new!(None), mutex_new!(None)
+            ]
+        })
     }
 
     pub fn initialize(&self) {
@@ -67,7 +70,6 @@ impl<T: ProcessImpl> Irq<T> {
         for core in self.1.handlers.iter() {
             *m_lock!(core) = Some(new_core_irqs());
         }
-
     }
 
     /// Register an irq handler for an interrupt.
@@ -121,5 +123,4 @@ impl<T: ProcessImpl> Irq<T> {
         }
         Some(stats)
     }
-
 }

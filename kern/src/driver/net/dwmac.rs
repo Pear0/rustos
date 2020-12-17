@@ -1,13 +1,14 @@
 use core::fmt;
 use core::time::Duration;
 
+use dsx::sync::mutex::LockableMutex;
 use dwmac::Gmac;
 
+use crate::mini_allocators::NOCACHE_PAGE_ALLOC;
 use crate::mutex::Mutex;
+use crate::net::physical::{Frame, LinkStatus, Physical};
 use crate::timing;
 use crate::virtualization::AccessSize::DoubleWord;
-use crate::mini_allocators::NOCACHE_PAGE_ALLOC;
-use crate::net::physical::{Physical, LinkStatus, Frame};
 
 #[derive(Default)]
 struct DwMacHooks;

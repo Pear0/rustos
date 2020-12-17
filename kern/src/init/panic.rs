@@ -2,11 +2,14 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::time::Duration;
 
+use dsx::sync::mutex::LockableMutex;
+
 use pi::pm::reset;
 use pi::timer::spin_sleep;
 use pi::uart::MiniUart;
+
+use crate::{hw, smp};
 use crate::mutex::Mutex;
-use crate::{smp, hw};
 
 static PANIC_LOCK: Mutex<bool> = mutex_new!(false);
 
@@ -72,7 +75,6 @@ fn do_panic(info: &PanicInfo, sp: usize) -> ! {
         // for addr in crate::debug::stack_scanner(sp, None) {
         //     writeln!(&mut uart, "0x{:08x}", addr);
         // }
-
     }
 
     aarch64::brk!(8);
@@ -88,5 +90,4 @@ fn do_panic(info: &PanicInfo, sp: usize) -> ! {
     // while !uart.has_byte() {}
     //
     // unsafe { reset(); }
-
 }

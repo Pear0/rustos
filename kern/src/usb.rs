@@ -5,12 +5,8 @@ use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU8, Ordering};
 use core::time::Duration;
 
+use dsx::sync::mutex::LockableMutex;
 use spin::RwLock;
-
-use fat32::traits::BlockDevice;
-use fat32::vfat::{DynVFatHandle, DynWrapper, VFat};
-use shim::io;
-use shim::path::PathBuf;
 use usb_host::{USBErrorKind, USBHost, USBResult};
 use usb_host::consts::USBSpeed;
 use usb_host::drivers::hub::HubDriver;
@@ -19,7 +15,12 @@ use usb_host::drivers::mass_storage::{MassStorageDriver, MSDCallback, SimpleBloc
 use usb_host::structs::{DeviceState, USBDevice};
 use xhci::FlushType;
 
-use crate::{FILESYSTEM2, timing, can_make_syscall};
+use fat32::traits::BlockDevice;
+use fat32::vfat::{DynVFatHandle, DynWrapper, VFat};
+use shim::io;
+use shim::path::PathBuf;
+
+use crate::{can_make_syscall, FILESYSTEM2, timing};
 use crate::arm::PhysicalCounter;
 use crate::hw::{self, ArchVariant};
 use crate::iosync::Global;

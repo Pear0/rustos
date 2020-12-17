@@ -1,20 +1,22 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::ops::Deref;
+use core::ops::DerefMut;
 use core::time::Duration;
+
+use dsx::sync::mutex::LockableMutex;
 
 use pi::mbox::MBox;
 use pi::usb::{self, Usb};
+use shim::{io, newioerr};
 
-use crate::mutex::Mutex;
-use crate::net::arp::{ArpPacket, ArpTable, ArpResolver};
+use crate::{BootVariant, hw};
 use crate::mbox::with_mbox;
+use crate::mutex::Mutex;
+use crate::net::arp::{ArpPacket, ArpResolver, ArpTable};
 use crate::net::icmp::IcmpFrame;
 use crate::net::ipv4::IPv4Payload;
-use core::ops::DerefMut;
-use core::ops::Deref;
-use shim::{io, newioerr};
-use crate::net::physical::{VirtNIC, Physical};
-use crate::{BootVariant, hw};
+use crate::net::physical::{Physical, VirtNIC};
 use crate::net::udp::UdpFrame;
 
 pub mod arp;
@@ -167,7 +169,6 @@ impl NetHandler {
         let table = self.arp.clone();
 
         self.eth.register::<ArpPacket>(Box::new(move |eth, _header, arp_req, _| {
-
             let my_ip = ipv4::Address::from(&[10, 45, 52, 130]);
 
             if arp_req.hw_address_space.get() != arp::HW_ADDR_ETHER
@@ -201,7 +202,6 @@ impl NetHandler {
                 response.protocol_address_sender = my_ip;
 
                 eth.send(response.hw_address_target, response).unwrap();
-
             }
         }));
     }
@@ -229,7 +229,6 @@ impl NetHandler {
 
                 ip.send(ip_header.source, &copy);
             }
-
         }));
 
         let tcp = self.tcp.clone();
@@ -237,7 +236,6 @@ impl NetHandler {
         self.ip.register::<tcp::TcpFrame>(Box::new(move |eth, eth_header, ip_header, frame| {
             tcp.on_receive_packet(ip_header, frame);
         }));
-
     }
 
     pub fn arp_request(&self, addr: ipv4::Address) -> NetResult<ether::Mac> {
@@ -262,7 +260,6 @@ impl NetHandler {
 
         events
     }
-
 }
 
 pub struct GlobalNetHandler(Mutex<Option<NetHandler>>);
@@ -319,6 +316,4 @@ impl GlobalNetHandler {
         let mut guard = self.0.lock();
         f(guard.as_mut().expect("net uninitialized"))
     }
-
-
 }

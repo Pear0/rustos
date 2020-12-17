@@ -2,15 +2,16 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::fmt;
 
+use dsx::sync::mutex::LockableMutex;
 use hashbrown::HashMap;
 
 use pi::types::BigU16;
 use pi::usb;
 use pi::usb::Usb;
 
-use crate::net::{encode_struct, try_parse_struct, NetResult, NetErrorKind};
 use crate::mutex::Mutex;
-use crate::net::physical::{Physical, Frame};
+use crate::net::{encode_struct, NetErrorKind, NetResult, try_parse_struct};
+use crate::net::physical::{Frame, Physical};
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]

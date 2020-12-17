@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use core::time::Duration;
 use alloc::sync::Arc;
 
+use dsx::sync::mutex::LockableMutex;
 use kernel_api::*;
 use crate::kernel_call::*;
 

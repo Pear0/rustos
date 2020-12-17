@@ -1,5 +1,7 @@
 use alloc::sync::Arc;
 
+use dsx::sync::mutex::LockableMutex;
+
 use shim::io;
 
 use crate::{smp, sync};

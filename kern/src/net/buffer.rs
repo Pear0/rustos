@@ -1,6 +1,7 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use shim::ioerr;
+use dsx::sync::mutex::LockableMutex;
 
 use crate::mutex::Mutex;
 use crate::net::NetErrorKind::BufferFull;

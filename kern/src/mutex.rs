@@ -16,6 +16,7 @@ use aarch64::{MPIDR_EL1, SCTLR_EL1, SCTLR_EL2, SP};
 
 use crate::{hw, smp, timing, traps};
 use crate::arm::PhysicalCounter;
+use dsx::sync::mutex::{BootInfo, BootMutex};
 
 type EncUnit = u64;
 
@@ -40,6 +41,28 @@ fn decode_unit(unit: u64) -> Unit {
     }
 }
 
+pub struct KernBootInfo;
+
+impl BootInfo for KernBootInfo {
+    fn core() -> usize {
+        unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize }
+    }
+
+    fn can_use_cas() -> bool {
+        if unsafe { aarch64::current_el() } == 2 {
+            unsafe { SCTLR_EL2.get_value(SCTLR_EL2::M) != 0 }
+        } else {
+            unsafe { SCTLR_EL1.get_value(SCTLR_EL1::M) != 0 }
+        }
+    }
+
+    fn can_lock_without_cas() -> bool {
+        Self::core() == 0
+    }
+}
+
+pub type Mutex<T> = BootMutex<T, KernBootInfo>;
+
 pub static MUTEX_REGISTRY: RegistryList<MutexInner> = RegistryList::new_const();
 
 // all the shared fields
@@ -63,17 +86,17 @@ impl IntrusiveNode for MutexInner {
 }
 
 #[repr(align(64))]
-pub struct Mutex<T> {
+pub struct Mutex2<T> {
     pub inner: MutexInner,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Send> Send for Mutex<T> {}
+unsafe impl<T: Send> Send for Mutex2<T> {}
 
-unsafe impl<T: Send> Sync for Mutex<T> {}
+unsafe impl<T: Send> Sync for Mutex2<T> {}
 
 pub struct MutexGuard<'a, T: 'a> {
-    lock: &'a Mutex<T>,
+    lock: &'a Mutex2<T>,
     recursion_enabled_count: usize,
 }
 
@@ -81,11 +104,11 @@ impl<'a, T> ! Send for MutexGuard<'a, T> {}
 
 unsafe impl<'a, T: Sync> Sync for MutexGuard<'a, T> {}
 
-impl<T> Mutex<T> {
+impl<T> Mutex2<T> {
     #[track_caller]
-    pub const fn new(val: T) -> Mutex<T> {
+    pub const fn new(val: T) -> Mutex2<T> {
         let loc = Location::caller();
-        Mutex {
+        Mutex2 {
             inner: MutexInner {
                 lock_unit: AtomicU64::new(0),
                 owner: AtomicUsize::new(usize::max_value()),
@@ -120,7 +143,7 @@ macro_rules! m_lock_timeout {
 
 static ERR_LOCK: AtomicBool = AtomicBool::new(false);
 
-impl<T> Mutex<T> {
+impl<T> Mutex2<T> {
     fn has_mmu() -> bool {
         // possibly slightly wrong, not sure exactly what shareability settings
         // enable advanced control
@@ -312,7 +335,7 @@ impl<T> Mutex<T> {
     }
 }
 
-impl<T> Drop for Mutex<T> {
+impl<T> Drop for Mutex2<T> {
     fn drop(&mut self) {
         smp::no_interrupt(|| {
             if self.inner.intrusive_info.in_list() {
@@ -361,7 +384,7 @@ impl<'a, T: 'a> Drop for MutexGuard<'a, T> {
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for Mutex<T> {
+impl<T: fmt::Debug> fmt::Debug for Mutex2<T> {
     #[track_caller]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_lock(Duration::default()) {

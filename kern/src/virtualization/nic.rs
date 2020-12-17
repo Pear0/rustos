@@ -3,6 +3,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::time::Duration;
 
+use dsx::sync::mutex::LockableMutex;
 use hashbrown::HashMap;
 
 use pi::timer;

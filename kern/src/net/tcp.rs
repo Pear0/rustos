@@ -3,15 +3,20 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::fmt::{self, Write};
+use core::ops::AddAssign;
 use core::slice::from_mut;
 use core::time::Duration;
 
+use dsx::sync::mutex::LockableMutex;
 use hashbrown::{HashMap, HashSet};
 use modular_bitfield::prelude::*;
 
 use pi::timer;
 use pi::types::{BigU16, BigU32};
+use shim::io;
 
+use crate::fs::handle::{Sink, Source};
 use crate::iosync::{ConsoleSync, Global, ReadWrapper, SyncRead, SyncWrite};
 use crate::mutex::Mutex;
 use crate::net::{encode_struct, ipv4, NetErrorKind, NetResult, try_parse_struct};
@@ -20,10 +25,6 @@ use crate::net::ipv4::IPv4Payload;
 use crate::net::util::ChecksumOnesComplement;
 use crate::process::Process;
 use crate::shell;
-use core::ops::AddAssign;
-use core::fmt::{self, Write};
-use crate::fs::handle::{Source, Sink};
-use shim::io;
 
 // Works with aliases - just for the showcase.
 type Vitamin = B12;
@@ -247,7 +248,6 @@ impl SeqRing {
     pub fn is_recent(&self, val: u32) -> bool {
         self.value.wrapping_add(val) < 120_000
     }
-
 }
 
 impl AddAssign for SeqRing {
@@ -255,8 +255,6 @@ impl AddAssign for SeqRing {
         *self = self.add(rhs.get());
     }
 }
-
-
 
 
 struct TcpConnection {
@@ -416,7 +414,6 @@ impl TcpConnection {
                 // TODO packets arriving out of order. an handling dropped ACKs we've sent.
 
                 if frame.payload.len() != 0 {
-
                     use crate::iosync::SyncWrite;
                     match self.recv.write(frame.payload.as_ref()) {
                         Err(e) => {
@@ -442,7 +439,6 @@ impl TcpConnection {
                             let mut flags = Flags::default();
                             flags.set_ack(true);
                             self.send_packet(manager, flags, empty_payload());
-
                         }
                     };
                 }
@@ -615,7 +611,6 @@ impl ConnectionManager {
             if !lock.connections.as_mut().unwrap().contains_key(&key) {
                 match lock.listening_ports.get_mut(&local_sock) {
                     Some(func) => {
-
                         let outgoing = BufferHandle::new();
                         let incoming = BufferHandle::new();
 
@@ -661,7 +656,7 @@ impl ConnectionManager {
 
         writeln!(result, "\nConnections:").unwrap();
 
-        for (_, conn) in lock.connections.as_ref().unwrap().iter(){
+        for (_, conn) in lock.connections.as_ref().unwrap().iter() {
             writeln!(result, "  {}:{} -> {}:{} {:?} unsent:{}, unacked:{}",
                      conn.local.0, conn.local.1, conn.remote.0, conn.remote.1,
                      conn.state, conn.unsent_packets.len(), conn.unacked_packets.len()).unwrap();
@@ -669,7 +664,5 @@ impl ConnectionManager {
 
         result
     }
-
-
 }
 

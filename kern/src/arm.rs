@@ -1,14 +1,17 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
+use core::sync::atomic::Ordering;
 use core::time::Duration;
 
-use aarch64::regs::*;
-use crate::mutex::Mutex;
+use dsx::sync::mutex::LockableMutex;
 use enumset::EnumSet;
 use karch::capability::ExecCapability;
+
+use aarch64::regs::*;
+
 use crate::EXEC_CONTEXT;
-use downcast_rs::__std::sync::atomic::Ordering;
+use crate::mutex::Mutex;
 
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 
@@ -231,7 +234,7 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
             inner: Mutex::new(TimerControllerImpl {
                 timers: Vec::new(),
                 min_priority: 0,
-                _phantom: PhantomData::default()
+                _phantom: PhantomData::default(),
             })
         }
     }
@@ -287,11 +290,9 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
                 lock.min_priority = timer_priority + 1;
 
                 lock.recursion(|| {
-
                     int_func(&mut || {
                         (func.as_mut().unwrap())(&mut ctx);
                     });
-
                 });
 
                 lock.min_priority = lock_min_priority;
@@ -350,7 +351,6 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
 
         lock.timers.len()
     }
-
 }
 
 

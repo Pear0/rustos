@@ -1,15 +1,16 @@
 use core::time::Duration;
 
-use crate::mutex::Mutex;
+use dsx::sync::mutex::LockableMutex;
+
+use mini_alloc::MiniBox;
+
+use crate::display::{Color, ColorMode, DisplayConfig, DisplayHolder, Painter};
 use crate::mbox::with_mbox;
+use crate::mini_allocators::NOCACHE_ALLOC;
+use crate::mutex::Mutex;
 use crate::param::PAGE_SIZE;
 use crate::process::KernProcessCtx;
 use crate::VMM;
-
-use crate::display::{ColorMode, DisplayConfig, Painter, Color, DisplayHolder};
-use mini_alloc::MiniBox;
-use crate::mini_allocators::NOCACHE_ALLOC;
-
 
 fn display_init() -> Option<DisplayConfig> {
     let mut width: usize = 0;
@@ -127,7 +128,7 @@ pub fn display_process(ctx: KernProcessCtx) {
 
     p.draw_rect(0, 0, 500, 500, 0x4488cc.into());
 
-    p.draw_str(50, 50,foo);
+    p.draw_str(50, 50, foo);
 
     m_lock!(DISPLAY).replace(display);
 

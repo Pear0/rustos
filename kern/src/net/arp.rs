@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 use core::time::Duration;
 
+use dsx::sync::mutex::LockableMutex;
 use hashbrown::HashMap;
 
 use pi::timer;
@@ -150,7 +151,6 @@ impl ArpResolver for ArpTable {
         }
 
         if make_request {
-
             let mut packet = ArpPacket::default();
             packet.hw_address_space.set(HW_ADDR_ETHER);
             packet.protocol_address_space.set(PROT_ADDR_IP);

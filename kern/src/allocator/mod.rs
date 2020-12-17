@@ -1,17 +1,19 @@
 use core::alloc::{GlobalAlloc, Layout};
+use core::cell::UnsafeCell;
 use core::fmt;
 use core::sync::atomic::Ordering;
+
+use dsx::sync::mutex::LockableMutex;
+use enumset::EnumSet;
+use karch::capability::ExecCapability;
 
 use pi::atags::Atags;
 use shim::io;
 
+use crate::{EXEC_CONTEXT, hw, smp};
 use crate::allocator::tags::{MemTag, TaggingAlloc};
 use crate::init::SAFE_ALLOC_START;
 use crate::mutex::Mutex;
-use crate::{smp, hw, EXEC_CONTEXT};
-use core::cell::UnsafeCell;
-use karch::capability::ExecCapability;
-use enumset::EnumSet;
 
 mod linked_list;
 pub mod tags;
@@ -86,12 +88,10 @@ impl Allocator {
         let _guard = smp::interrupt_guard_outside_exc();
 
         let v = EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
-
             self.0.lock()
                 .as_mut()
                 .expect("allocator uninitialized")
                 .alloc_tag(layout, tag)
-
         });
 
         // drop(_guard);
@@ -103,12 +103,10 @@ impl Allocator {
         let _guard = smp::interrupt_guard_outside_exc();
 
         EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
-
             self.0.lock()
                 .as_mut()
                 .expect("allocator uninitialized")
                 .dealloc_tag(ptr, layout, tag);
-
         });
 
         // drop(_guard)

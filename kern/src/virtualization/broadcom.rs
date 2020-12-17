@@ -1,13 +1,15 @@
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
+use dsx::sync::mutex::LockableMutex;
+
 use crate::console::CONSOLE;
+use crate::iosync::{SyncRead, SyncWrite};
 use crate::mutex::Mutex;
 use crate::process::{HyperProcess, Process};
+use crate::sync::Waitable;
 use crate::virtualization::{DataAccess, DeviceError, IrqSource, Result, VirtDevice};
 use crate::vm::VirtualAddr;
-use crate::iosync::{SyncWrite, SyncRead};
-use crate::sync::Waitable;
 
 #[derive(Debug)]
 pub struct Interrupts();
@@ -312,7 +314,6 @@ impl VirtDevice for MiniUart {
         match addr {
             // data out
             0x40 => {
-
                 if let Some((sink, _)) = &mut process.detail.serial {
                     sink.write(&[val as u8]); // TODO do something if we can't write?
                 }
@@ -335,7 +336,6 @@ impl VirtDevice for MiniUart {
         let (send, receive) = ((lock.ier & 0b10) != 0, (lock.ier & 0b1) != 0);
 
         if let Some((sink, source)) = &mut process.detail.serial {
-
             if send && sink.done_waiting() {
                 do_assert = true;
             }
@@ -345,7 +345,6 @@ impl VirtDevice for MiniUart {
         }
 
         process.detail.irqs.set_asserted(IrqSource::Aux, do_assert);
-
     }
 }
 

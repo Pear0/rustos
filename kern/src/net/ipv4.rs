@@ -1,17 +1,19 @@
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::fmt;
+use core::num::ParseIntError;
+use core::str::FromStr;
+
+use dsx::sync::mutex::LockableMutex;
+use hashbrown::HashMap;
 
 use pi::types::BigU16;
 use shim::const_assert_size;
 
-use crate::net::{encode_struct, try_parse_struct, ether, arp, NetResult, NetErrorKind};
-use crate::net::ether::{EthPayload, EthHeader};
-use crate::net::util::ChecksumOnesComplement;
-use alloc::sync::Arc;
-use hashbrown::HashMap;
 use crate::mutex::Mutex;
-use core::str::FromStr;
-use core::num::ParseIntError;
+use crate::net::{arp, encode_struct, ether, NetErrorKind, NetResult, try_parse_struct};
+use crate::net::ether::{EthHeader, EthPayload};
+use crate::net::util::ChecksumOnesComplement;
 
 #[repr(C, packed)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -47,7 +49,7 @@ impl FromStr for Address {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut addr = Address::default();
         if s.split('.').count() != 4 {
-            return Err("wrong number of octets")
+            return Err("wrong number of octets");
         }
         for (i, e) in s.split('.').into_iter().enumerate() {
             addr.0[i] = e.parse().or(Err("invalid octet"))?;
