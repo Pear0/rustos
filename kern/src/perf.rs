@@ -2,7 +2,7 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::time::Duration;
 
 use hashbrown::HashMap;
@@ -33,6 +33,8 @@ static CORE_EVENTS: CoreLocal<Global<EventData>> = CoreLocal::new_global(|| Even
 static CORE_STATS: CoreLocal<Lazy<CoreStats>> = CoreLocal::new_lazy(|| CoreStats {
     total_tick_count: AtomicU64::new(0),
 });
+
+pub static PERF_EVENTS_ENABLED: AtomicBool = AtomicBool::new(true);
 
 struct EventData {
     initialized: bool,
@@ -160,6 +162,11 @@ pub fn record_event_hyper(tf: &mut HyperTrapFrame) -> bool {
 
 pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
     CORE_STATS.total_tick_count.fetch_add(1, Ordering::Relaxed);
+
+    if !PERF_EVENTS_ENABLED.load(Ordering::Relaxed) {
+        return false;
+    }
+
     let mut events = [PerfEvent::Empty; 50];
     let mut events_len = 0;
     let mut append = |event: PerfEvent| {
@@ -220,7 +227,7 @@ pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
 }
 
 pub fn dump_events() {
-    CORE_EVENTS.critical(|events| {
+    CORE_EVENTS.cross(0).critical(|events| {
         let perf_event = core::mem::size_of::<PerfEvent>();
 
         info!("current events: {}, event count: {} ({}), sample count: {}, dropped sample count: {}",
@@ -289,7 +296,7 @@ impl EventStreamer {
 
         let mut wrote_event = false;
 
-        CORE_EVENTS.critical(|events| {
+        CORE_EVENTS.cross(0).critical(|events| {
             while let Some(header_ev) = events.events.pop_front() {
                 let header = match header_ev {
                     PerfEvent::Header(h) => h,

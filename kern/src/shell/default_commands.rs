@@ -4,11 +4,15 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cmp::min;
 use core::ops::DerefMut;
+use core::sync::atomic::Ordering;
 use core::time::Duration;
 
 use hashbrown::HashMap;
+use log::Level;
+use xmas_elf::sections::ShType;
 
-use aarch64::{MPIDR_EL1, LR, SP};
+use aarch64::{LR, MPIDR_EL1, SP};
+use common::fmt::ByteSize;
 use fat32::traits::{Dir, Entry, File, Metadata};
 use fat32::traits::FileSystem;
 use fat32::vfat::{DynVFatHandle, DynWrapper, VFat};
@@ -20,8 +24,9 @@ use shim::ioerr;
 use shim::path::{Component, Path, PathBuf};
 use stack_vec::StackVec;
 
-use crate::{ALLOCATOR, BootVariant, NET, timer, timing, hw, FILESYSTEM2, perf, MP_ALLOC};
+use crate::{ALLOCATOR, BootVariant, FILESYSTEM2, hw, MP_ALLOC, NET, perf, timer, timing};
 use crate::allocator::AllocStats;
+use crate::arm::PhysicalCounter;
 use crate::fs::handle::{Sink, Source};
 use crate::fs::sd;
 use crate::fs::service::PipeService;
@@ -29,24 +34,20 @@ use crate::hyper::HYPER_SCHEDULER;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::kernel::KERNEL_IRQ;
 use crate::kernel::KERNEL_SCHEDULER;
+use crate::mutex::{Mutex, MUTEX_REGISTRY};
 use crate::net::arp::ArpResolver;
+use crate::perf::PERF_EVENTS_ENABLED;
 use crate::pigrate::bundle::ProcessBundle;
 use crate::pigrate_server::{pigrate_server, register_pigrate};
 use crate::process::Process;
 use crate::shell::command::{Command, CommandBuilder};
 use crate::shell::shortcut::sleep_until_key;
 use crate::smp;
+use crate::sync::atomic_registry::Registry;
 use crate::traps::coreinfo::exc_ratio;
+use crate::traps::IRQ_RECURSION_DEPTH;
 
 use super::shell::Shell;
-use xmas_elf::sections::ShType;
-use common::fmt::ByteSize;
-use crate::sync::atomic_registry::Registry;
-use crate::mutex::{Mutex, MUTEX_REGISTRY};
-use core::sync::atomic::Ordering;
-use crate::traps::IRQ_RECURSION_DEPTH;
-use crate::arm::PhysicalCounter;
-use log::Level;
 
 mod mem;
 mod net;
@@ -257,6 +258,30 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .build();
 
     sh.command()
+        .name("perf")
+        .help("Enable/Disable profile streaming")
+        .func_result(|sh, cmd| {
+            if cmd.args.len() < 2 {
+                writeln!(sh.writer, "expected: perf on/off")?;
+                return Ok(());
+            }
+
+            let new_state = match cmd.args[1] {
+                "on" => true,
+                "off" => false,
+                _ => {
+                    writeln!(sh.writer, "unknown argument")?;
+                    return Ok(());
+                }
+            };
+
+            PERF_EVENTS_ENABLED.store(new_state, Ordering::Relaxed);
+
+            Ok(())
+        })
+        .build();
+
+    sh.command()
         .name("alloc-oom")
         .help("Trigger OOM by causing an allocation using NULL_ALLOC")
         .func(|_sh, _cmd| {
@@ -274,7 +299,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .name("ls")
         .help("List files")
         .func_result(|sh, cmd| {
-
             let mut dir: &str = sh.cwd_str();
             let mut all = false;
             for arg in cmd.args[1..].iter() {
@@ -303,7 +327,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .name("lsmnt")
         .help("List mounted filesystems")
         .func_result(|sh, cmd| {
-
             let mount_info = FILESYSTEM2.critical(|fs| fs.get_mounts());
             writeln!(sh.writer, "Mounts:")?;
             for mount in mount_info.iter() {
@@ -376,7 +399,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .func_result(|sh, cmd| {
             if cmd.args.len() < 2 {
                 writeln!(sh.writer, "expected: loadelf <path>")?;
-                return Ok(())
+                return Ok(());
             }
 
             let path = sh.handle_path(cmd.args[1]);
@@ -390,7 +413,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
     sh.command()
         .name("elf")
         .func_result(|sh, _cmd| {
-
             let debug_info = crate::debug::debug_ref().ok_or("Debug info not loaded")?;
 
             let mut lr = crate::debug::base_pointer() as u64;
@@ -434,7 +456,6 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
     sh.command()
         .name("reg")
         .func_result(|sh, _cmd| {
-
             let _guard = smp::interrupt_guard();
 
             info!("registry op count: {}, size: {}", MUTEX_REGISTRY.op_count(), MUTEX_REGISTRY.size());
@@ -450,12 +471,8 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
     sh.command()
         .name("dtb")
         .func_result(|sh, _cmd| {
-
             if let hw::ArchVariant::Khadas(khadas) = hw::arch_variant() {
                 let dtb = khadas.dtb_reader()?;
-
-
-
             }
 
 
@@ -468,7 +485,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .func_result(|sh, cmd| {
             if cmd.args.len() < 3 {
                 writeln!(sh.writer, "expected: logl <module> <error|warn|info|debug|trace")?;
-                return Ok(())
+                return Ok(());
             }
 
             let level_str = cmd.args[2].to_lowercase();
