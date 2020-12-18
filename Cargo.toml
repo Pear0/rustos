@@ -1,0 +1,41 @@
+[workspace]
+
+members = [
+    "boot",
+    "kern",
+
+    "lib/aarch64",
+    "lib/common",
+    "lib/dsx",
+    "lib/dwmac",
+    "lib/fat32",
+    "lib/futures-sandbox",
+    "lib/karch",
+    "lib/kernel_api",
+    "lib/khadas",
+    "lib/kscheduler",
+    "lib/mini-alloc",
+    "lib/mountfs",
+    "lib/mpalloc",
+    "lib/pi",
+    "lib/pictl",
+    "lib/pigrate-core",
+    "lib/shim",
+    "lib/shutil",
+    "lib/small_io",
+    "lib/stack-vec",
+    "lib/tracing",
+    "lib/ttywrite",
+    "lib/usb-host-rs",
+    "lib/volatile",
+    "lib/xhci",
+    "lib/xmodem",
+
+    "user/fib",
+    "user/long",
+    "user/sleep",
+]
+
+exclude = [
+    "tut",
+]

@@ -1,7 +1,7 @@
 ROOT := $(shell git rev-parse --show-toplevel)
 
 KERN := kernel
-TARGET := target/aarch64-unknown-none/release/${KERN}
+TARGET := $(ROOT)/target/aarch64-unknown-none/release/${KERN}
 # SDCARD ?= $(ROOT)/ext/fat32-imgs/hyper.img
 SDCARD ?= kern-image/kern.img
 OBJCPY := $(HOME)/.cargo/bin/rust-objcopy --strip-all -O binary
