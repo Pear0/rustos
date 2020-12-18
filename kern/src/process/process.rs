@@ -316,11 +316,11 @@ impl<T: ProcessImpl> kscheduler::Process<T::Frame, State<T>> for Process<T> {
     }
 
     fn set_state(&mut self, state: State<T>) {
-        self.state = state
+        Process::<T>::set_state(self, state);
     }
 
     fn get_state(&self) -> &State<T> {
-        &self.state
+        Process::<T>::get_state(self)
     }
 
     fn should_kill(&self) -> bool {
