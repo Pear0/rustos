@@ -566,6 +566,7 @@ dependencies = [
  "karch",
  "kernel_api",
  "khadas",
+ "kscheduler",
  "lazy_static",
  "log",
  "mini-alloc",
@@ -614,6 +615,7 @@ dependencies = [
 name = "kscheduler"
 version = "0.1.0"
 dependencies = [
+ "dsx",
  "hashbrown",
 ]
 

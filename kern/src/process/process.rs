@@ -78,7 +78,7 @@ pub enum Priority {
 
 
 pub trait ProcessImpl: Sized {
-    type Frame: Frame + Default + Clone + Debug;
+    type Frame: Frame + kscheduler::Frame + Default + Clone + Debug;
     type RegionKind: Debug;
     type PageTable: GuestPageTable;
 
@@ -119,7 +119,7 @@ pub struct Process<T: ProcessImpl> {
     pub request_suspend: bool,
     request_kill: bool,
 
-    pub priority: Priority,
+    pub priority: usize,
 
     pub detail: T,
 }
@@ -150,7 +150,7 @@ impl<T: ProcessImpl> Process<T> {
             task_switches: 0,
             request_suspend: false,
             request_kill: false,
-            priority: Priority::Normal,
+            priority: Priority::Normal as usize,
             detail: T::new()?,
         })
     }
@@ -299,6 +299,48 @@ impl<T: ProcessImpl> Process<T> {
             State::Ready => true,
             _ => false,
         }
+    }
+}
+
+impl<T: ProcessImpl> kscheduler::Process<T::Frame, State<T>> for Process<T> {
+    fn get_frame(&mut self) -> &mut T::Frame {
+        &mut self.context
+    }
+
+    fn set_id(&mut self, id: usize) {
+        self.context.set_id(id as u64);
+    }
+
+    fn get_id(&self) -> usize {
+        self.context.get_id() as usize
+    }
+
+    fn set_state(&mut self, state: State<T>) {
+        self.state = state
+    }
+
+    fn get_state(&self) -> &State<T> {
+        &self.state
+    }
+
+    fn should_kill(&self) -> bool {
+        self.has_request_kill()
+    }
+
+    fn get_priority(&self) -> usize {
+        self.priority
+    }
+
+    fn check_ready(&mut self) -> bool {
+        self.is_ready()
+    }
+
+    fn affinity_match(&self) -> bool {
+        self.affinity.check(smp::core())
+    }
+
+    fn on_task_switch(&mut self) {
+        self.task_switches += 1;
     }
 }
 

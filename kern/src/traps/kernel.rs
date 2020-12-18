@@ -246,9 +246,10 @@ pub extern "C" fn kernel_handle_exception(info: Info, esr: u32, tf: &mut KernelT
     exc_exit();
 }
 
+#[inline(never)]
 fn debug_shell(tf: &mut KernelTrapFrame) {
     let mut snaps = Vec::new();
-    KERNEL_SCHEDULER.critical(|s| s.get_process_snaps(&mut snaps));
+    KERNEL_SCHEDULER.get_process_snaps(&mut snaps);
 
     let snap = snaps.into_iter().find(|s| s.tpidr == tf.TPIDR_EL0);
 

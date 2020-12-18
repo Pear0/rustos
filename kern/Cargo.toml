@@ -25,6 +25,7 @@ fat32 = { path = "../lib/fat32/", features = ["no_std"] }
 karch = { path = "../lib/karch" }
 kernel_api = { path = "../lib/kernel_api" }
 khadas = { path = "../lib/khadas" }
+kscheduler = { path = "../lib/kscheduler" }
 mini-alloc = { path = "../lib/mini-alloc" }
 mountfs = { path = "../lib/mountfs/", features = ["no_std"] }
 mpalloc = { path = "../lib/mpalloc" }

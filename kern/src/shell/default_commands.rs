@@ -39,7 +39,7 @@ use crate::net::arp::ArpResolver;
 use crate::perf::PERF_EVENTS_ENABLED;
 use crate::pigrate::bundle::ProcessBundle;
 use crate::pigrate_server::{pigrate_server, register_pigrate};
-use crate::process::Process;
+use crate::process::{Process, SnapProcess};
 use crate::shell::command::{Command, CommandBuilder};
 use crate::shell::shortcut::sleep_until_key;
 use crate::smp;
@@ -555,11 +555,11 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 write!(table.get_writer(), "\x1b[2K")?;
                 table.print_header()?;
 
-                let mut snaps = Vec::new();
+                let mut snaps: Vec<SnapProcess> = Vec::new();
                 if BootVariant::kernel() {
-                    KERNEL_SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+                    KERNEL_SCHEDULER.get_process_snaps(&mut snaps);
                 } else {
-                    HYPER_SCHEDULER.critical(|p| p.get_process_snaps(&mut snaps));
+                    HYPER_SCHEDULER.get_process_snaps(&mut snaps);
                 }
 
                 snaps.sort_by(|a, b| a.tpidr.cmp(&b.tpidr));

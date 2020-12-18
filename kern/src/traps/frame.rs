@@ -4,7 +4,7 @@ use shim::io;
 
 mod gen;
 
-pub trait Frame {
+pub trait Frame: Clone {
     fn get_id(&self) -> u64;
 
     fn set_id(&mut self, val: u64);
@@ -76,6 +76,12 @@ impl Frame for KernelTrapFrame {
     }
 }
 
+impl kscheduler::Frame for KernelTrapFrame {
+    fn get_id(&self) -> usize {
+        Frame::get_id(self) as usize
+    }
+}
+
 impl HyperTrapFrame {
     pub fn as_bytes(&self) -> &[u8] {
         use fat32::util::SliceExt;
@@ -116,3 +122,8 @@ impl Frame for HyperTrapFrame {
     }
 }
 
+impl kscheduler::Frame for HyperTrapFrame {
+    fn get_id(&self) -> usize {
+        Frame::get_id(self) as usize
+    }
+}

@@ -18,6 +18,7 @@ pub use self::hyper::*;
 pub use self::kernel::*;
 pub use self::process::{Id, Process, ProcessImpl, CoreAffinity, Priority};
 pub use self::scheduler::GlobalScheduler;
+pub use self::snap::*;
 pub use self::stack::Stack;
 pub use self::state::{EventPollFn, State};
 
