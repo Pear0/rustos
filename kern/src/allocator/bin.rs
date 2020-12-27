@@ -1,14 +1,18 @@
 use core::alloc::Layout;
 
+use arrayvec::ArrayVec;
+
+use common::fmt::ByteSize;
+use pi::atags::Atag::Mem;
+use shim::io;
+
+use crate::allocator::{AllocStats, LocalAlloc};
 use crate::allocator::linked_list::LinkedList;
-use crate::allocator::{LocalAlloc, AllocStats};
-use crate::allocator::tags::{TaggingAlloc, MemTag};
+use crate::allocator::tags::{MemTag, TaggingAlloc};
+use crate::allocator::util::align_down;
 
 use super::util::align_up;
-use shim::io;
-use pi::atags::Atag::Mem;
-use arrayvec::ArrayVec;
-use crate::allocator::util::align_down;
+use crate::virtualization::AccessSize::Byte;
 
 /// A simple allocator that allocates based on size classes.
 ///   bin 0 (2^3 bytes)    : handles allocations in (0, 2^3]
@@ -19,6 +23,8 @@ use crate::allocator::util::align_down;
 ///   map_to_bin(size) -> k
 ///
 
+const NUM_BINS: usize = 30;
+
 /// I hope you like fastbins.
 #[derive(Debug)]
 pub struct Allocator {
@@ -28,7 +34,9 @@ pub struct Allocator {
     tag_used: [usize; MemTag::len() as usize],
     wilderness: usize,
     wilderness_end: usize,
-    bins: [LinkedList; 30],
+    bins: [LinkedList; NUM_BINS],
+    bin_allocated: [usize; NUM_BINS],
+    bin_total_allocated: [usize; NUM_BINS],
     reserved_regions: ArrayVec<[(usize, usize); 32]>,
 }
 
@@ -54,7 +62,9 @@ impl Allocator {
             tag_used: [0; MemTag::len() as usize],
             wilderness: align_up(start, 8),
             wilderness_end: end,
-            bins: [LinkedList::new(); 30],
+            bins: [LinkedList::new(); NUM_BINS],
+            bin_allocated: [0; NUM_BINS],
+            bin_total_allocated: [0; NUM_BINS],
             reserved_regions: ArrayVec::new(),
         }
     }
@@ -103,7 +113,6 @@ impl Allocator {
     /// place the allocate the largest possible bin entries as possible in the
     /// region. This way otherwise lost space gets turned into more small fastbins.
     fn fill_allocations_until(&mut self, end: usize) -> bool {
-
         'fill_loop: while self.wilderness != end {
             assert!(end - self.wilderness > 7);
 
@@ -175,11 +184,11 @@ impl Allocator {
         }
 
         // failed to split larger chunks
-        if self.bins[target_bin+1].is_empty() && !self.recursive_split_bin(target_bin+1) {
+        if self.bins[target_bin + 1].is_empty() && !self.recursive_split_bin(target_bin + 1) {
             return false;
         }
 
-        if !self.split_bin(target_bin+1) {
+        if !self.split_bin(target_bin + 1) {
             return false;
         }
 
@@ -187,7 +196,6 @@ impl Allocator {
     }
 
     fn scavenge_bin(&mut self, bin: usize) -> bool {
-
         if self.recursive_split_bin(bin) {
             return true;
         }
@@ -198,6 +206,21 @@ impl Allocator {
         self.allocate_bin_entry(bin)
     }
 
+    fn on_bin_alloc(&mut self, bin: usize, tag: MemTag) {
+        self.used += self.bin_size(bin);
+        self.tag_used[tag as u8 as usize] += self.bin_size(bin);
+
+        self.bin_allocated[bin] += 1;
+        self.bin_total_allocated[bin] += 1;
+    }
+
+    fn on_bin_dealloc(&mut self, bin: usize, tag: MemTag) {
+        self.used -= self.bin_size(bin);
+        self.tag_used[tag as u8 as usize] -= self.bin_size(bin);
+
+        self.bin_allocated[bin] -= 1;
+    }
+
     fn do_alloc(&mut self, layout: Layout, tag: MemTag) -> Option<*mut u8> {
         let bin = self.layout_to_bin(layout);
 
@@ -205,8 +228,7 @@ impl Allocator {
 
         if let Some(p) = self.bins[bin].pop() {
             // println!("[alloc] served with fastbin:{}", bin);
-            self.used += self.bin_size(bin);
-            self.tag_used[tag as u8 as usize] += self.bin_size(bin);
+            self.on_bin_alloc(bin, tag);
             return Some(p as *mut u8);
         }
 
@@ -215,23 +237,20 @@ impl Allocator {
             return None;
         }
 
-        self.used += self.bin_size(bin);
-        self.tag_used[tag as u8 as usize] += self.bin_size(bin);
+        self.on_bin_alloc(bin, tag);
         Some(self.bins[bin].pop().unwrap() as *mut u8)
     }
 
     fn do_dealloc(&mut self, ptr: *mut u8, layout: Layout, tag: MemTag) {
         let bin = self.layout_to_bin(layout);
-        self.used -= self.bin_size(bin);
-        self.tag_used[tag as u8 as usize] -= self.bin_size(bin);
-
+        self.on_bin_dealloc(bin, tag);
         // cast is safe because we only ever give out 8 byte aligned pointers
         // anyway.
         unsafe { self.bins[bin].push(ptr as *mut usize) };
     }
 
     pub fn register_reserved_region(&mut self, region: (usize, usize)) -> bool {
-        let aligned_start =  align_down(region.0, 8);
+        let aligned_start = align_down(region.0, 8);
         let aligned_size = align_up(region.0 + region.1, 8) - aligned_start;
 
         self.reserved_regions.push((aligned_start, aligned_size));
@@ -242,7 +261,6 @@ impl Allocator {
         // return false if the allocator is unable / has already violated the reserved region.
         aligned_start >= self.wilderness
     }
-
 }
 
 impl TaggingAlloc for Allocator {
@@ -310,8 +328,8 @@ impl AllocStats for Allocator {
 
         let (allocated, total) = self.total_allocation();
 
-        writeln!(w, "allocated: {}", allocated)?;
-        writeln!(w, "total: {}", total)?;
+        writeln!(w, "allocated: {}", ByteSize::from(allocated))?;
+        writeln!(w, "total: {}", ByteSize::from(total))?;
         writeln!(w, "percent: {}%", 100.0 * (allocated as f64) / (total as f64))?;
 
         writeln!(w, "Tags:")?;
@@ -319,6 +337,13 @@ impl AllocStats for Allocator {
             let tag = MemTag::from(i);
             writeln!(w, "  {:?}: {}%", tag, 100.0 * (self.tag_used[i as usize] as f64) / (total as f64))?;
         }
+
+        writeln!(w, "Bins:")?;
+        for i in 0..NUM_BINS {
+            writeln!(w, "  {}: size={} active_bins={}, total_bins={}",
+                     i, ByteSize::from(self.bin_size(i)), self.bin_allocated[i], self.bin_total_allocated[i])?;
+        }
+
 
         Ok(())
     }

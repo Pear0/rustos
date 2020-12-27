@@ -33,6 +33,7 @@ impl fmt::Display for ByteSize {
                 value /= divide;
                 is_thing = true;
                 suffix = suffixes[i];
+                break;
             }
         }
 
