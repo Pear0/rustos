@@ -121,7 +121,7 @@ pub struct Gmac<H: Hooks> {
 
 impl<H: Hooks> Gmac<H> {
     pub fn open(al: AllocRef) -> Result<Self, Error> {
-        H::sleep(Duration::from_millis(3000));
+        // H::sleep(Duration::from_millis(3000));
 
         info!("dwmac");
 

@@ -167,6 +167,9 @@ pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
         return false;
     }
 
+    // by shifting, the trace back one instruction, it will point to the
+    let lr_shift = 0u64.wrapping_sub(4);
+
     let mut events = [PerfEvent::Empty; 50];
     let mut events_len = 0;
     let mut append = |event: PerfEvent| {
@@ -190,12 +193,12 @@ pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
 
     if is_exc {
         append(PerfEvent::Exc(ExcEvent {
-            lr: proc_lr,
+            lr: proc_lr.wrapping_add(lr_shift),
         }));
 
         for frame in unsafe { debug::stack_walker_bp(proc_bp) } {
             append(PerfEvent::Exc(ExcEvent {
-                lr: frame.link_register,
+                lr: frame.link_register.wrapping_add(lr_shift),
             }));
         }
 
@@ -205,17 +208,17 @@ pub fn record_event_kernel(tf: &mut KernelTrapFrame) -> bool {
 
     if kern_thread {
         append(PerfEvent::Kernel(KernelEvent {
-            lr: proc_lr,
+            lr: proc_lr.wrapping_add(lr_shift),
         }));
 
         for frame in unsafe { debug::stack_walker_bp(proc_bp) } {
             append(PerfEvent::Kernel(KernelEvent {
-                lr: frame.link_register,
+                lr: frame.link_register.wrapping_add(lr_shift),
             }));
         }
     } else {
         append(PerfEvent::Guest(GuestEvent {
-            lr: proc_lr,
+            lr: proc_lr.wrapping_add(lr_shift),
         }));
 
         // TODO stack walk guest???

@@ -218,7 +218,7 @@ pub fn kernel_main() -> ! {
     let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
     info!("cpu attrs: {:?}", attrs);
 
-    let enable_many_cores = !BootVariant::kernel_in_hypervisor();
+    let enable_many_cores = !BootVariant::kernel_in_hypervisor() && false;
 
     if true {
         let cores = if enable_many_cores { 4 } else { 1 };
@@ -351,6 +351,19 @@ pub fn kernel_main() -> ! {
         let proc = KernelProcess::kernel_process("perf streamer".to_owned(), perf::perf_stream_proc).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
+
+
+    // for _ in 0..200 {
+    //     let proc = KernelProcess::kernel_process("sleeper".to_owned(), |_ctx| {
+    //
+    //         loop {
+    //             timing::sleep_phys(Duration::from_micros(500));
+    //             kernel_api::syscall::sleep(Duration::from_secs(1));
+    //         }
+    //
+    //     }).unwrap();
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
 
     // {
     //     let proc = KernelProcess::kernel_process_old("led".to_owned(), led_blink).unwrap();

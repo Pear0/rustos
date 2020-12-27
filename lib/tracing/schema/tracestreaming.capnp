@@ -17,3 +17,7 @@ struct TraceEvent @0xc84aca40859a2728 {
 struct TraceFrame @0x83b890232f7ef4c1 {
     pc @0 :UInt64;
 }
+
+struct SavedTraces @0xd194ad8ff09881cf {
+    groups @0 :List(TraceGroup);
+}
