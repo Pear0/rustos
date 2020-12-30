@@ -52,17 +52,26 @@ extern crate serde_cbor;
 #[macro_use]
 extern crate shim;
 
+use alloc::alloc::{GlobalAlloc, Layout};
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::time::Duration;
 
+use crossbeam_utils::atomic::AtomicCell;
+use enumset::EnumSet;
+
 use aarch64::{CNTP_CTL_EL0, SP};
 use allocator::Allocator;
+use dsx::sys::{set_system_hooks, SystemHooks};
 use fs::FileSystem;
+use karch::capability::ExecCapability;
+use kernel_api::syscall::exit;
+use mpalloc::{NULL_ALLOC, ThreadedAlloc, ThreadLocalAlloc};
 use net::ipv4;
 use pi::{gpio, timer};
 use pi::interrupt::CoreInterrupt;
@@ -71,6 +80,10 @@ use process::GlobalScheduler;
 use shim::{io, ioerr};
 use vm::VMManager;
 
+use crate::allocator::{FullThreadLocal, MpAllocator, MpThreadLocal};
+use crate::arm::PhysicalCounter;
+use crate::cls::{CoreLazy, CoreLocal};
+use crate::fs2::FileSystem2;
 use crate::fs::handle::{SinkWrapper, SourceWrapper};
 use crate::init::EL1_IN_HYPERVISOR;
 use crate::iosync::{ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
@@ -80,19 +93,8 @@ use crate::net::GlobalNetHandler;
 use crate::param::PAGE_SIZE;
 use crate::process::{Id, KernelImpl, Process, Stack};
 use crate::process::fd::FileDescriptor;
-use crate::traps::syndrome::Syndrome;
-use crate::arm::PhysicalCounter;
-use crate::fs2::FileSystem2;
 use crate::traps::IRQ_RECURSION_DEPTH;
-use crate::allocator::{MpAllocator, MpThreadLocal};
-use mpalloc::NULL_ALLOC;
-use crate::cls::{CoreLocal, CoreLazy};
-use enumset::EnumSet;
-use karch::capability::ExecCapability;
-use serde::de::Unexpected::Enum;
-use crossbeam_utils::atomic::AtomicCell;
-use kernel_api::syscall::exit;
-use dsx::sys::{SystemHooks, set_system_hooks};
+use crate::traps::syndrome::Syndrome;
 
 #[macro_use]
 pub mod console;
@@ -139,7 +141,23 @@ pub mod vm;
 
 pub static ALLOCATOR: Allocator = Allocator::uninitialized();
 
+#[derive(Default)]
+struct Foo;
+
+impl ThreadLocalAlloc for Foo {
+    unsafe fn alloc(&mut self, layout: Layout, del: &'static dyn GlobalAlloc) -> *mut u8 {
+        del.alloc(layout)
+    }
+
+    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout, del: &'static dyn GlobalAlloc) {
+        del.dealloc(ptr, layout)
+    }
+}
+
 #[cfg_attr(not(test), global_allocator)]
+pub(crate) static FOO_ALLOC: ThreadedAlloc<Foo, FullThreadLocal<Foo>> = ThreadedAlloc::<_, _>::new(FullThreadLocal::new_default());
+
+// #[cfg_attr(not(test), global_allocator)]
 pub static MP_ALLOC: MpAllocator = MpAllocator::new();
 
 // pub static FILESYSTEM: FileSystem = FileSystem::uninitialized();
@@ -178,7 +196,6 @@ impl ExecContext {
     #[inline(always)]
     pub fn lock_capability<F, R>(&self, caps: EnumSet<ExecCapability>, func: F) -> R
         where F: FnOnce() -> R {
-
         if !self.has_capabilities(caps) {
             panic!("attempt to lock_capabilities({:?}) without {:?}",
                    caps, caps.difference(self.get_capabilities()));
@@ -292,6 +309,8 @@ fn kmain(boot_hypervisor: bool) -> ! {
         ALLOCATOR.initialize();
 
         EXEC_CONTEXT.add_capabilities(EnumSet::only(ExecCapability::Allocation));
+
+        FOO_ALLOC.set_delegate(&ALLOCATOR);
 
         MP_ALLOC.initialize(&ALLOCATOR, MpThreadLocal::default())
 

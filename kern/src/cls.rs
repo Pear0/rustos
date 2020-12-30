@@ -4,7 +4,7 @@ use aarch64::MPIDR_EL1;
 use crate::mutex::{MutexGuard, Mutex};
 use crate::iosync::{Global, Lazy};
 
-const CORE_COUNT: usize = 4;
+pub const CORE_COUNT: usize = 4;
 
 pub struct CoreLocal<T>([T; CORE_COUNT]);
 

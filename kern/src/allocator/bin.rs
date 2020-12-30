@@ -36,6 +36,7 @@ pub struct Allocator {
     wilderness_end: usize,
     bins: [LinkedList; NUM_BINS],
     bin_allocated: [usize; NUM_BINS],
+    bin_peak_allocated: [usize; NUM_BINS],
     bin_total_allocated: [usize; NUM_BINS],
     reserved_regions: ArrayVec<[(usize, usize); 32]>,
 }
@@ -64,6 +65,7 @@ impl Allocator {
             wilderness_end: end,
             bins: [LinkedList::new(); NUM_BINS],
             bin_allocated: [0; NUM_BINS],
+            bin_peak_allocated: [0; NUM_BINS],
             bin_total_allocated: [0; NUM_BINS],
             reserved_regions: ArrayVec::new(),
         }
@@ -211,6 +213,11 @@ impl Allocator {
         self.tag_used[tag as u8 as usize] += self.bin_size(bin);
 
         self.bin_allocated[bin] += 1;
+
+        if self.bin_allocated[bin] > self.bin_peak_allocated[bin] {
+            self.bin_peak_allocated[bin] = self.bin_allocated[bin];
+        }
+
         self.bin_total_allocated[bin] += 1;
     }
 
@@ -323,7 +330,7 @@ impl AllocStats for Allocator {
         (self.used, self.end - self.start)
     }
 
-    fn dump(&self, w: &mut io::Write) -> io::Result<()> {
+    fn dump(&self, mut w: &mut dyn io::Write) -> io::Result<()> {
         writeln!(w, "Allocator")?;
 
         let (allocated, total) = self.total_allocation();
@@ -339,9 +346,10 @@ impl AllocStats for Allocator {
         }
 
         writeln!(w, "Bins:")?;
+
         for i in 0..NUM_BINS {
-            writeln!(w, "  {}: size={} active_bins={}, total_bins={}",
-                     i, ByteSize::from(self.bin_size(i)), self.bin_allocated[i], self.bin_total_allocated[i])?;
+            writeln!(w, "  {}: size={} active_bins={}, peak_bins={}, total_bins={}",
+                     i, ByteSize::from(self.bin_size(i)), self.bin_allocated[i], self.bin_peak_allocated[i], self.bin_total_allocated[i])?;
         }
 
 

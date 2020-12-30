@@ -161,3 +161,64 @@ fn align_up(addr: usize, align: usize) -> usize {
         align_down(addr, align)
     }
 }
+
+
+pub trait ThreadLocalAlloc: Default {
+
+    unsafe fn alloc(&mut self, layout: Layout, del: &'static dyn GlobalAlloc) -> *mut u8;
+
+    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout, del: &'static dyn GlobalAlloc);
+
+}
+
+pub struct ThreadedAlloc<T: ThreadLocalAlloc, TL: ThreadLocal<T>> {
+    local: TL,
+    delegate: UnsafeCell<Option<&'static dyn GlobalAlloc>>,
+    __phantom: PhantomData<T>,
+}
+
+unsafe impl<T: ThreadLocalAlloc, TL: ThreadLocal<T>> Sync for ThreadedAlloc<T, TL> {}
+
+impl<T: ThreadLocalAlloc, TL: ThreadLocal<T>> ThreadedAlloc<T, TL> {
+
+    pub const fn new(local: TL) -> Self {
+        Self {
+            local,
+            delegate: UnsafeCell::new(None),
+            __phantom: PhantomData,
+        }
+    }
+
+}
+
+impl<T: ThreadLocalAlloc, TL: ThreadLocal<T>> ThreadedAlloc<T, TL> {
+    pub unsafe fn set_delegate(&self, del: &'static dyn GlobalAlloc) {
+        (&mut *self.delegate.get()).replace(del);
+    }
+
+    fn get_delegate(&self) -> Option<&'static dyn GlobalAlloc> {
+        unsafe { &*self.delegate.get() }.as_ref().cloned()
+    }
+}
+
+unsafe impl<T: ThreadLocalAlloc, TL: ThreadLocal<T>> GlobalAlloc for ThreadedAlloc<T, TL> {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let del = self.get_delegate().expect("no delegate");
+        self.local.get_mut().alloc(layout, del)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let del = self.get_delegate().expect("no delegate");
+        self.local.get_mut().dealloc(ptr, layout, del)
+    }
+}
+
+
+
+
+
+
+
+
+
+

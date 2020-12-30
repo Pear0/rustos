@@ -14,6 +14,9 @@ use crate::{EXEC_CONTEXT, hw, smp};
 use crate::allocator::tags::{MemTag, TaggingAlloc};
 use crate::init::SAFE_ALLOC_START;
 use crate::mutex::Mutex;
+use crate::cls::CORE_COUNT;
+use crate::smp::core;
+use crate::traps::IRQ_RECURSION_DEPTH;
 
 mod linked_list;
 pub mod tags;
@@ -185,3 +188,37 @@ impl mpalloc::Hooks for MpAllocHook {
 pub type MpAllocator = mpalloc::Allocator<MpAllocHook>;
 
 
+pub struct FullThreadLocal<T: Default> {
+    pub containers: [UnsafeCell<Option<T>>; CORE_COUNT * 2],
+    pub init: fn() -> T,
+}
+
+impl <T: Default> FullThreadLocal<T> {
+    pub const fn new(init: fn() -> T) -> Self {
+        FullThreadLocal {
+            containers: [
+                UnsafeCell::new(None), UnsafeCell::new(None), UnsafeCell::new(None), UnsafeCell::new(None),
+                UnsafeCell::new(None), UnsafeCell::new(None), UnsafeCell::new(None), UnsafeCell::new(None),
+            ],
+            init,
+        }
+    }
+
+    pub const fn new_default() -> Self {
+        Self::new(|| T::default())
+    }
+}
+
+impl<T: Default> mpalloc::ThreadLocal<T> for FullThreadLocal<T> {
+    unsafe fn get_mut(&self) -> &mut T {
+        let mut core = core();
+        if IRQ_RECURSION_DEPTH.get() > 0 {
+            core += CORE_COUNT;
+        }
+        let container = unsafe { &mut *self.containers[core].get() };
+        if container.is_none() {
+            container.replace((self.init)());
+        }
+        container.as_mut().unwrap()
+    }
+}

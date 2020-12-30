@@ -716,6 +716,9 @@ dependencies = [
 [[package]]
 name = "mpalloc"
 version = "0.1.0"
+dependencies = [
+ "dsx",
+]
 
 [[package]]
 name = "num-traits"
