@@ -334,6 +334,10 @@ impl<T: ProcessImpl> kscheduler::SchedInfo for MySchedInfo<T> {
     type State = State<T>;
     type Process = Process<T>;
 
+    fn current_core(&self) -> usize {
+        smp::core()
+    }
+
     fn get_idle_task(&mut self) -> &mut Self::Process {
         &mut self.idle_tasks[smp::core()]
     }

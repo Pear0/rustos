@@ -27,6 +27,8 @@ pub trait SchedInfo : Sized {
 
     type Process : Process<Self::Frame, Self::State>;
 
+    fn current_core(&self) -> usize;
+
     fn get_idle_task(&mut self) -> &mut Self::Process;
 
     fn running_state(&self) -> Self::State;
