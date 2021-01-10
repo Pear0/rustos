@@ -295,6 +295,7 @@ version = "0.1.0"
 dependencies = [
  "crossbeam",
  "crossbeam-utils 0.8.1",
+ "downcast-rs",
  "loom",
 ]
 

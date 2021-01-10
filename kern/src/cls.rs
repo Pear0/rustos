@@ -1,7 +1,7 @@
 use core::ops::Deref;
 use core::cell::Cell;
 use aarch64::MPIDR_EL1;
-use crate::mutex::{MutexGuard, Mutex};
+use crate::mutex::Mutex;
 use crate::iosync::{Global, Lazy};
 
 pub const CORE_COUNT: usize = 4;

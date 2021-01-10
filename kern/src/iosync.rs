@@ -11,7 +11,7 @@ use shim::io;
 use shim::io::Error;
 
 use crate::console::CONSOLE;
-use crate::mutex::{Mutex, MutexGuard};
+use crate::mutex::Mutex;
 use crate::smp;
 use crate::smp::no_interrupt;
 use crate::sync::Waitable;

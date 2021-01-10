@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::fmt::Alignment::Left;
@@ -10,13 +11,13 @@ use core::sync::atomic::AtomicU64;
 use core::time::Duration;
 
 use crossbeam_utils::atomic::AtomicCell;
-use dsx::collections::registry_list::{IntrusiveInfo, IntrusiveNode, RegistryList};
 
 use aarch64::{MPIDR_EL1, SCTLR_EL1, SCTLR_EL2, SP};
+use dsx::collections::registry_list::{IntrusiveInfo, IntrusiveNode, RegistryList};
+use dsx::sync::mutex::{BootInfo, BootMutex, HookedMutex, HOOKS, LightMutex, LockableMutex, LockContext, LockHooks, MutexDataContainerSync, MutexDataSync};
 
 use crate::{hw, smp, timing, traps};
 use crate::arm::PhysicalCounter;
-use dsx::sync::mutex::{BootInfo, BootMutex};
 
 type EncUnit = u64;
 
@@ -61,66 +62,149 @@ impl BootInfo for KernBootInfo {
     }
 }
 
-pub type Mutex<T> = BootMutex<T, KernBootInfo>;
+struct Placeholder;
 
-pub static MUTEX_REGISTRY: RegistryList<MutexInner> = RegistryList::new_const();
+impl MutexDataSync for Placeholder {}
 
-// all the shared fields
-pub struct MutexInner {
-    lock_unit: AtomicU64,
-    owner: AtomicUsize,
-    pub name: &'static Location<'static>,
-    locked_at: AtomicU64,
-    pub total_waiting_time: AtomicU64,
-    lock_name: UnsafeCell<&'static Location<'static>>,
-    lock_trace: UnsafeCell<[u64; 50]>,
-    intrusive_info: IntrusiveInfo<Self>,
+#[repr(align(128))]
+pub struct LockInfo {
+    pub assigned: AtomicBool,
+    pub lock_op_count: AtomicUsize,
+    pub lock_name: UnsafeCell<Option<&'static Location<'static>>>,
+    pub locker_name: UnsafeCell<Option<&'static Location<'static>>>,
 }
 
-unsafe impl Sync for MutexInner {}
+unsafe impl Sync for LockInfo {}
 
-impl IntrusiveNode for MutexInner {
-    fn get_info(&self) -> &IntrusiveInfo<Self> where Self: Sized {
-        &self.intrusive_info
+impl MutexDataSync for LockInfo {}
+
+impl LockInfo {
+    pub fn new() -> Self {
+        Self {
+            assigned: AtomicBool::new(false),
+            lock_op_count: AtomicUsize::new(0),
+            lock_name: UnsafeCell::new(None),
+            locker_name: UnsafeCell::new(None),
+        }
+    }
+
+    pub fn reset(&self) {
+        unsafe {
+            *self.locker_name.get() = None;
+            *self.lock_name.get() = None;
+        }
+        self.lock_op_count.store(0, Ordering::Relaxed);
+        self.assigned.store(false, Ordering::Release);
+    }
+
+    pub fn initialize(&self, ctx: &LockContext) {
+        unsafe {
+            *self.lock_name.get() = Some(ctx.lock_name);
+        }
+        self.lock_op_count.store(0, Ordering::Relaxed);
+        self.on_locked(ctx);
+    }
+
+    pub fn on_locked(&self, ctx: &LockContext) {
+        unsafe {
+            *self.locker_name.get() = Some(ctx.locked_by);
+        }
+        self.lock_op_count.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-#[repr(align(64))]
-pub struct Mutex2<T> {
-    pub inner: MutexInner,
-    data: UnsafeCell<T>,
+pub struct KernMutexHooks {
+    pub lock_count: AtomicUsize,
+    pub lock_op_count: AtomicUsize,
 }
 
-unsafe impl<T: Send> Send for Mutex2<T> {}
-
-unsafe impl<T: Send> Sync for Mutex2<T> {}
-
-pub struct MutexGuard<'a, T: 'a> {
-    lock: &'a Mutex2<T>,
-    recursion_enabled_count: usize,
-}
-
-impl<'a, T> ! Send for MutexGuard<'a, T> {}
-
-unsafe impl<'a, T: Sync> Sync for MutexGuard<'a, T> {}
-
-impl<T> Mutex2<T> {
-    #[track_caller]
-    pub const fn new(val: T) -> Mutex2<T> {
-        let loc = Location::caller();
-        Mutex2 {
-            inner: MutexInner {
-                lock_unit: AtomicU64::new(0),
-                owner: AtomicUsize::new(usize::max_value()),
-                name: loc,
-                locked_at: AtomicU64::new(0),
-                total_waiting_time: AtomicU64::new(0),
-                lock_name: UnsafeCell::new(loc),
-                lock_trace: UnsafeCell::new([0; 50]),
-                intrusive_info: IntrusiveInfo::new(),
-            },
-            data: UnsafeCell::new(val),
+impl LockHooks for KernMutexHooks {
+    fn on_locked(&self, item: &mut MutexDataContainerSync, ctx: &LockContext) {
+        self.lock_op_count.fetch_add(1, Ordering::Relaxed);
+        if item.has_data() {
+            if let Some(info) = item.as_ref::<LockInfo>() {
+                info.on_locked(ctx);
+            }
+            return;
         }
+
+        self.lock_count.fetch_add(1, Ordering::Relaxed);
+
+        let infos = unsafe { MUTEX_INFOS.as_ref().unwrap() };
+
+        for info in infos.iter() {
+            match info.assigned.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed) {
+                Ok(_) => {
+                    info.initialize(ctx);
+                    item.replace(info.clone());
+                    return;
+                }
+                Err(_) => continue,
+            }
+        }
+
+        // assign placeholder since we couldn't acquire a lock info
+        item.replace(unsafe { MUTEX_PLACEHOLDER.as_ref().unwrap().clone() });
+    }
+
+    fn lock_dropped(&self, item: MutexDataContainerSync) {
+        if item.has_data() {
+            if let Some(info) = item.as_ref::<LockInfo>() {
+                info.reset();
+            }
+
+            self.lock_count.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+}
+
+pub static KERN_MUTEX_HOOKS: KernMutexHooks = KernMutexHooks {
+    lock_count: AtomicUsize::new(0),
+    lock_op_count: AtomicUsize::new(0),
+};
+
+static mut MUTEX_PLACEHOLDER: Option<Arc<Placeholder>> = None;
+pub static mut MUTEX_INFOS: Option<Vec<Arc<LockInfo>>> = None;
+
+pub fn register_hooks() {
+    unsafe {
+        MUTEX_PLACEHOLDER = Some(Arc::new(Placeholder));
+
+        {
+            let mut infos = Vec::new();
+            infos.reserve_exact(32);
+            for _ in 0..32 {
+                infos.push(Arc::new(LockInfo::new()));
+            }
+
+            MUTEX_INFOS = Some(infos);
+        }
+
+        HOOKS = &KERN_MUTEX_HOOKS;
+    }
+}
+
+#[derive(Debug)]
+pub struct Mutex<T>(HookedMutex<BootMutex<T, KernBootInfo>>);
+
+impl<T> Mutex<T> {
+    #[track_caller]
+    pub const fn new(value: T) -> Self {
+        Mutex(HookedMutex::new(BootMutex::new(value)))
+    }
+}
+
+impl<T> Deref for Mutex<T> {
+    type Target = HookedMutex<BootMutex<T, KernBootInfo>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for Mutex<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -137,259 +221,4 @@ macro_rules! m_lock {
 #[macro_export]
 macro_rules! m_lock_timeout {
     ($mutex:expr, $time:expr) => (($mutex).lock_timeout($time))
-}
-
-
-
-static ERR_LOCK: AtomicBool = AtomicBool::new(false);
-
-impl<T> Mutex2<T> {
-    fn has_mmu() -> bool {
-        // possibly slightly wrong, not sure exactly what shareability settings
-        // enable advanced control
-
-        if unsafe { aarch64::current_el() } == 2 {
-            unsafe { SCTLR_EL2.get_value(SCTLR_EL2::M) != 0 }
-        } else {
-            unsafe { SCTLR_EL1.get_value(SCTLR_EL1::M) != 0 }
-        }
-    }
-
-    pub fn get_name(&self) -> &'static Location<'static> {
-        self.inner.name
-    }
-
-    pub unsafe fn unsafe_leak(&self) -> &mut T {
-        &mut *self.data.get()
-    }
-
-    // Once MMU/cache is enabled, do the right thing here. For now, we don't
-    // need any real synchronization.
-    #[track_caller]
-    pub fn try_lock(&self, trying_for: Duration) -> Option<MutexGuard<T>> {
-        if unsafe { likely(Self::has_mmu()) } {
-            let this = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-            let current_unit = self.inner.lock_unit.load(Ordering::Relaxed);
-            let mut unit = decode_unit(current_unit);
-
-            // somebody is locking this lock and hasn't performed an unlock.
-            if unit.count != unit.recursion {
-                return None;
-            }
-
-            // recursive locking is not allowed across cores. but if count == 0, cores
-            // doesn't matter (first lock).
-            if unit.count > 0 && unit.core as usize != this {
-                return None;
-            }
-
-            unit.core = this as u64;
-            unit.count += 1;
-
-            // can we acquire lock
-            if self.inner.lock_unit.compare_and_swap(current_unit, encode_unit(unit), Ordering::SeqCst) != current_unit {
-                return None;
-            }
-
-            self.inner.owner.store(this, Ordering::Relaxed);
-            self.inner.locked_at.store(timing::clock_time::<PhysicalCounter>().as_millis() as u64, Ordering::SeqCst);
-
-            unsafe { *self.inner.lock_name.get() = Location::caller() };
-
-            self.inner.total_waiting_time.fetch_add(crate::timing::time_to_cycles::<PhysicalCounter>(trying_for), Ordering::Relaxed);
-
-            {
-                smp::no_interrupt(|| {
-                    if !self.inner.intrusive_info.in_list() {
-                        unsafe { MUTEX_REGISTRY.insert(&self.inner) };
-                    }
-                });
-            }
-
-            let sp = SP.get();
-
-            use crate::debug;
-            debug::read_into_slice_clear(unsafe { &mut *self.inner.lock_trace.get() },
-                                         debug::stack_walker().map(|x| x.link_register));
-            aarch64::dsb();
-
-            Some(MutexGuard { lock: &self, recursion_enabled_count: 0 })
-        } else {
-            let this = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-            if self.inner.lock_unit.load(Ordering::SeqCst) == 0 {
-                self.inner.lock_unit.store(encode_unit(Unit { recursion: 0, core: this as u64, count: 1 }), Ordering::SeqCst);
-                self.inner.owner.store(this, Ordering::Relaxed);
-                Some(MutexGuard { lock: &self, recursion_enabled_count: 0 })
-            } else {
-                None
-            }
-        }
-    }
-
-    // Once MMU/cache is enabled, do the right thing here. For now, we don't
-    // need any real synchronization.
-    #[inline(always)]
-    #[track_caller]
-    pub fn lock(&self) -> MutexGuard<T> {
-        if let Some(g) = self.lock_timeout(Duration::from_secs(30)) {
-            return g;
-        }
-
-        self.lock_failed(Location::caller())
-    }
-
-    #[inline(never)]
-    #[track_caller]
-    fn lock_failed(&self, loc: &'static Location) -> ! {
-        use core::fmt::Write;
-
-        // grab lock
-        while ERR_LOCK.compare_and_swap(false, true, Ordering::SeqCst) != false {}
-
-        let mut uart = hw::arch().early_writer();
-
-        let locked_at = Duration::from_millis(self.inner.locked_at.load(Ordering::SeqCst));
-        let now = timing::clock_time::<PhysicalCounter>();
-        writeln!(&mut uart, "Lock {} locked for {:?}", self.inner.name, now - locked_at);
-
-        let owner = self.inner.owner.load(Ordering::SeqCst);
-        let mut locker = unsafe { *self.inner.lock_name.get() };
-
-        writeln!(&mut uart, "locker trace: {} @ {}", owner, locker);
-        for addr in unsafe { &*self.inner.lock_trace.get() }.iter().take_while(|x| **x != 0) {
-            writeln!(&mut uart, "0x{:08x}", *addr);
-        }
-
-        let sp = aarch64::SP.get();
-
-        let core = smp::core();
-        let irq = traps::irq_depth();
-
-        writeln!(&mut uart, "my trace: {} @ {:?}    irqd={}", core, loc, irq);
-        for frame in crate::debug::stack_walker() {
-            writeln!(&mut uart, "0x{:08x}", frame.link_register);
-        }
-
-        if irq > 0 {
-            use aarch64::regs::*;
-            let el = traps::irq_el().unwrap_or(0);
-            let esr = traps::irq_esr();
-            let info = traps::irq_info();
-            writeln!(&mut uart, "irq: 0x{:x}   {:?}    {:?}", el, esr, info);
-        }
-
-        ERR_LOCK.store(false, Ordering::SeqCst);
-        panic!("failed to acquire lock: {}", self.inner.name)
-    }
-
-    #[inline(never)]
-    #[track_caller]
-    pub fn lock_timeout(&self, timeout: Duration) -> Option<MutexGuard<T>> {
-        let start = timing::clock_time::<PhysicalCounter>();
-        let end = start + timeout;
-        let mut wait_amt = Duration::from_micros(5);
-        loop {
-            match self.try_lock(timing::clock_time::<PhysicalCounter>() - start) {
-                Some(guard) => return Some(guard),
-                None => {
-                    timing::sleep_phys(wait_amt);
-                    // wait_amt *= 2; // double wait amt
-
-                    if timing::clock_time::<PhysicalCounter>() > end {
-                        return None;
-                    }
-                }
-            }
-        }
-    }
-
-    fn increment_recursion(&self) {
-        if !Self::has_mmu() {
-            panic!("cannot use increment_recursion() before CAS is available");
-        }
-        let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Acquire));
-        unit.recursion += 1;
-        self.inner.lock_unit.store(encode_unit(unit), Ordering::Release);
-    }
-
-    fn decrement_recursion(&self) {
-        if !Self::has_mmu() {
-            panic!("cannot use increment_recursion() before CAS is available");
-        }
-        let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Acquire));
-        unit.recursion -= 1;
-        self.inner.lock_unit.store(encode_unit(unit), Ordering::Release);
-    }
-
-    fn unlock(&self) {
-        if Self::has_mmu() {
-            self.inner.owner.store(0, Ordering::SeqCst);
-
-            let mut unit = decode_unit(self.inner.lock_unit.load(Ordering::Relaxed));
-            unit.count -= 1;
-
-            self.inner.lock_unit.store(encode_unit(unit), Ordering::SeqCst);
-        } else {
-            self.inner.lock_unit.store(0, Ordering::Relaxed);
-        }
-    }
-}
-
-impl<T> Drop for Mutex2<T> {
-    fn drop(&mut self) {
-        smp::no_interrupt(|| {
-            if self.inner.intrusive_info.in_list() {
-                MUTEX_REGISTRY.remove(&self.inner);
-            }
-        });
-    }
-}
-
-impl<'a, T: 'a> MutexGuard<'a, T> {
-    pub fn recursion<R, F: FnOnce() -> R>(&mut self, func: F) -> R {
-        if self.recursion_enabled_count == 0 {
-            self.lock.increment_recursion();
-        }
-        self.recursion_enabled_count += 1;
-
-        let result = func();
-
-        self.recursion_enabled_count -= 1;
-
-        if self.recursion_enabled_count == 0 {
-            self.lock.decrement_recursion();
-        }
-
-        result
-    }
-}
-
-impl<'a, T: 'a> Deref for MutexGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe { &*self.lock.data.get() }
-    }
-}
-
-impl<'a, T: 'a> DerefMut for MutexGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.lock.data.get() }
-    }
-}
-
-impl<'a, T: 'a> Drop for MutexGuard<'a, T> {
-    fn drop(&mut self) {
-        self.lock.unlock()
-    }
-}
-
-impl<T: fmt::Debug> fmt::Debug for Mutex2<T> {
-    #[track_caller]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.try_lock(Duration::default()) {
-            Some(guard) => f.debug_struct("Mutex").field("data", &&*guard).finish(),
-            None => f.debug_struct("Mutex").field("data", &"<locked>").finish()
-        }
-    }
 }

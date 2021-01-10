@@ -10,7 +10,7 @@ use shim::io;
 use crate::{BootVariant, smp};
 use crate::collections::CapacityRingBuffer;
 use crate::fs::handle::{Sink, Source};
-use crate::mutex::{Mutex, MutexGuard};
+use crate::mutex::Mutex;
 
 struct ConsoleImpl {
     send_buffer: CapacityRingBuffer<u8>,

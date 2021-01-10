@@ -34,7 +34,7 @@ use crate::hyper::HYPER_SCHEDULER;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
 use crate::kernel::KERNEL_IRQ;
 use crate::kernel::KERNEL_SCHEDULER;
-use crate::mutex::{Mutex, MUTEX_REGISTRY};
+use crate::mutex::Mutex;
 use crate::net::arp::ArpResolver;
 use crate::perf::PERF_EVENTS_ENABLED;
 use crate::pigrate::bundle::ProcessBundle;
@@ -457,12 +457,31 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .name("reg")
         .func_result(|sh, _cmd| {
             let _guard = smp::interrupt_guard();
+            use crate::mutex::{KERN_MUTEX_HOOKS, MUTEX_INFOS};
 
-            info!("registry op count: {}, size: {}", MUTEX_REGISTRY.op_count(), MUTEX_REGISTRY.size());
+            info!("lock count: {}", KERN_MUTEX_HOOKS.lock_count.load(Ordering::Relaxed));
+            info!("lock op count: {}", KERN_MUTEX_HOOKS.lock_op_count.load(Ordering::Relaxed));
 
-            for entry in MUTEX_REGISTRY.iter_ref() {
-                info!("Mutex: {} -> waiting: {:?}", entry.name, timing::cycles_to_time::<PhysicalCounter>(entry.total_waiting_time.load(Ordering::Relaxed)));
+            let infos = unsafe { MUTEX_INFOS.as_ref().unwrap() };
+
+            for info in infos.iter() {
+                if !info.assigned.load(Ordering::Acquire) {
+                    continue;
+                }
+
+                let lock_name = unsafe { &*info.lock_name.get() };
+                let locker_name = unsafe { &*info.locker_name.get() };
+
+                info!("  lock {:?}:", lock_name);
+                info!("      locked by: {:?}", locker_name);
+                info!("      locked count: {}", info.lock_op_count.load(Ordering::Relaxed));
             }
+
+            // info!("registry op count: {}, size: {}", MUTEX_REGISTRY.op_count(), MUTEX_REGISTRY.size());
+            //
+            // for entry in MUTEX_REGISTRY.iter_ref() {
+            //     info!("Mutex: {} -> waiting: {:?}", entry.name, timing::cycles_to_time::<PhysicalCounter>(entry.total_waiting_time.load(Ordering::Relaxed)));
+            // }
 
             Ok(())
         })

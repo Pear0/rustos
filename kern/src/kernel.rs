@@ -241,6 +241,9 @@ pub fn kernel_main() -> ! {
         VMM.setup_kernel();
     });
 
+    info!("registering mutex hooks");
+    crate::mutex::register_hooks();
+
     info!("init irqs");
     if matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
         khadas::irq::init_stuff();
