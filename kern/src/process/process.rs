@@ -77,9 +77,9 @@ pub enum Priority {
 }
 
 
-pub trait ProcessImpl: Sized {
-    type Frame: Frame + kscheduler::Frame + Default + Clone + Debug;
-    type RegionKind: Debug;
+pub trait ProcessImpl: Sized + Send {
+    type Frame: Frame + kscheduler::Frame + Default + Clone + Debug + Send;
+    type RegionKind: Debug + Send;
     type PageTable: GuestPageTable;
 
     fn new() -> OsResult<Self>;
@@ -337,6 +337,13 @@ impl<T: ProcessImpl> kscheduler::Process<T::Frame, State<T>> for Process<T> {
 
     fn affinity_match(&self) -> bool {
         self.affinity.check(smp::core())
+    }
+
+    fn affinity_valid_core(&self) -> Option<usize> {
+        self.affinity.0.iter()
+            .enumerate()
+            .find(|(_, &b)| b)
+            .map(|(idx, _)| idx)
     }
 
     fn on_task_switch(&mut self) {

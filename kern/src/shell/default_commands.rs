@@ -48,6 +48,7 @@ use crate::traps::coreinfo::exc_ratio;
 use crate::traps::IRQ_RECURSION_DEPTH;
 
 use super::shell::Shell;
+use dsx::collections::spsc_queue::SpscQueue;
 
 mod mem;
 mod net;
@@ -163,6 +164,18 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             // use alloc::borrow::ToOwned;
             // let cwd = sh.cwd_str().to_owned();
             // writeln!(&mut sh.writer, "{}", cwd);
+        })
+        .build();
+
+    sh.command()
+        .name("foo")
+        .help("random stuff")
+        .func(|sh, _cmd| {
+
+            let (r, w) = SpscQueue::<u8>::new(1024);
+            info!("my reader: {:?}, my writer: {:?}", r, w);
+
+
         })
         .build();
 

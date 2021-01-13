@@ -327,7 +327,7 @@ pub enum PagePerm {
     RWX,
 }
 
-pub trait GuestPageTable: Sized {
+pub trait GuestPageTable: Sized + Send {
     fn new() -> Self;
 
     fn get_baddr(&self) -> PhysicalAddr;

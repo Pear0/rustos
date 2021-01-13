@@ -2,6 +2,9 @@
 
 extern crate alloc;
 
+#[macro_use]
+extern crate log;
+
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::sync::{Arc, Weak};
@@ -12,13 +15,17 @@ use core::sync::atomic::AtomicUsize;
 
 use hashbrown::HashMap;
 
-use dsx::sync::mutex::LightMutex;
+use dsx::sync::mutex::{LightMutex, LockableMutex};
+use dsx::core::marker::PhantomData;
+use dsx::core::cell::UnsafeCell;
 
 macro_rules! const_assert_size {
     ($expr:tt, $size:tt) => {
     const _: fn(a: $expr) -> [u8; $size] = |a| unsafe { core::mem::transmute::<$expr, [u8; $size]>(a) };
     };
 }
+
+pub mod wqs;
 
 pub trait SchedInfo : Sized {
     type Frame : Frame;
@@ -29,7 +36,11 @@ pub trait SchedInfo : Sized {
 
     fn current_core(&self) -> usize;
 
-    fn get_idle_task(&mut self) -> &mut Self::Process;
+    fn get_idle_tasks(&self) -> &[LightMutex<Option<Self::Process>>];
+
+    fn get_idle_task(&self) -> &LightMutex<Option<Self::Process>> {
+        &self.get_idle_tasks()[self.current_core()]
+    }
 
     fn running_state(&self) -> Self::State;
 
@@ -45,7 +56,7 @@ pub trait Frame : Clone {
     fn get_id(&self) -> usize;
 }
 
-pub trait Process<F, S> {
+pub trait Process<F, S>: Send {
     fn get_frame(&mut self) -> &mut F;
 
     fn set_id(&mut self, id: usize);
@@ -66,6 +77,8 @@ pub trait Process<F, S> {
         true
     }
 
+    fn affinity_valid_core(&self) -> Option<usize>;
+
     fn on_task_switch(&mut self) {
     }
 
@@ -79,6 +92,9 @@ pub trait Scheduler<T: SchedInfo> {
 
     fn schedule_in(&mut self, tf: &mut T::Frame) -> usize;
 
+    /// Kill the currently running process using its trap frame.
+    /// Returns Some(process_id) if process was killed or None
+    /// if the process is not a standard process (such as idle task).
     fn kill(&mut self, tf: &mut T::Frame) -> Option<usize>;
 
     fn switch(&mut self, state: T::State, tf: &mut T::Frame) -> usize {
@@ -89,6 +105,9 @@ pub trait Scheduler<T: SchedInfo> {
     fn get_process_mut(&mut self, id: usize) -> Option<&mut T::Process>;
 
     fn iter_process_mut<F>(&mut self, func: F) where F: FnMut(&mut T::Process);
+
+    fn initialize_core(&mut self) {
+    }
 
 }
 
@@ -115,7 +134,8 @@ impl<T: SchedInfo> ListScheduler<T> {
 
     fn schedule_idle_task(&mut self, tf: &mut T::Frame) -> usize {
         let state = self.info.running_state();
-        let proc = self.info.get_idle_task();
+        let mut lock = self.info.get_idle_task().lock();
+        let mut proc = lock.as_mut().unwrap();
 
         proc.set_state(state);
         *tf = proc.get_frame().clone();
@@ -192,9 +212,12 @@ impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
     /// If the `processes` queue is empty or there is no current process,
     /// returns `false`. Otherwise, returns `true`.
     fn schedule_out(&mut self, mut new_state: T::State, tf: &mut T::Frame) {
+        let mut idle_lock = self.info.get_idle_task().lock();
+        let mut idle_task = idle_lock.as_mut().unwrap();
+
         let proc: Option<(usize, &mut T::Process)>;
-        if self.info.get_idle_task().get_id() == tf.get_id() {
-            proc = Some((usize::max_value(), self.info.get_idle_task()));
+        if idle_task.get_id() == tf.get_id() {
+            proc = Some((usize::max_value(), &mut idle_task));
         } else {
             proc = self.processes.iter_mut().enumerate()
                 .find(|(_, p)| p.get_id() == tf.get_id());
@@ -204,6 +227,7 @@ impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
             None => {},
             Some((idx, proc)) => {
                 if proc.should_kill() {
+                    drop(idle_lock);
                     self.kill(tf);
                 } else {
                     proc.on_task_switch();
@@ -265,6 +289,11 @@ impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
     }
 
     fn iter_process_mut<F>(&mut self, mut func: F) where F: FnMut(&mut T::Process) {
+        for task_lock in self.info.get_idle_tasks().iter() {
+            let mut lock = task_lock.lock();
+            func(lock.as_mut().unwrap());
+        }
+
         for proc in self.processes.iter_mut() {
             func(proc);
         }
@@ -279,14 +308,3 @@ impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
 
 
 
-
-
-
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

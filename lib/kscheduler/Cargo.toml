@@ -10,3 +10,4 @@ edition = "2018"
 dsx = { path = "../dsx", features = [], default-features = false }
 
 hashbrown = { version = "0.6.3", features = [] }
+log = { version = "0.4.8", features = [] }

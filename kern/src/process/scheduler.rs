@@ -9,7 +9,7 @@ use core::time::Duration;
 use enumset::EnumSet;
 
 use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
-use dsx::sync::mutex::LockableMutex;
+use dsx::sync::mutex::{LockableMutex, LightMutex};
 use karch::capability::ExecCapability;
 use kscheduler::{SchedInfo, Scheduler as KScheduler};
 use pi::{interrupt, timer};
@@ -123,6 +123,8 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
     }
 
     pub fn bootstrap(&self) -> ! {
+        self.critical(|s| s.initialize_core());
+
         let mut bootstrap_frame: T::Frame = Default::default();
         self.switch_to(&mut bootstrap_frame);
 
@@ -211,14 +213,9 @@ impl GlobalScheduler<KernelImpl> {
 
     pub fn get_process_snaps(&self, snaps: &mut Vec<SnapProcess>) {
         self.critical(|sched| {
-            for core in &sched.info.idle_tasks {
-                snaps.push(SnapProcess::from(core));
-            }
-
             sched.iter_process_mut(|proc| {
                 snaps.push(SnapProcess::from(&*proc));
             });
-
         });
     }
 }
@@ -305,10 +302,6 @@ impl GlobalScheduler<HyperImpl> {
 
     pub fn get_process_snaps(&self, snaps: &mut Vec<SnapProcess>) {
         self.critical(|sched| {
-            for core in &sched.info.idle_tasks {
-                snaps.push(SnapProcess::from(core));
-            }
-
             sched.iter_process_mut(|proc| {
                 snaps.push(SnapProcess::from(&*proc));
             });
@@ -317,13 +310,17 @@ impl GlobalScheduler<HyperImpl> {
 }
 
 pub struct MySchedInfo<T: ProcessImpl> {
-    idle_tasks: Vec<Process<T>>,
+    idle_tasks: Vec<LightMutex<Option<Process<T>>>>,
 }
 
 impl<T: ProcessImpl> MySchedInfo<T> {
     pub fn new() -> Self {
         let idle_tasks = T::create_idle_processes(smp::MAX_CORES);
         assert_eq!(idle_tasks.len(), smp::MAX_CORES);
+
+        let idle_tasks = idle_tasks.into_iter()
+            .map(|x| LightMutex::new(Some(x)))
+            .collect();
 
         Self { idle_tasks }
     }
@@ -338,8 +335,8 @@ impl<T: ProcessImpl> kscheduler::SchedInfo for MySchedInfo<T> {
         smp::core()
     }
 
-    fn get_idle_task(&mut self) -> &mut Self::Process {
-        &mut self.idle_tasks[smp::core()]
+    fn get_idle_tasks(&self) -> &[LightMutex<Option<Self::Process>>] {
+        &self.idle_tasks
     }
 
     fn running_state(&self) -> Self::State {
