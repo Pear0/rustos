@@ -7,11 +7,13 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
 
 use enumset::EnumSet;
+use hashbrown::HashSet;
 
 use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
-use dsx::sync::mutex::{LockableMutex, LightMutex};
+use dsx::sync::mutex::{LightMutex, LockableMutex};
+use dsx::sync::sema::SingleSetSemaphore;
 use karch::capability::ExecCapability;
-use kscheduler::{SchedInfo, Process as KProcess, Scheduler as KScheduler};
+use kscheduler::{Process as KProcess, SchedInfo, Scheduler as KScheduler};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
@@ -19,7 +21,7 @@ use crate::{BootVariant, EXEC_CONTEXT, smp, timing};
 use crate::arm::{GenericCounterImpl, HyperPhysicalCounter, VirtualCounter};
 use crate::cls::CoreLocal;
 use crate::hyper::HYPER_TIMER;
-use crate::kernel::{KERNEL_TIMER, KERNEL_CORES};
+use crate::kernel::{KERNEL_CORES, KERNEL_TIMER};
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{HyperImpl, Id, KernelImpl, Process, State};
@@ -27,10 +29,9 @@ use crate::process::process::ProcessImpl;
 use crate::process::snap::SnapProcess;
 use crate::process::state::RunContext;
 use crate::traps::{Frame, HyperTrapFrame, IRQ_RECURSION_DEPTH, KernelTrapFrame};
-use hashbrown::HashSet;
 
 /// Process scheduler for the entire machine.
-pub struct GlobalScheduler<T: ProcessImpl>(Mutex<Option<Scheduler<T>>>);
+pub struct GlobalScheduler<T: ProcessImpl>(SingleSetSemaphore<Scheduler<T>>);
 
 extern "C" {
     fn context_restore();
@@ -54,7 +55,7 @@ fn reset_timer() {
 impl<T: ProcessImpl> GlobalScheduler<T> {
     /// Returns an uninitialized wrapper around a local scheduler.
     pub const fn uninitialized() -> Self {
-        GlobalScheduler(mutex_new!(None))
+        GlobalScheduler(SingleSetSemaphore::new())
     }
 
     /// Enter a critical region and execute the provided closure with the
@@ -63,7 +64,7 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
     #[inline(always)]
     pub fn critical<F, R>(&self, f: F) -> R
         where
-            F: FnOnce(&mut Scheduler<T>) -> R,
+            F: FnOnce(&mut &Scheduler<T>) -> R,
     {
         // take guard only if we are not in an exception context.
         // this way the profiling timer can inspect exception context scheduler behavior.
@@ -73,11 +74,8 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
         assert!(EXEC_CONTEXT.has_capabilities(EnumSet::only(ExecCapability::Allocation)));
 
         let r = EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Scheduler), || {
-            let mut guard = self.0.lock();
-            let r = f(guard.as_mut().expect("scheduler uninitialized"));
-            drop(guard);
-
-            r
+            let mut guard = &*self.0;
+            f(&mut guard)
         });
 
         // drop(int_guard);
@@ -181,9 +179,8 @@ impl GlobalScheduler<KernelImpl> {
     pub unsafe fn initialize_kernel(&self) {
         use crate::kernel::{KERNEL_IRQ, KERNEL_SCHEDULER};
         use aarch64::regs::*;
-        let lock = &mut m_lock!(self.0);
-        if lock.is_none() {
-            lock.replace(Scheduler::new(MySchedInfo::new(), *KERNEL_CORES));
+        if !SingleSetSemaphore::<Scheduler<KernelImpl>>::is_initialized(&self.0) {
+            SingleSetSemaphore::<Scheduler<KernelImpl>>::set_racy(&self.0, Scheduler::new(MySchedInfo::new(), *KERNEL_CORES));
         }
 
         let core = crate::smp::core();
@@ -253,9 +250,8 @@ impl GlobalScheduler<HyperImpl> {
     pub unsafe fn initialize_hyper(&self) {
         use crate::hyper::{HYPER_IRQ, HYPER_SCHEDULER};
         use aarch64::regs::*;
-        let lock = &mut m_lock!(self.0);
-        if lock.is_none() {
-            lock.replace(Scheduler::new(MySchedInfo::new(), 1));
+        if !SingleSetSemaphore::<Scheduler<HyperImpl>>::is_initialized(&self.0) {
+            SingleSetSemaphore::<Scheduler<HyperImpl>>::set_racy(&self.0, Scheduler::new(MySchedInfo::new(), 1));
         }
 
         HYPER_TIMER.critical(|timer| {

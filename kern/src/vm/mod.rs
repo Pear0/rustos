@@ -56,16 +56,6 @@ impl VMManager {
         FOO.store(baddr, Ordering::SeqCst);
     }
 
-    /// Initializes the virtual memory manager.
-    /// The caller should assure that the method is invoked only once during the kernel
-    /// initialization.
-    pub fn initialize(&self) {
-        self.init_only();
-        kprintln!("setup()");
-
-        self.setup_kernel();
-    }
-
     pub unsafe fn mark_page_normal(&self, addr: usize) {
         assert_eq!(addr % PAGE_SIZE, 0);
 
@@ -137,17 +127,11 @@ impl VMManager {
             asm!("dsb ish");
             isb();
 
-            info!("about to enable mmu old SCTLR_EL1 = {:#x}", SCTLR_EL1.get());
             SCTLR_EL1.set(SCTLR_EL1.get() | SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M);
 
             isb();
 
-            // hw::arch().early_print().write_str("WOW MMU works\n");
-
-            // SCTLR_EL1.set(SCTLR_EL1.get() & !(SCTLR_EL1::I | SCTLR_EL1::C | SCTLR_EL1::M));
             info!("enabled mmu");
-
-            // hw::arch().early_print().write_str("WOW MMU works 2\n");
 
             llvm_asm!("dsb sy");
             isb();

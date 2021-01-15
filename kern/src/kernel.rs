@@ -4,41 +4,42 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::panic::Location;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use core::time::Duration;
 
-use pi::gpio;
-use pi::interrupt::{Interrupt, CoreInterrupt};
-use shim::{io, ioerr};
+use enumset::EnumSet;
 
-use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM, FILESYSTEM2, perf, EXEC_CONTEXT, tasks};
+use dsx::sync::sema::SingleSetSemaphore;
+use karch::capability::ExecCapability;
+use pi::gpio;
+use pi::interrupt::{CoreInterrupt, Interrupt};
+use shim::{io, ioerr};
+use usb_host::consts::USBSpeed;
+use usb_host::items::{ControlCommand, TypeTriple};
+use usb_host::structs::USBDevice;
+use usb_host::traits::USBHostController;
+use usb_host::USBHost;
+use xhci::FlushType;
+
+use crate::{BootVariant, display_manager, EXEC_CONTEXT, FILESYSTEM2, hw, kernel_call, NET, perf, shell, smp, tasks, timing, VMM};
+use crate::arm::{PhysicalCounter, TimerController, VirtualCounter};
+use crate::cls::{CoreGlobal, CoreLazy, CoreLocal};
 use crate::console::{CONSOLE, console_ext_init, console_interrupt_handler};
+use crate::debug::initialize_debug;
 use crate::fs::handle::{Sink, SinkWrapper, Source, SourceWrapper, WaitingSourceWrapper};
 use crate::fs::service::PipeService;
+use crate::hw::ArchVariant;
+use crate::mini_allocators::NOCACHE_PAGE_ALLOC;
 use crate::mutex::Mutex;
 use crate::net::ipv4;
 use crate::process::{GlobalScheduler, Id, KernelImpl, KernelProcess, KernProcessCtx, Priority, Process};
 use crate::process::fd::FileDescriptor;
-use crate::traps::irq::Irq;
-use crate::vm::VMManager;
-use crate::cls::{CoreGlobal, CoreLocal, CoreLazy};
-use crate::arm::{TimerController, VirtualCounter, PhysicalCounter};
-use crate::traps::KernelTrapFrame;
-use crate::debug::initialize_debug;
-use xhci::FlushType;
-use usb_host::structs::USBDevice;
-use usb_host::traits::USBHostController;
-use usb_host::items::{ControlCommand, TypeTriple};
-use usb_host::USBHost;
-use usb_host::consts::USBSpeed;
-use crate::usb::usb_thread;
-use core::sync::atomic::Ordering;
-use core::sync::atomic::AtomicUsize;
-use crate::mini_allocators::NOCACHE_PAGE_ALLOC;
-use crate::hw::ArchVariant;
-use enumset::EnumSet;
-use karch::capability::ExecCapability;
 use crate::smp::core;
-use dsx::sync::sema::SingleSetSemaphore;
+use crate::traps::irq::Irq;
+use crate::traps::KernelTrapFrame;
+use crate::usb::usb_thread;
+use crate::vm::VMManager;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
@@ -126,7 +127,7 @@ fn network_thread(ctx: KernProcessCtx) {
     }
 }
 
-fn my_net_shell(ctx: KernProcessCtx)  {
+fn my_net_shell(ctx: KernProcessCtx) {
     let (source, sink) = ctx.get_stdio_or_panic();
 
     shell::Shell::new("% ", WaitingSourceWrapper::new(source), SinkWrapper::new(sink)).shell_loop();
@@ -171,7 +172,6 @@ fn configure_timer() {
         }
 
         KERNEL_TIMER.add(10, timing::time_to_cycles::<VirtualCounter>(sample_delay), Box::new(move |ctx| {
-
             if perf::record_event_kernel(ctx.data) {
                 ctx.set_period(timing::time_to_cycles::<VirtualCounter>(sample_delay));
             } else {
@@ -300,31 +300,10 @@ pub fn kernel_main() -> ! {
         // pi::interrupt::Controller::new().enable(pi::interrupt::Interrupt::Aux);
     }
 
-    // Stable
-
-    // timing::benchmark("kernel pi::timer", |num| {
-    //     for _ in 0..num {
-    //         pi::timer::current_time();
-    //     }
-    // });
-    //
-    // timing::benchmark("kernel hvc", |num| {
-    //     for _ in 0..num {
-    //         hvc!(0);
-    //     }
-    // });
-
-    {
-        let loc = Location::caller();
-        info!("Hello: {:?}", loc);
-    }
-
     if matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
         let b = khadas::uart::get_status_and_control();
         info!("UART regs: ({:#b}, {:#b})", b.0, b.1);
     }
-
-    // UART regs: (0b10000100000011111100000000, 0b1011000000000000)
 
     info!("filesystem init");
     unsafe { FILESYSTEM2.initialize() };
@@ -386,29 +365,9 @@ pub fn kernel_main() -> ! {
     // }
 
     // {
-    //     let proc = KernelProcess::kernel_process("hello TAs".to_owned(), |_| {
-    //
-    //         kernel_api::syscall::sleep(Duration::from_millis(1000));
-    //
-    //         for _ in 0..3 {
-    //
-    //             kprintln!("Hello TAs, there is a `help` command and `proc2` to list processes. Don't run `net tcp`, networking is disabled right now. I did not implement berkeley sockets btw");
-    //
-    //             kernel_api::syscall::sleep(Duration::from_millis(5000));
-    //         }
-    //
-    //     }).unwrap();
-    //     KERNEL_SCHEDULER.add(proc);
-    // }
-
-    // {
     //     let mut proc = Process::load("/fib.bin").expect("failed to load");
     //     SCHEDULER.add(proc);
     // }
-    //
-    // smp::run_on_secondary_cores(|| {
-    //     kprintln!("Baz");
-    // });
 
     info!("Starting other cores");
     smp::run_no_return(|| {

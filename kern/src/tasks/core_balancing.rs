@@ -30,7 +30,7 @@ pub fn core_balancing_thread(ctx: KernProcessCtx) {
             cores[snap.core as usize].total_load += snap.cpu_usage as usize;
         }
 
-        info!("core loads: {:?}", cores.iter().map(|x| x.total_load).collect::<Vec<_>>());
+        debug!("core loads: {:?}", cores.iter().map(|x| x.total_load).collect::<Vec<_>>());
 
         for (idx, snap) in snaps.iter().enumerate() {
             if snap.tpidr == 0 {
@@ -43,7 +43,7 @@ pub fn core_balancing_thread(ctx: KernProcessCtx) {
                     if cores[core_id].total_load < current_core_load {
 
                         // Do re-assignment
-                        info!("moving pid={} core {} -> {}", snap.tpidr, new_assignment[idx], core_id);
+                        debug!("moving pid={} core {} -> {}", snap.tpidr, new_assignment[idx], core_id);
                         cores[core_id].total_load += snap.cpu_usage as usize;
                         cores[new_assignment[idx]].total_load -= snap.cpu_usage as usize;
                         new_assignment[idx] = core_id;

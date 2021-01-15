@@ -3,7 +3,7 @@ use core::time::Duration;
 
 use aarch64::{MPIDR_EL1, SP};
 
-use crate::{init, BootVariant, smp};
+use crate::{init, BootVariant, smp, timing};
 use crate::mutex::Mutex;
 use crate::console::{CONSOLE, console_flush};
 use crate::mbox::EveryTimer;
@@ -72,7 +72,7 @@ unsafe fn core_bootstrap_stack() -> ! {
 
     PARKING[core_id as usize].enabled.store(true, Ordering::SeqCst);
 
-    pi::timer::spin_sleep(Duration::from_millis(10 * core_id));
+    timing::sleep_phys(Duration::from_millis(10 * core_id));
     // kprintln!("bootstrap @ {} {}", core_id, MPIDR_EL1.get_value(MPIDR_EL1::Aff0));
 
     loop {
@@ -156,7 +156,7 @@ pub fn run_on_secondary_cores(func: fn()) {
             aarch64::sev();
 
             loop {
-                pi::timer::spin_sleep(Duration::from_micros(10));
+                timing::sleep_phys(Duration::from_micros(10));
                 aarch64::dsb();
                 if core.addr.load(Ordering::SeqCst) == 0 {
                     break;

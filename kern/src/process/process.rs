@@ -239,6 +239,15 @@ impl<T: ProcessImpl> Process<T> {
         self.state = new_state;
     }
 
+    pub fn update_timing(&mut self) {
+        let now = crate::timing::clock_time_phys();
+
+        self.ready_ratio.set_active_with_time(matches!(self.state, State::Ready), now);
+        self.running_ratio.set_active_with_time(matches!(self.state, State::Running(_)), now);
+        self.waiting_ratio.set_active_with_time(matches!(self.state, State::Waiting(_) | State::WaitingObj(_)), now);
+
+    }
+
     pub fn current_cpu_time(&self) -> Duration {
         let mut amt = self.cpu_time;
         if let State::Running(ctx) = &self.state {
@@ -335,7 +344,12 @@ impl<T: ProcessImpl> kscheduler::Process<T::Frame, State<T>> for Process<T> {
     }
 
     fn check_ready(&mut self) -> bool {
-        self.is_ready()
+        if self.is_ready() {
+            true
+        } else {
+            self.update_timing();
+            false
+        }
     }
 
     fn affinity_match(&self) -> bool {
