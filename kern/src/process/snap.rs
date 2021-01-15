@@ -48,6 +48,7 @@ pub struct SnapProcess {
     pub task_switches: usize,
     pub affinity: CoreAffinity,
     pub lr: u64,
+    pub core: isize,
 }
 
 impl From<&KernelProcess> for SnapProcess {
@@ -71,6 +72,7 @@ impl From<&KernelProcess> for SnapProcess {
             task_switches: proc.task_switches,
             affinity: proc.affinity,
             lr: proc.context.ELR_EL1,
+            core: -1,
         }
     }
 }
@@ -96,6 +98,7 @@ impl From<&HyperProcess> for SnapProcess {
             task_switches: proc.task_switches,
             affinity: proc.affinity,
             lr: proc.context.ELR_EL2,
+            core: -1,
         }
     }
 }
@@ -115,6 +118,7 @@ impl fmt::Debug for SnapProcess {
             .field("task_switches", &self.task_switches)
             .field("affinity", &self.affinity)
             .field("lr", &format_args!("0x{:x}", self.lr))
+            .field("core", &self.core)
             .finish()
     }
 }

@@ -132,6 +132,7 @@ pub mod smp;
 pub mod sync;
 pub mod param;
 pub mod process;
+pub mod tasks;
 pub mod timing;
 pub mod traps;
 pub mod usb;

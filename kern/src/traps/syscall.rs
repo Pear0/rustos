@@ -14,6 +14,7 @@ use crate::traps::KernelTrapFrame;
 use crate::sync::{Completion, Waitable};
 use crate::param::PAGE_SIZE;
 use crate::arm::VirtualCounter;
+use crate::kernel_call::syscall::{ExecInExcPayload, ExcContext};
 
 
 fn set_result(tf: &mut KernelTrapFrame, regs: &[u64]) {
@@ -156,7 +157,6 @@ pub fn sys_sbrk(tf: &mut KernelTrapFrame) {
 }
 
 pub fn handle_syscall(num: u16, tf: &mut KernelTrapFrame) {
-
     match num as usize {
         NR_SLEEP => {
             let time = tf.regs[0];
@@ -187,6 +187,13 @@ pub fn handle_syscall(num: u16, tf: &mut KernelTrapFrame) {
         }
         NR_YIELD_FOR_TIMERS => {
             // do nothing here, this syscall is handled specially.
+        }
+        NR_EXEC_IN_EXC => {
+            let mut exc = ExcContext { pid: tf.TPIDR_EL0 };
+
+            let ptr = tf.regs[0] as u64 as *mut ExecInExcPayload<'_>;
+            let mut payload = unsafe { &mut *ptr };
+            payload.execute(&mut exc);
         }
         _ => kprintln!("Unknown syscall: {}", num),
     }

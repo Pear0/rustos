@@ -5,7 +5,8 @@ use dsx::alloc::vec::Vec;
 use dsx::collections::spsc_queue::{SpscQueue, SpscQueueReader, SpscQueueWriter};
 use dsx::core::cell::UnsafeCell;
 use dsx::core::marker::PhantomData;
-use dsx::core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
+use dsx::core::ops::Deref;
+use dsx::core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use dsx::sync::mutex::{LightMutex, LockableMutex};
 
 use crate::{Process, SchedInfo, Scheduler};
@@ -76,6 +77,11 @@ impl<T: SchedInfo> CoreScheduler<T> {
         while let Some(mail) = self.incoming_mailbox.try_dequeue() {
             match mail {
                 Mail::AddProcess(mut proc) => {
+                    if let Some(id) = proc.process.get_send_to_core() {
+                        assert_eq!(self.core_id, id);
+                        proc.process.set_send_to_core(None);
+                    }
+
                     if proc.process.check_ready() {
                         self.run_queue.push_back(proc);
                     } else {
@@ -101,8 +107,18 @@ impl<T: SchedInfo> CoreScheduler<T> {
     /// Return Some(core_id) process was sent to if moved.
     /// Return None if process was not moved, either because the chosen
     /// valid core is this core or there are no valid cores.
-    fn core_transfer_or_wait_queue(&mut self, mut proc: ProcessInfo<T>) -> Option<usize> {
+    fn affinity_mismatch(&mut self, mut proc: ProcessInfo<T>) -> Option<usize> {
         if let Some(dest) = proc.process.affinity_valid_core() {
+            proc.process.set_send_to_core(Some(dest));
+            return self.send_to_core(proc);
+        }
+
+        self.wait_queue.push_back(proc);
+        None
+    }
+
+    fn send_to_core(&mut self, mut proc: ProcessInfo<T>) -> Option<usize> {
+        if let Some(dest) = proc.process.get_send_to_core() {
             if dest != self.core_id {
                 let mut mailbox = self.inner.mailboxes[dest].lock();
                 match mailbox.try_enqueue(Mail::AddProcess(proc)) {
@@ -113,10 +129,12 @@ impl<T: SchedInfo> CoreScheduler<T> {
                     }
                     Err(_) => unreachable!("returned object will always be AddProcess()"),
                 }
+            } else {
+                proc.process.set_send_to_core(None);
             }
         }
 
-        self.wait_queue.push_back(proc);
+        self.run_queue.push_back(proc);
         None
     }
 
@@ -137,8 +155,13 @@ impl<T: SchedInfo> CoreScheduler<T> {
 
     fn switch_to(&mut self, tf: &mut T::Frame) -> Option<usize> {
         while let Some(mut proc) = self.run_queue.pop_front() {
+            if matches!(proc.process.get_send_to_core(), Some(_)) {
+                self.send_to_core(proc);
+                continue;
+            }
+
             if !proc.process.affinity_match() {
-                self.core_transfer_or_wait_queue(proc);
+                self.affinity_mismatch(proc);
                 continue;
             }
 
@@ -167,7 +190,10 @@ impl<T: SchedInfo> CoreScheduler<T> {
 impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
     fn add_process(&mut self, proc: T::Process) -> Option<usize> {
         let id = self.inner.next_process_id();
-        let mut proc = ProcessInfo::<T> { process: Box::new(proc), is_special: false };
+        let mut proc = ProcessInfo::<T> {
+            process: Box::new(proc),
+            is_special: false,
+        };
         proc.process.set_id(id);
 
         if proc.process.check_ready() {
@@ -210,14 +236,6 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
         }
     }
 
-    fn switch(&mut self, state: T::State, tf: &mut T::Frame) -> usize {
-        self.process_mail();
-        self.check_waiting_processes();
-
-        self.schedule_out(state, tf);
-        self.schedule_in(tf)
-    }
-
     fn kill(&mut self, tf: &mut T::Frame) -> Option<usize> {
         let mut proc = self.current_proc.take().expect("current_proc must be scheduled for schedule_out()");
         if proc.is_special {
@@ -234,12 +252,60 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
         Some(id)
     }
 
-    fn get_process_mut(&mut self, id: usize) -> Option<&mut T::Process> {
-        unimplemented!()
+    fn switch(&mut self, state: T::State, tf: &mut T::Frame) -> usize {
+        self.process_mail();
+        self.check_waiting_processes();
+
+        self.schedule_out(state, tf);
+        self.schedule_in(tf)
     }
 
-    fn iter_process_mut<F>(&mut self, func: F) where F: FnMut(&mut T::Process) {
-        unimplemented!()
+    fn with_process_mut<R, F>(&mut self, id: usize, func: F) -> R
+        where F: FnOnce(Option<&mut T::Process>) -> R
+    {
+        if let Some(proc) = &mut self.current_proc {
+            if proc.process.get_id() == id {
+                return func(Some(&mut proc.process));
+            }
+        }
+
+        if let Some(proc) = &mut self.idle_proc {
+            if proc.process.get_id() == id {
+                return func(Some(&mut proc.process));
+            }
+        }
+
+        for proc in self.run_queue.iter_mut() {
+            if proc.process.get_id() == id {
+                return func(Some(&mut proc.process));
+            }
+        }
+
+        for proc in self.wait_queue.iter_mut() {
+            if proc.process.get_id() == id {
+                return func(Some(&mut proc.process));
+            }
+        }
+
+        func(None)
+    }
+
+    fn iter_process_mut<F>(&mut self, mut func: F) where F: FnMut(&mut T::Process) {
+        if let Some(proc) = &mut self.current_proc {
+            func(&mut proc.process);
+        }
+
+        if let Some(proc) = &mut self.idle_proc {
+            func(&mut proc.process);
+        }
+
+        for proc in self.run_queue.iter_mut() {
+            func(&mut proc.process);
+        }
+
+        for proc in self.wait_queue.iter_mut() {
+            func(&mut proc.process);
+        }
     }
 
     fn initialize_core(&mut self) {
@@ -249,9 +315,11 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
         {
             let mut lock = self.inner.info.get_idle_task().lock();
             let process = lock.take().unwrap();
-            self.idle_proc.replace(ProcessInfo { process: Box::new(process), is_special: true });
+            self.idle_proc.replace(ProcessInfo {
+                process: Box::new(process),
+                is_special: true,
+            });
         }
-
     }
 }
 
@@ -295,7 +363,10 @@ impl<T: SchedInfo> WaitQueueScheduler<T> {
 impl<T: SchedInfo> Scheduler<T> for &WaitQueueScheduler<T> {
     fn add_process(&mut self, proc: T::Process) -> Option<usize> {
         let id = self.inner.next_process_id();
-        let mut proc = ProcessInfo::<T> { process: Box::new(proc), is_special: false };
+        let mut proc = ProcessInfo::<T> {
+            process: Box::new(proc),
+            is_special: false,
+        };
         proc.process.set_id(id);
 
         let core_id = self.inner.info.current_core();
@@ -323,16 +394,52 @@ impl<T: SchedInfo> Scheduler<T> for &WaitQueueScheduler<T> {
         unsafe { self.current_core().switch(state, tf) }
     }
 
-    fn get_process_mut(&mut self, id: usize) -> Option<&mut <T as SchedInfo>::Process> {
-        unimplemented!()
+    fn with_process_mut<R, F>(&mut self, id: usize, func: F) -> R
+        where F: FnOnce(Option<&mut T::Process>) -> R {
+        unsafe { self.current_core().with_process_mut(id, func) }
     }
 
     fn iter_process_mut<F>(&mut self, func: F) where F: FnMut(&mut T::Process) {
-        unimplemented!()
+        unsafe { self.current_core().iter_process_mut(func) }
     }
 
     fn initialize_core(&mut self) {
         unsafe { self.current_core().initialize_core() }
+    }
+}
+
+impl<T: SchedInfo> Scheduler<T> for WaitQueueScheduler<T> {
+    fn add_process(&mut self, proc: T::Process) -> Option<usize> {
+        <&WaitQueueScheduler<T>>::add_process(&mut &*self, proc)
+    }
+
+    fn schedule_out(&mut self, state: T::State, tf: &mut T::Frame) {
+        <&WaitQueueScheduler<T>>::schedule_out(&mut &*self, state, tf)
+    }
+
+    fn schedule_in(&mut self, tf: &mut T::Frame) -> usize {
+        <&WaitQueueScheduler<T>>::schedule_in(&mut &*self, tf)
+    }
+
+    fn kill(&mut self, tf: &mut T::Frame) -> Option<usize> {
+        <&WaitQueueScheduler<T>>::kill(&mut &*self, tf)
+    }
+
+    fn switch(&mut self, state: T::State, tf: &mut T::Frame) -> usize {
+        <&WaitQueueScheduler<T>>::switch(&mut &*self, state, tf)
+    }
+
+    fn with_process_mut<R, F>(&mut self, id: usize, func: F) -> R
+        where F: FnOnce(Option<&mut T::Process>) -> R {
+        <&WaitQueueScheduler<T>>::with_process_mut(&mut &*self, id, func)
+    }
+
+    fn iter_process_mut<F>(&mut self, func: F) where F: FnMut(&mut T::Process) {
+        <&WaitQueueScheduler<T>>::iter_process_mut(&mut &*self, func)
+    }
+
+    fn initialize_core(&mut self) {
+        <&WaitQueueScheduler<T>>::initialize_core(&mut &*self)
     }
 }
 

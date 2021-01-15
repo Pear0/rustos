@@ -3,11 +3,15 @@ use core::time::Duration;
 
 use aarch64::{MPIDR_EL1, SP};
 
-use crate::{init, BootVariant};
+use crate::{init, BootVariant, smp};
 use crate::mutex::Mutex;
 use crate::console::{CONSOLE, console_flush};
 use crate::mbox::EveryTimer;
 use crate::traps::IRQ_RECURSION_DEPTH;
+use crate::kernel::{KERNEL_CORES, KERNEL_SCHEDULER};
+use crate::kernel_call::syscall::exec_in_exc;
+use crate::process::CoreAffinity;
+use kscheduler::Process;
 
 pub const MAX_CORES: usize = 4;
 
@@ -216,3 +220,70 @@ pub fn no_interrupt<T, R>(func: T) -> R
     drop(guard);
     r
 }
+
+pub fn process_context() -> bool {
+    IRQ_RECURSION_DEPTH.get() == 0
+}
+
+pub fn exception_context() -> bool {
+    IRQ_RECURSION_DEPTH.get() == 1
+}
+
+/// Execute the callback on each core then restore original process affinity.
+///
+/// The callback will first be called on the current core after the affinity has
+/// been locked. Then the callback will be called on the remaining cores in order.
+///
+/// This function must be called from a process context and executes `1 + 2 * num_cores` syscalls.
+pub fn with_each_core<F>(mut func: F) where F: FnMut(usize) {
+    assert!(process_context());
+    let mut original_affinity: Option<CoreAffinity> = None;
+    let mut original_core = 0usize;
+
+    // lock this process to the current core...
+    exec_in_exc(|exc| {
+        KERNEL_SCHEDULER.crit_process(exc.pid, |proc| {
+            let mut proc = proc.unwrap();
+            original_affinity = Some(proc.affinity);
+            original_core = smp::core();
+            proc.affinity.set_only(original_core);
+        });
+    });
+
+    func(original_core);
+
+    for core_i in 0..*KERNEL_CORES {
+        // skip the original core now
+        if core_i == original_core {
+            continue;
+        }
+
+        // move us to next core
+        exec_in_exc(|exc| {
+            KERNEL_SCHEDULER.crit_process(exc.pid, |proc| {
+                let mut proc = proc.unwrap();
+                proc.affinity.set_only(core_i);
+            });
+        });
+
+        // trigger switch so that we are sent to the new core affinity.
+        kernel_api::syscall::sched_yield();
+
+        func(core_i);
+    }
+
+    // Restore original affinity and send process back to the core it was originally scheduled on.
+    exec_in_exc(|exc| {
+        KERNEL_SCHEDULER.crit_process(exc.pid, |proc| {
+            let mut proc = proc.unwrap();
+            proc.affinity = original_affinity.unwrap();
+            proc.set_send_to_core(Some(original_core));
+        });
+    });
+
+    // trigger switch so that we are sent back to our original core
+    kernel_api::syscall::sched_yield();
+
+}
+
+

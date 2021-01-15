@@ -10,7 +10,7 @@ use pi::gpio;
 use pi::interrupt::{Interrupt, CoreInterrupt};
 use shim::{io, ioerr};
 
-use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM, FILESYSTEM2, perf, EXEC_CONTEXT};
+use crate::{BootVariant, display_manager, hw, kernel_call, NET, shell, smp, timing, VMM, FILESYSTEM2, perf, EXEC_CONTEXT, tasks};
 use crate::console::{CONSOLE, console_ext_init, console_interrupt_handler};
 use crate::fs::handle::{Sink, SinkWrapper, Source, SourceWrapper, WaitingSourceWrapper};
 use crate::fs::service::PipeService;
@@ -37,12 +37,14 @@ use crate::mini_allocators::NOCACHE_PAGE_ALLOC;
 use crate::hw::ArchVariant;
 use enumset::EnumSet;
 use karch::capability::ExecCapability;
+use crate::smp::core;
+use dsx::sync::sema::SingleSetSemaphore;
 
 pub static KERNEL_IRQ: Irq<KernelImpl> = Irq::uninitialized();
 pub static KERNEL_SCHEDULER: GlobalScheduler<KernelImpl> = GlobalScheduler::uninitialized();
 
 pub static KERNEL_TIMER: CoreLazy<TimerController<KernelTrapFrame, VirtualCounter>> = CoreLocal::new_lazy(|| TimerController::new());
-
+pub static KERNEL_CORES: SingleSetSemaphore<usize> = SingleSetSemaphore::new();
 
 fn network_thread(ctx: KernProcessCtx) {
 
@@ -218,10 +220,11 @@ pub fn kernel_main() -> ! {
     let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
     info!("cpu attrs: {:?}", attrs);
 
-    let enable_many_cores = !BootVariant::kernel_in_hypervisor() && false;
+    let enable_many_cores = !BootVariant::kernel_in_hypervisor();
+    let cores = if enable_many_cores { 4 } else { 1 };
+    unsafe { SingleSetSemaphore::<usize>::set_racy(&KERNEL_CORES, cores) };
 
     if true {
-        let cores = if enable_many_cores { 4 } else { 1 };
         unsafe { smp::initialize(cores); }
         smp::wait_for_cores(cores);
     }
@@ -355,6 +358,10 @@ pub fn kernel_main() -> ! {
         KERNEL_SCHEDULER.add(proc);
     }
 
+    {
+        let proc = KernelProcess::kernel_process("balancer".to_owned(), tasks::core_balancing_thread).unwrap();
+        KERNEL_SCHEDULER.add(proc);
+    }
 
     // for _ in 0..200 {
     //     let proc = KernelProcess::kernel_process("sleeper".to_owned(), |_ctx| {

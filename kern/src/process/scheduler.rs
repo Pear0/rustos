@@ -11,7 +11,7 @@ use enumset::EnumSet;
 use aarch64::{CNTP_CTL_EL0, MPIDR_EL1, SP, SPSR_EL1};
 use dsx::sync::mutex::{LockableMutex, LightMutex};
 use karch::capability::ExecCapability;
-use kscheduler::{SchedInfo, Scheduler as KScheduler};
+use kscheduler::{SchedInfo, Process as KProcess, Scheduler as KScheduler};
 use pi::{interrupt, timer};
 use pi::interrupt::CoreInterrupt;
 
@@ -19,7 +19,7 @@ use crate::{BootVariant, EXEC_CONTEXT, smp, timing};
 use crate::arm::{GenericCounterImpl, HyperPhysicalCounter, VirtualCounter};
 use crate::cls::CoreLocal;
 use crate::hyper::HYPER_TIMER;
-use crate::kernel::KERNEL_TIMER;
+use crate::kernel::{KERNEL_TIMER, KERNEL_CORES};
 use crate::mutex::Mutex;
 use crate::param::{TICK, USER_IMG_BASE};
 use crate::process::{HyperImpl, Id, KernelImpl, Process, State};
@@ -27,6 +27,7 @@ use crate::process::process::ProcessImpl;
 use crate::process::snap::SnapProcess;
 use crate::process::state::RunContext;
 use crate::traps::{Frame, HyperTrapFrame, IRQ_RECURSION_DEPTH, KernelTrapFrame};
+use hashbrown::HashSet;
 
 /// Process scheduler for the entire machine.
 pub struct GlobalScheduler<T: ProcessImpl>(Mutex<Option<Scheduler<T>>>);
@@ -90,7 +91,7 @@ impl<T: ProcessImpl> GlobalScheduler<T> {
             F: FnOnce(Option<&mut Process<T>>) -> R,
     {
         self.critical(|scheduler| {
-            f(scheduler.get_process_mut(id as usize))
+            scheduler.with_process_mut(id as usize, f)
         })
     }
 
@@ -182,7 +183,7 @@ impl GlobalScheduler<KernelImpl> {
         use aarch64::regs::*;
         let lock = &mut m_lock!(self.0);
         if lock.is_none() {
-            lock.replace(Scheduler::new(MySchedInfo::new()));
+            lock.replace(Scheduler::new(MySchedInfo::new(), *KERNEL_CORES));
         }
 
         let core = crate::smp::core();
@@ -211,10 +212,37 @@ impl GlobalScheduler<KernelImpl> {
         EXEC_CONTEXT.add_capabilities(EnumSet::only(ExecCapability::Scheduler));
     }
 
-    pub fn get_process_snaps(&self, snaps: &mut Vec<SnapProcess>) {
+    pub fn iter_all_processes<F>(&self, mut func: F) where F: FnMut(usize, &mut Process<KernelImpl>) {
+        let mut seen_procs = HashSet::<usize>::with_capacity(32);
+
+        smp::with_each_core(|core_id| {
+            self.critical(|sched| {
+                sched.iter_process_mut(|proc| {
+                    if proc.get_id() == 0 {
+                        func(core_id, proc);
+                    } else if !seen_procs.contains(&(proc.get_id())) {
+                        func(core_id, proc);
+                        seen_procs.insert(proc.get_id());
+                    }
+                });
+            });
+        });
+    }
+
+    pub fn get_all_process_snaps(&self, snaps: &mut Vec<SnapProcess>) {
+        self.iter_all_processes(|core_id, proc| {
+            let mut snap = SnapProcess::from(&*proc);
+            snap.core = core_id as isize;
+            snaps.push(snap);
+        });
+    }
+
+    pub fn get_core_process_snaps(&self, snaps: &mut Vec<SnapProcess>) {
         self.critical(|sched| {
             sched.iter_process_mut(|proc| {
-                snaps.push(SnapProcess::from(&*proc));
+                let mut snap = SnapProcess::from(&*proc);
+                snap.core = smp::core() as isize;
+                snaps.push(snap);
             });
         });
     }
@@ -227,7 +255,7 @@ impl GlobalScheduler<HyperImpl> {
         use aarch64::regs::*;
         let lock = &mut m_lock!(self.0);
         if lock.is_none() {
-            lock.replace(Scheduler::new(MySchedInfo::new()));
+            lock.replace(Scheduler::new(MySchedInfo::new(), 1));
         }
 
         HYPER_TIMER.critical(|timer| {
@@ -355,7 +383,7 @@ impl<T: ProcessImpl> kscheduler::SchedInfo for MySchedInfo<T> {
     }
 }
 
-type Scheduler<T> = kscheduler::ListScheduler<MySchedInfo<T>>;
+type Scheduler<T> = kscheduler::wqs::WaitQueueScheduler<MySchedInfo<T>>;
 
 pub extern "C" fn test_user_process() -> ! {
     loop {

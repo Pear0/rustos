@@ -116,6 +116,8 @@ pub struct Process<T: ProcessImpl> {
 
     pub affinity: CoreAffinity,
 
+    pub send_to_core: Option<usize>,
+
     pub request_suspend: bool,
     request_kill: bool,
 
@@ -147,6 +149,7 @@ impl<T: ProcessImpl> Process<T> {
             waiting_ratio: TimeRatio::new(),
             running_slices: TimeRing::new(),
             affinity: CoreAffinity::all(),
+            send_to_core: None,
             task_switches: 0,
             request_suspend: false,
             request_kill: false,
@@ -348,6 +351,14 @@ impl<T: ProcessImpl> kscheduler::Process<T::Frame, State<T>> for Process<T> {
 
     fn on_task_switch(&mut self) {
         self.task_switches += 1;
+    }
+
+    fn set_send_to_core(&mut self, core: Option<usize>) {
+        self.send_to_core = core;
+    }
+
+    fn get_send_to_core(&self) -> Option<usize> {
+        self.send_to_core
     }
 }
 

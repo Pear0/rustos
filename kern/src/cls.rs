@@ -6,14 +6,20 @@ use crate::iosync::{Global, Lazy};
 
 pub const CORE_COUNT: usize = 4;
 
-pub struct CoreLocal<T>([T; CORE_COUNT]);
+#[repr(align(128))]
+struct Aligned<T>(T);
+
+pub struct CoreLocal<T>([Aligned<T>; CORE_COUNT]);
 
 // nothing is actually shared
 unsafe impl<T> Sync for CoreLocal<T> {}
 
 impl<T> CoreLocal<T> {
     pub fn new_func<F: Fn() -> T>(init: F) -> Self {
-        CoreLocal([init(), init(), init(), init()])
+        CoreLocal([
+            Aligned(init()), Aligned(init()),
+            Aligned(init()), Aligned(init()),
+        ])
     }
 }
 
@@ -25,35 +31,47 @@ impl<T: Clone> CoreLocal<T> {
 
 impl<T: Copy> CoreLocal<T> {
     pub const fn new_copy(init: T) -> Self {
-        CoreLocal([init; CORE_COUNT])
+        CoreLocal([
+            Aligned(init), Aligned(init),
+            Aligned(init), Aligned(init),
+        ])
     }
 }
 
 impl<T> CoreLocal<Global<T>> {
     #[track_caller]
     pub const fn new_global(init: fn() -> T) -> Self {
-        CoreLocal([Global::new(init), Global::new(init), Global::new(init), Global::new(init)])
+        CoreLocal([
+            Aligned(Global::new(init)), Aligned(Global::new(init)),
+            Aligned(Global::new(init)), Aligned(Global::new(init)),
+        ])
     }
 
     pub fn cross(&self, core: usize) -> &Global<T> {
-        &self.0[core]
+        &self.0[core].0
     }
 }
 
 impl<T> CoreLocal<Lazy<T>> {
     #[track_caller]
     pub const fn new_lazy(init: fn() -> T) -> Self {
-        CoreLocal([Lazy::new(init), Lazy::new(init), Lazy::new(init), Lazy::new(init)])
+        CoreLocal([
+            Aligned(Lazy::new(init)), Aligned(Lazy::new(init)),
+            Aligned(Lazy::new(init)), Aligned(Lazy::new(init)),
+        ])
     }
 }
 
 impl<T: Copy> CoreLocal<Cell<T>> {
     pub const fn new_cell(init: T) -> Self {
-        CoreLocal([Cell::new(init), Cell::new(init), Cell::new(init), Cell::new(init)])
+        CoreLocal([
+            Aligned(Cell::new(init)), Aligned(Cell::new(init)),
+            Aligned(Cell::new(init)), Aligned(Cell::new(init)),
+        ])
     }
 
     pub fn cross(&self, core: usize) -> &Cell<T> {
-        &self.0[core]
+        &self.0[core].0
     }
 }
 
@@ -68,7 +86,7 @@ impl<T> Deref for CoreLocal<T>  {
 
     fn deref(&self) -> &Self::Target {
         let core_id = unsafe { MPIDR_EL1.get_value(MPIDR_EL1::Aff0) as usize };
-        &self.0[core_id]
+        &self.0[core_id].0
     }
 }
 

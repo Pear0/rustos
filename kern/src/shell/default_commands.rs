@@ -32,7 +32,7 @@ use crate::fs::sd;
 use crate::fs::service::PipeService;
 use crate::hyper::HYPER_SCHEDULER;
 use crate::iosync::{ConsoleSync, ReadWrapper, SyncRead, SyncWrite, WriteWrapper};
-use crate::kernel::KERNEL_IRQ;
+use crate::kernel::{KERNEL_IRQ, KERNEL_CORES};
 use crate::kernel::KERNEL_SCHEDULER;
 use crate::mutex::Mutex;
 use crate::net::arp::ArpResolver;
@@ -49,6 +49,7 @@ use crate::traps::IRQ_RECURSION_DEPTH;
 
 use super::shell::Shell;
 use dsx::collections::spsc_queue::SpscQueue;
+use crate::kernel_call::syscall::exec_in_exc;
 
 mod mem;
 mod net;
@@ -172,9 +173,23 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
         .help("random stuff")
         .func(|sh, _cmd| {
 
-            let (r, w) = SpscQueue::<u8>::new(1024);
-            info!("my reader: {:?}, my writer: {:?}", r, w);
+            info!("core merry-go-round");
+            for core_i in 0..*KERNEL_CORES {
+                exec_in_exc(|exc| {
+                    info!("[{}] Setting core affinity to {}", smp::core(), core_i);
+                    KERNEL_SCHEDULER.crit_process(exc.pid, |proc| {
+                        let mut proc = proc.unwrap();
+                        proc.affinity.set_only(core_i);
+                    });
+                });
 
+                // trigger switch so that we are sent to the new core affinity.
+                kernel_api::syscall::sched_yield();
+
+                info!("Hello from core {}", smp::core());
+
+            }
+            info!("merry-go-round done");
 
         })
         .build();
@@ -576,6 +591,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
             }
 
             let cols = [
+                String::from("  core"),
                 String::from("  pid"), String::from("     state"), String::from("      name"),
                 String::from("     cpu time"), String::from("cpu %"), String::from("waiting %"),
                 String::from("ready %"), String::from("slice time"), String::from("task switches"),
@@ -589,7 +605,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
 
                 let mut snaps: Vec<SnapProcess> = Vec::new();
                 if BootVariant::kernel() {
-                    KERNEL_SCHEDULER.get_process_snaps(&mut snaps);
+                    KERNEL_SCHEDULER.get_all_process_snaps(&mut snaps);
                 } else {
                     HYPER_SCHEDULER.get_process_snaps(&mut snaps);
                 }
@@ -598,7 +614,8 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
 
                 for snap in snaps.iter() {
                     // write!(table.get_writer(), "\x1b[2K")?;
-                    table.print(snap.tpidr)?
+                    table.print(snap.core)?
+                        .print(snap.tpidr)?
                         .print_debug(snap.state)?
                         .print(&snap.name)?
                         .print_debug(snap.cpu_time)?

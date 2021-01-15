@@ -1,7 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
-
 #[macro_use]
 extern crate log;
 
@@ -15,9 +14,9 @@ use core::sync::atomic::AtomicUsize;
 
 use hashbrown::HashMap;
 
-use dsx::sync::mutex::{LightMutex, LockableMutex};
-use dsx::core::marker::PhantomData;
 use dsx::core::cell::UnsafeCell;
+use dsx::core::marker::PhantomData;
+use dsx::sync::mutex::{LightMutex, LockableMutex};
 
 macro_rules! const_assert_size {
     ($expr:tt, $size:tt) => {
@@ -27,12 +26,12 @@ macro_rules! const_assert_size {
 
 pub mod wqs;
 
-pub trait SchedInfo : Sized {
-    type Frame : Frame;
+pub trait SchedInfo: Sized {
+    type Frame: Frame;
 
     type State;
 
-    type Process : Process<Self::Frame, Self::State>;
+    type Process: Process<Self::Frame, Self::State>;
 
     fn current_core(&self) -> usize;
 
@@ -47,12 +46,10 @@ pub trait SchedInfo : Sized {
     fn dead_state(&self) -> Self::State;
 
 
-    fn on_process_killed(&self, _proc: Self::Process) {
-    }
-
+    fn on_process_killed(&self, _proc: Self::Process) {}
 }
 
-pub trait Frame : Clone {
+pub trait Frame: Clone {
     fn get_id(&self) -> usize;
 }
 
@@ -79,13 +76,14 @@ pub trait Process<F, S>: Send {
 
     fn affinity_valid_core(&self) -> Option<usize>;
 
-    fn on_task_switch(&mut self) {
-    }
+    fn on_task_switch(&mut self) {}
 
+    fn set_send_to_core(&mut self, core: Option<usize>);
+
+    fn get_send_to_core(&self) -> Option<usize>;
 }
 
 pub trait Scheduler<T: SchedInfo> {
-
     fn add_process(&mut self, proc: T::Process) -> Option<usize>;
 
     fn schedule_out(&mut self, state: T::State, tf: &mut T::Frame);
@@ -102,13 +100,12 @@ pub trait Scheduler<T: SchedInfo> {
         self.schedule_in(tf)
     }
 
-    fn get_process_mut(&mut self, id: usize) -> Option<&mut T::Process>;
+    fn with_process_mut<R, F>(&mut self, id: usize, func: F) -> R
+        where F: FnOnce(Option<&mut T::Process>) -> R;
 
     fn iter_process_mut<F>(&mut self, func: F) where F: FnMut(&mut T::Process);
 
-    fn initialize_core(&mut self) {
-    }
-
+    fn initialize_core(&mut self) {}
 }
 
 pub struct ListScheduler<T: SchedInfo> {
@@ -186,7 +183,6 @@ impl<T: SchedInfo> ListScheduler<T> {
 
         Some(id)
     }
-
 }
 
 impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
@@ -224,7 +220,7 @@ impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
         }
 
         match proc {
-            None => {},
+            None => {}
             Some((idx, proc)) => {
                 if proc.should_kill() {
                     drop(idle_lock);
@@ -278,14 +274,14 @@ impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
         }
     }
 
-    fn get_process_mut(&mut self, id: usize) -> Option<&mut <T as SchedInfo>::Process> {
+    fn with_process_mut<R, F>(&mut self, id: usize, mut func: F) -> R where F: FnOnce(Option<&mut T::Process>) -> R {
         for proc in self.processes.iter_mut() {
             if proc.get_id() == id {
-                return Some(proc);
+                return func(Some(proc));
             }
         }
 
-        None
+        func(None)
     }
 
     fn iter_process_mut<F>(&mut self, mut func: F) where F: FnMut(&mut T::Process) {
