@@ -4,8 +4,8 @@ use core::ops::DerefMut;
 use core::sync::atomic::AtomicBool;
 use core::time::Duration;
 
+use dsx::hints::unlikely;
 use dsx::sync::mutex::LockableMutex;
-
 use pi::uart::MiniUart;
 use shim::io;
 use shim::io::Error;
@@ -147,9 +147,7 @@ impl<T> Lazy<T> {
     }
 
     pub fn get(&self) -> &T {
-        use core::intrinsics::unlikely;
-
-        if unsafe { unlikely(matches!(self.do_get(), GlobalState::Init(_))) } {
+        if unlikely(matches!(self.do_get(), GlobalState::Init(_))) {
             self.do_init();
         }
 

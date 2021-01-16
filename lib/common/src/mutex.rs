@@ -2,11 +2,8 @@ use core::cell::UnsafeCell;
 use core::fmt;
 use core::ops::{Deref, DerefMut, Drop};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use aarch64::{SCTLR_EL1, MPIDR_EL1, SP};
-use core::time::Duration;
-use core::fmt::Alignment::Left;
-use core::sync::atomic::AtomicU64;
-use crate::smp;
+
+use aarch64::{MPIDR_EL1, SCTLR_EL1, SP};
 
 #[repr(align(32))]
 pub struct Mutex<T> {
@@ -15,15 +12,17 @@ pub struct Mutex<T> {
     owner: AtomicUsize,
 }
 
-unsafe impl<T: Send> Send for Mutex<T> { }
-unsafe impl<T: Send> Sync for Mutex<T> { }
+unsafe impl<T: Send> Send for Mutex<T> {}
+
+unsafe impl<T: Send> Sync for Mutex<T> {}
 
 pub struct MutexGuard<'a, T: 'a> {
     lock: &'a Mutex<T>
 }
 
-impl<'a, T> !Send for MutexGuard<'a, T> { }
-unsafe impl<'a, T: Sync> Sync for MutexGuard<'a, T> { }
+impl<'a, T> ! Send for MutexGuard<'a, T> {}
+
+unsafe impl<'a, T: Sync> Sync for MutexGuard<'a, T> {}
 
 impl<T> Mutex<T> {
     pub const fn new(val: T) -> Mutex<T> {
@@ -35,10 +34,7 @@ impl<T> Mutex<T> {
     }
 }
 
-static ERR_LOCK: AtomicBool = AtomicBool::new(false);
-
 impl<T> Mutex<T> {
-
     fn has_mmu(&self) -> bool {
         // possibly slightly wrong, not sure exactly what shareability settings
         // enable advanced control
@@ -65,7 +61,6 @@ impl<T> Mutex<T> {
             } else {
                 None
             }
-
         } else {
             let this = 0;
             if !self.lock.load(Ordering::Relaxed) || self.owner.load(Ordering::Relaxed) == this {
@@ -105,7 +100,7 @@ impl<'a, T: 'a> Deref for MutexGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { & *self.lock.data.get() }
+        unsafe { &*self.lock.data.get() }
     }
 }
 
