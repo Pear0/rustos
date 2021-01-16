@@ -55,7 +55,7 @@ impl IPv4Payload for UdpFrame {
         Some((frame, &buf[..0]))
     }
 
-    fn encode<'a>(&self, mut buf: &'a mut [u8], ip_header: &ipv4::IPv4Header) -> NetResult<&'a mut [u8]> {
+    fn encode<'a>(&self, buf: &'a mut [u8], ip_header: &ipv4::IPv4Header) -> NetResult<&'a mut [u8]> {
         // calculate checksum with pseudo header
         let mut check = ChecksumOnesComplement::new();
         check.ingest_sized(&ip_header.source);

@@ -1,20 +1,15 @@
+use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::marker::PhantomData;
-use core::mem::size_of;
-
-use alloc::vec::Vec;
 
 use shim::io;
 use shim::ioerr;
-use shim::newioerr;
 use shim::path::{Component, Path};
 
 use crate::mbr::MasterBootRecord;
 use crate::traits::{BlockDevice, FileSystem};
-use crate::util::SliceExt;
 use crate::vfat::{BiosParameterBlock, CachedPartition, Partition};
 use crate::vfat::{Cluster, Dir, Entry, Error, FatEntry, File, Status};
-use mountfs::mount::mfs;
 
 /// A generic trait that handles a critical section as a closure
 pub trait VFatHandle: Clone + Debug + Send + Sync {
@@ -82,7 +77,7 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
 
     pub fn read_cluster(&mut self, cluster: Cluster, mut offset: usize, buf: &mut [u8]) -> io::Result<usize> {
         if offset >= self.cluster_size_bytes() {
-            return Ok(0)
+            return Ok(0);
         }
 
         let cluster_start = self.cluster_start(cluster);
@@ -127,7 +122,7 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
                 match self.fat_entry(cloff.cluster)?.status() {
                     Status::Data(next) => cloff = SeekHandle { cluster: next, offset: 0, total_offset: cloff.total_offset },
                     Status::Eoc(_) => break 'cluster_loop,
-                    e => return ioerr!(Other, "unexpected fat entry"),
+                    _ => return ioerr!(Other, "unexpected fat entry"),
                 }
             }
         }
@@ -148,7 +143,7 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
             match self.fat_entry(cluster)?.status() {
                 Status::Data(next) => cluster = next,
                 Status::Eoc(_) => break 'cluster_loop,
-                e => return ioerr!(Other, "unexpected fat entry"),
+                _ => return ioerr!(Other, "unexpected fat entry"),
             }
         }
 
@@ -170,7 +165,6 @@ impl<HANDLE: VFatHandle> VFat<HANDLE> {
     }
 
     pub fn seek_handle(&mut self, start: Cluster, cloff: SeekHandle, offset: usize) -> io::Result<SeekHandle> {
-
         let mut current_cluster: Cluster;
         let mut current_offset: usize;
         if offset > cloff.total_offset {

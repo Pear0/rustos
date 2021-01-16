@@ -330,7 +330,7 @@ impl AllocStats for Allocator {
         (self.used, self.end - self.start)
     }
 
-    fn dump(&self, mut w: &mut dyn io::Write) -> io::Result<()> {
+    fn dump(&self, w: &mut dyn io::Write) -> io::Result<()> {
         writeln!(w, "Allocator")?;
 
         let (allocated, total) = self.total_allocation();

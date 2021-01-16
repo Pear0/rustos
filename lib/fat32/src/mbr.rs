@@ -38,7 +38,7 @@ impl fmt::Debug for CHS {
 const_assert_size!(CHS, 3);
 
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct PartitionEntry {
     pub boot_indicator: u8,
     pub start: CHS,

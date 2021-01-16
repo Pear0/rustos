@@ -1,12 +1,13 @@
 #![feature(llvm_asm)]
 #![feature(global_asm)]
+#![allow(unused_imports)]
 
 #![cfg_attr(not(test), no_std)]
 
 #[macro_use]
 extern crate log;
 
-use karch::{EarlyPrintSerial, Arch};
+use karch::EarlyPrintSerial;
 
 pub mod gpio;
 pub mod irq;

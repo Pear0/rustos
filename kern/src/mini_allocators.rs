@@ -42,10 +42,10 @@ impl LocalAlloc for NoCachingPageAllocator {
     unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
         let page_layout = layout.align_to(PAGE_SIZE).unwrap();
 
-        let ptr = unsafe { ALLOCATOR.alloc_tag(page_layout, MemTag::NoCacheDirect) };
+        let ptr = ALLOCATOR.alloc_tag(page_layout, MemTag::NoCacheDirect);
         if !ptr.is_null() {
             for offset in (0..page_layout.size()).step_by(PAGE_SIZE) {
-                unsafe { VMM.mark_page_non_cached((ptr as usize) + offset); }
+                VMM.mark_page_non_cached((ptr as usize) + offset);
             }
         }
 

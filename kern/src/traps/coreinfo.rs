@@ -44,21 +44,19 @@ pub fn exc_ratio() -> [(TimeRatio, Vec<(ExceptionType, Stats)>); 4] {
     smp::no_interrupt(|| {
         let mut ratios = [(TimeRatio::new(), Vec::new()), (TimeRatio::new(), Vec::new()), (TimeRatio::new(), Vec::new()), (TimeRatio::new(), Vec::new())];
         for i in 0..4 {
-            let ratio = unsafe { EXC_RATIO.cross(i).critical(|r| r.clone()) };
+            let ratio = EXC_RATIO.cross(i).critical(|r| r.clone());
 
-            let items = unsafe {
-                EXC_TIME.cross(i).critical(|r| {
-                    let mut items = Vec::new();
+            let items = EXC_TIME.cross(i).critical(|r| {
+                let mut items = Vec::new();
 
-                    for (k, v) in r.iter() {
-                        items.push((*k, *v));
-                    }
+                for (k, v) in r.iter() {
+                    items.push((*k, *v));
+                }
 
-                    items.sort_by_key(|(_, v)| Duration::from_secs(1000000000) - (v.0));
+                items.sort_by_key(|(_, v)| Duration::from_secs(1000000000) - (v.0));
 
-                    items
-                })
-            };
+                items
+            });
 
             ratios[i] = (ratio, items);
         }

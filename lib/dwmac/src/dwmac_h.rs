@@ -9,7 +9,7 @@
 use crate::dma_h::DMA_OFFSET;
 
 pub const fn GENMASK(h: usize, l: usize) -> u32 {
-    ((u32::max_value() - (1u32 << l) + 1) & (u32::max_value() >> (32 - 1 - h)))
+    (u32::max_value() - (1u32 << l) + 1) & (u32::max_value() >> (32 - 1 - h))
 }
 
 pub const GMAC_HI_REG_AE: u32 = 0x80000000;

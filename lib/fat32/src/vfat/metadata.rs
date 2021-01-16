@@ -1,7 +1,5 @@
 use core::fmt;
 
-use alloc::string::String;
-
 use crate::traits;
 
 /// A date as represented in FAT32 on-disk structures.

@@ -79,7 +79,7 @@ impl Physical for DwMac1000 {
     }
 
     fn debug_dump(&self, w: &mut dyn fmt::Write) -> fmt::Result {
-        let mut gmac = self.gmac.lock();
+        let gmac = self.gmac.lock();
         gmac.debug_dump(w)
     }
 }

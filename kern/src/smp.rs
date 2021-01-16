@@ -105,7 +105,7 @@ pub unsafe fn initialize(cores: usize) {
     let parking_base = 0xd8;
 
     for core_id in 1..cores {
-        unsafe { ((parking_base + core_id * 8) as *mut u64).write_volatile(core_bootstrap as u64) };
+        ((parking_base + core_id * 8) as *mut u64).write_volatile(core_bootstrap as u64);
     }
     aarch64::clean_data_cache_region(parking_base as u64, 4 * 8);
     aarch64::sev();
@@ -243,7 +243,7 @@ pub fn with_each_core<F>(mut func: F) where F: FnMut(usize) {
     // lock this process to the current core...
     exec_in_exc(|exc| {
         KERNEL_SCHEDULER.crit_process(exc.pid, |proc| {
-            let mut proc = proc.unwrap();
+            let proc = proc.unwrap();
             original_affinity = Some(proc.affinity);
             original_core = smp::core();
             proc.affinity.set_only(original_core);
@@ -261,7 +261,7 @@ pub fn with_each_core<F>(mut func: F) where F: FnMut(usize) {
         // move us to next core
         exec_in_exc(|exc| {
             KERNEL_SCHEDULER.crit_process(exc.pid, |proc| {
-                let mut proc = proc.unwrap();
+                let proc = proc.unwrap();
                 proc.affinity.set_only(core_i);
             });
         });

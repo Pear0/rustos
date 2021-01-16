@@ -1,3 +1,16 @@
+#![allow(dead_code)]
+
+use core::cmp::min;
+use core::time::Duration;
+
+use mini_alloc::MiniBox;
+use regs::*;
+use shim::const_assert_size;
+use volatile::{ReadVolatile, Volatile};
+
+use crate::common::{DMA_CHANNEL_15, DMA_CHANNEL_BASE};
+use crate::timer::Waiter;
+
 mod regs {
     // Control and Status register
     defbit32!(DMA_CS, [
@@ -57,7 +70,6 @@ mod regs {
         D_STRIDE [31-16],
         S_STRIDE [15-0],
     ]);
-
 }
 
 #[repr(C)]
@@ -91,15 +103,6 @@ impl<T> From<*mut T> for BusAddress {
     }
 }
 
-
-use regs::*;
-use mini_alloc::MiniBox;
-use volatile::{Volatile, ReadVolatile};
-use crate::common::{IO_BASE, DMA_CHANNEL_BASE, DMA_CHANNEL_15};
-use shim::const_assert_size;
-use crate::timer::Waiter;
-use core::cmp::min;
-use core::time::Duration;
 
 /// a struct matching the BCM 2835 DMA Control Block structure.
 #[repr(C, align(32))]
@@ -221,7 +224,7 @@ impl Controller {
             Source::Increasing(ptr, len) => {
                 total_len = min(total_len, *len);
                 (*ptr).into()
-            },
+            }
             Source::Constant(val) => {
                 let val = *val;
                 for x in block.const_src.as_mut() {
@@ -229,14 +232,14 @@ impl Controller {
                 }
 
                 (&block.const_src).into()
-            },
+            }
         };
 
         block.inner.destination = match &block.destination {
             Destination::Increasing(ptr, len) => {
                 total_len = min(total_len, *len);
                 (*ptr).into()
-            },
+            }
         };
 
         block.inner.txfr_len.set(0);
@@ -288,8 +291,6 @@ impl Controller {
         Self::encode(&mut block);
         self.do_execute::<W>(&block);
     }
-
-
 }
 
 

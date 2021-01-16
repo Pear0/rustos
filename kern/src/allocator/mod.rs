@@ -40,7 +40,7 @@ pub trait LocalAlloc {
 pub trait AllocStats {
     fn total_allocation(&self) -> (usize, usize);
 
-    fn dump(&self, w: &mut io::Write) -> io::Result<()>;
+    fn dump(&self, w: &mut dyn io::Write) -> io::Result<()>;
 }
 
 /// Thread-safe (locking) wrapper around a particular memory allocator.
@@ -175,7 +175,7 @@ pub struct MpThreadLocal<T: Default>(UnsafeCell<T>);
 
 impl<T: Default> mpalloc::ThreadLocal<T> for MpThreadLocal<T> {
     unsafe fn get_mut(&self) -> &mut T {
-        unsafe { &mut *self.0.get() }
+        &mut *self.0.get()
     }
 }
 
@@ -215,7 +215,7 @@ impl<T: Default> mpalloc::ThreadLocal<T> for FullThreadLocal<T> {
         if IRQ_RECURSION_DEPTH.get() > 0 {
             core += CORE_COUNT;
         }
-        let container = unsafe { &mut *self.containers[core].get() };
+        let container = &mut *self.containers[core].get();
         if container.is_none() {
             container.replace((self.init)());
         }

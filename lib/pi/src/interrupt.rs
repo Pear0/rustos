@@ -2,7 +2,7 @@ use crate::common::IO_BASE;
 
 use shim::const_assert_size;
 use volatile::prelude::*;
-use volatile::{Volatile, ReadVolatile};
+use volatile::Volatile;
 
 const INT_BASE: usize = IO_BASE + 0xB000 + 0x200;
 

@@ -1,7 +1,6 @@
-use crate::vfat::*;
 use core::fmt;
 
-use self::Status::*;
+use crate::vfat::*;
 
 #[derive(Debug, PartialEq)]
 pub enum Status {
@@ -28,10 +27,10 @@ impl FatEntry {
         match self.0 & 0x0FFF_FFFF {
             0x0 => Status::Free,
             0x1 => Status::Reserved,
-            0x2 ..= 0xFFF_FFEF => Status::Data(Cluster::from(self.0)),
-            0xFFF_FFF0 ..= 0xFFF_FFF6 => Status::Reserved,
+            0x2..=0xFFF_FFEF => Status::Data(Cluster::from(self.0)),
+            0xFFF_FFF0..=0xFFF_FFF6 => Status::Reserved,
             0xFFF_FFF7 => Status::Bad,
-            0xFFF_FFF8 ..= 0xFFF_FFFF => Status::Eoc(self.0),
+            0xFFF_FFF8..=0xFFF_FFFF => Status::Eoc(self.0),
             _ => unreachable!(),
         }
     }

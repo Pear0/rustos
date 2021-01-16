@@ -316,13 +316,13 @@ pub fn kernel_main() -> ! {
     }
 
     {
-        let mut proc = KernelProcess::kernel_process_old("pipe".to_owned(), PipeService::task_func).unwrap();
+        let proc = KernelProcess::kernel_process_old("pipe".to_owned(), PipeService::task_func).unwrap();
         // proc.priority = Priority::Highest;
         KERNEL_SCHEDULER.add(proc);
     }
 
     {
-        let mut proc = KernelProcess::kernel_process("usb".to_owned(), usb_thread).unwrap();
+        let proc = KernelProcess::kernel_process("usb".to_owned(), usb_thread).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
 

@@ -7,7 +7,7 @@ use common::mutex::Mutex;
 use mountfs::fs;
 use mountfs::fs::FileSystem;
 use mountfs::mount::mfs;
-use mountfs::mount::mfs::{Dir as MfsDir, FileId, FileInfo, FsId};
+use mountfs::mount::mfs::FileInfo;
 use shim::{ioerr, newioerr};
 use shim::ffi::OsStr;
 use shim::io;
@@ -71,9 +71,7 @@ impl mfs::FileSystem for DynWrapper {
         Some(String::from("fat32"))
     }
 
-    fn open(&self, manager: &fs::FileSystem, path: &Path) -> io::Result<mfs::Entry> {
-        use crate::traits::Entry as TraitEntry;
-
+    fn open(&self, _manager: &fs::FileSystem, path: &Path) -> io::Result<mfs::Entry> {
         let mut pointer: Entry<DynVFatHandle> = Entry::Dir(Dir::root(self.0.clone()));
 
         for component in path.components() {
@@ -94,7 +92,7 @@ impl mfs::FileSystem for DynWrapper {
         }
     }
 
-    fn entries(&self, manager: &FileSystem, dir: Arc<dyn mfs::Dir>) -> io::Result<Box<dyn Iterator<Item=mfs::DirEntry>>> {
+    fn entries(&self, _manager: &FileSystem, dir: Arc<dyn mfs::Dir>) -> io::Result<Box<dyn Iterator<Item=mfs::DirEntry>>> {
         let my_dir: &Dir<DynVFatHandle> = dir.downcast_ref().ok_or(newioerr!(InvalidInput, "[vfat] bad directory handle"))?;
 
         let entries = crate::traits::Dir::entries(my_dir)?;

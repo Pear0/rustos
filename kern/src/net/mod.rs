@@ -145,7 +145,7 @@ impl NetHandler {
 
         // gratuitous ARP so neighbors know about us sooner.
         {
-            let mut eth = &handler.eth;
+            let eth = &handler.eth;
 
             let mut packet = ArpPacket::default();
             packet.hw_address_space.set(arp::HW_ADDR_ETHER);
@@ -292,7 +292,7 @@ impl GlobalNetHandler {
             } else if hw::is_qemu() {
                 phys = Arc::new(physical::NilDevice());
             } else {
-                let usb = unsafe { Usb::new() }.expect("failed to initialize usb");
+                let usb = Usb::new().expect("failed to initialize usb");
                 phys = Arc::new(physical::PhysicalUsb(usb));
             }
         } else {

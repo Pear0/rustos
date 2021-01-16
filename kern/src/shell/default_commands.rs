@@ -178,7 +178,7 @@ pub fn register_commands<R: io::Read, W: io::Write>(sh: &mut Shell<R, W>) {
                 exec_in_exc(|exc| {
                     info!("[{}] Setting core affinity to {}", smp::core(), core_i);
                     KERNEL_SCHEDULER.crit_process(exc.pid, |proc| {
-                        let mut proc = proc.unwrap();
+                        let proc = proc.unwrap();
                         proc.affinity.set_only(core_i);
                     });
                 });

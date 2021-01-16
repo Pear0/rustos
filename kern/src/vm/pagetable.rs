@@ -393,7 +393,7 @@ impl UserPageTable {
         }
 
         let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
-        Some(unsafe { core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE) })
+        Some(core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE))
     }
 
     pub fn get_baddr(&self) -> PhysicalAddr {
@@ -426,7 +426,7 @@ impl GuestPageTable for UserPageTable {
         }
 
         let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
-        Some(unsafe { core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE) })
+        Some(core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE))
     }
 
     fn is_valid(&self, va: VirtualAddr) -> bool {
@@ -616,7 +616,7 @@ impl GuestPageTable for VirtualizationPageTable {
         }
 
         let addr = entry.0.get_value(RawL3Entry::ADDR) << 16;
-        Some(unsafe { core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE) })
+        Some(core::slice::from_raw_parts_mut(addr as *mut u8, PAGE_SIZE))
     }
 
     fn is_valid(&self, va: VirtualAddr) -> bool {

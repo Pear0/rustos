@@ -141,7 +141,7 @@ impl Interface {
 
     pub fn receive_dispatch(&self) -> Option<()> {
         let mut frame = Frame::default();
-        unsafe { m_lock!(self.inner).physical.receive_frame(&mut frame) }?;
+        self.inner.lock().physical.receive_frame(&mut frame)?;
 
         let (eth, frame) = try_parse_struct::<EthHeader>(frame.as_slice())?;
         let protocol = eth.protocol_type.get();

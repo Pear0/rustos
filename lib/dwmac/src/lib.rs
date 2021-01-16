@@ -1,5 +1,6 @@
+#![allow(unused_assignments)]
+#![allow(unused_variables)]
 #![no_std]
-#![feature(const_if_match)]
 
 macro_rules! const_assert_size {
     ($expr:tt, $size:tt) => {
@@ -19,12 +20,11 @@ use descs_h::*;
 use dma_h::*;
 use dwmac_h::*;
 use mac_h::*;
-use mini_alloc::{Alloc, AllocRef, MiniBox};
+use mini_alloc::{AllocRef, MiniBox};
 
 use crate::dma::DmaFeatures;
 use crate::mdio::{mdio_read, mdio_write, MY_MII};
-use core::ops::DerefMut;
-use log::Level::{Debug, Info};
+use log::Level::Info;
 use core::marker::PhantomData;
 use crate::volatile::Volatile;
 use core::fmt;
@@ -145,7 +145,7 @@ impl<H: Hooks> Gmac<H> {
 
         }
 
-        let mut rings = dev.device_init(al);
+        let rings = dev.device_init(al);
 
         info!("done....");
 
@@ -360,7 +360,7 @@ impl GmacRxRing {
         };
 
         for i in 0..RX_NUM_DESC {
-            let mut desc = &mut ring.rx_queue.dma_rx[i];
+            let desc = &mut ring.rx_queue.dma_rx[i];
             desc.init_rx(i + 1 == RX_NUM_DESC);
             desc.set_address(Self::buffer_idx(ring.rx_buffer.as_ref(), i).as_ptr() as usize);
             desc.prepare_rx(STMMAC_RING_MODE, MAX_FRAME_BODY);
@@ -374,7 +374,7 @@ impl GmacRxRing {
         &buffer[MAX_FRAME_BODY * i..MAX_FRAME_BODY * (i + 1)]
     }
 
-    pub fn receive_frames<H: Hooks>(&mut self, max_frames: usize, mut callback: &mut dyn FnMut(&[u8])) -> Result<(), Error> {
+    pub fn receive_frames<H: Hooks>(&mut self, max_frames: usize, callback: &mut dyn FnMut(&[u8])) -> Result<(), Error> {
         let Self { rx_queue, rx_buffer } = self;
 
         rx_queue.process_received::<H>(max_frames, &mut |idx, len| {
@@ -906,12 +906,12 @@ impl<H: Hooks> GmacDevice<H> {
         // TODO any tbs stuff
 
         // Receive al frames
-        write_u32(BASE + GMAC_FRAME_FILTER, (
+        write_u32(BASE + GMAC_FRAME_FILTER, 
             GMAC_FRAME_FILTER_RA |
                 GMAC_FRAME_FILTER_PR |
                 GMAC_FRAME_FILTER_PM |
                 GMAC_FRAME_FILTER_PCF
-        ));
+        );
 
         info!("start_all_dma");
         // start_all_dma()
@@ -989,8 +989,8 @@ impl<H: Hooks> GmacDevice<H> {
         }
         value |= DMA_BUS_MODE_USP;
         value &= !(DMA_BUS_MODE_PBL_MASK | DMA_BUS_MODE_RPBL_MASK);
-        value |= (pbl << DMA_BUS_MODE_PBL_SHIFT); // transmit
-        value |= (pbl << DMA_BUS_MODE_RPBL_SHIFT); // receive
+        value |= pbl << DMA_BUS_MODE_PBL_SHIFT; // transmit
+        value |= pbl << DMA_BUS_MODE_RPBL_SHIFT; // receive
 
         if fixed_burst {
             value |= DMA_BUS_MODE_FB;
@@ -1048,7 +1048,7 @@ impl<H: Hooks> GmacDevice<H> {
             // clear any speed flags...
             // value &= !(GMAC_CONTROL_PS | GMAC_CONTROL_FES);
 
-            value = (GMAC_CONTROL_PS | GMAC_CONTROL_FES);
+            value = GMAC_CONTROL_PS | GMAC_CONTROL_FES;
             // no flags == gigabit
         }
 
@@ -1074,7 +1074,7 @@ impl<H: Hooks> GmacDevice<H> {
         }
     }
 
-    fn dma_tx_mode(channel: usize, fifo_size: usize, mode: usize) {
+    fn dma_tx_mode(channel: usize, _fifo_size: usize, mode: usize) {
         assert_eq!(channel, 0);
         assert_eq!(mode, SF_DMA_MODE);
 

@@ -303,7 +303,7 @@ impl Interface {
 
         let buf_left = payload.encode(&mut payload_buffer, &header)?;
         let remaining = buf_left.len();
-        let mut payload_buffer = &mut payload_buffer[0..(full_buffer_len - remaining)];
+        let payload_buffer = &mut payload_buffer[0..(full_buffer_len - remaining)];
 
         if payload_buffer.len() > self.maximum_packet_size() {
             kprintln!("Refusing to send protocol {} packet with size {}", T::PROTOCOL_NUMBER, payload_buffer.len());

@@ -12,7 +12,7 @@ use dsx::sync::mutex::{LightMutex, LockableMutex};
 use crate::{Process, SchedInfo, Scheduler};
 
 enum Mail<T: SchedInfo> {
-    Nil,
+    #[allow(dead_code)] Nil,
     AddProcess(ProcessInfo<T>),
 }
 

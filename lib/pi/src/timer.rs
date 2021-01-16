@@ -3,7 +3,6 @@ use core::time::Duration;
 
 use volatile::prelude::*;
 use volatile::{ReadVolatile, Volatile};
-use core::intrinsics::floorf32;
 
 /// The base address for the ARM system timer registers.
 const TIMER_REG_BASE: usize = IO_BASE + 0x3000;

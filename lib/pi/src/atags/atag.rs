@@ -1,7 +1,5 @@
 use crate::atags::raw;
-
 pub use crate::atags::raw::{Core, Mem};
-use core::intrinsics::size_of;
 
 /// An ATAG.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -54,12 +52,11 @@ fn parse_cmd(cmd: &raw::Cmd) -> &'static str {
 
 impl From<&'static raw::Atag> for Atag {
     fn from(atag: &'static raw::Atag) -> Atag {
-
         unsafe {
             match (atag.tag, &atag.kind) {
                 (raw::Atag::CORE, &raw::Kind { core }) => Atag::Core(core),
-                (raw::Atag::MEM, &raw::Kind { mem }) =>  Atag::Mem(mem),
-                (raw::Atag::CMDLINE, &raw::Kind { ref cmd }) =>  Atag::Cmd(parse_cmd(cmd)),
+                (raw::Atag::MEM, &raw::Kind { mem }) => Atag::Mem(mem),
+                (raw::Atag::CMDLINE, &raw::Kind { ref cmd }) => Atag::Cmd(parse_cmd(cmd)),
                 (raw::Atag::NONE, _) => Atag::None,
                 (id, _) => Atag::Unknown(id),
             }

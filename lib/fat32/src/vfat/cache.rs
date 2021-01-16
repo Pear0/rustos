@@ -93,7 +93,7 @@ impl CachedPartition {
         let physical_sector = self.virtual_to_physical(sector).ok_or(io::ErrorKind::InvalidInput)?;
 
         for i in 0..self.factor() {
-            let mut raw = Self::line_buffer(&mut self.cache_line_buffer, self.device.sector_size());
+            let raw = Self::line_buffer(&mut self.cache_line_buffer, self.device.sector_size());
             self.device.read_sector(physical_sector + i, raw)?;
 
             for c in raw.iter() {

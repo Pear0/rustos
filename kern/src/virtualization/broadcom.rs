@@ -329,7 +329,7 @@ impl VirtDevice for MiniUart {
     }
 
     fn update(&self, process: &mut HyperProcess) {
-        let mut lock = m_lock!(self.0);
+        let lock = self.0.lock();
 
         let mut do_assert = false;
 

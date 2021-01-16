@@ -106,7 +106,7 @@ fn my_thread() -> ! {
 pub static TIMER_EVENTS: AtomicU64 = AtomicU64::new(0);
 pub static TIMER_EVENTS_EXC: AtomicU64 = AtomicU64::new(0);
 
-static foo: AtomicUsize = AtomicUsize::new(0);
+static HYPER_TIMER_SKIP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 fn configure_timer() {
     HYPER_IRQ.register_core(crate::smp::core(), CoreInterrupt::CNTHPIRQ, Box::new(|tf| {
@@ -120,7 +120,7 @@ fn configure_timer() {
 
         HYPER_TIMER.critical(|timer| {
             timer.add(10, timing::time_to_cycles::<HyperPhysicalCounter>(Duration::from_micros(10)), Box::new(|ctx| {
-                if foo.fetch_add(1, Ordering::Relaxed) < 10 {
+                if HYPER_TIMER_SKIP_COUNT.fetch_add(1, Ordering::Relaxed) < 10 {
                     return;
                 }
 
@@ -176,9 +176,7 @@ pub fn hyper_main() -> ! {
     error!("cores vmm");
 
     smp::run_on_secondary_cores(|| {
-        unsafe {
-            VMM.setup_hypervisor();
-        };
+        VMM.setup_hypervisor();
     });
 
     configure_timer();
@@ -231,7 +229,7 @@ pub fn hyper_main() -> ! {
     error!("Add kernel process");
 
     {
-        let mut proc = HyperProcess::hyper_process_old("shell".to_owned(), my_thread).unwrap();
+        let proc = HyperProcess::hyper_process_old("shell".to_owned(), my_thread).unwrap();
         HYPER_SCHEDULER.add(proc);
     }
 
@@ -268,7 +266,7 @@ pub fn hyper_main() -> ! {
     use aarch64::regs::*;
 
     unsafe {
-        unsafe { ((0x4000_000C) as *mut u32).write_volatile(0b1111) };
+        ((0x4000_000C) as *mut u32).write_volatile(0b1111);
         aarch64::dsb();
 
         // let vm = VirtualizationPageTable::new();

@@ -191,7 +191,7 @@ impl GlobalScheduler<KernelImpl> {
         //     reset_timer();
         // }));
 
-        let mut skip_ticks = AtomicU32::new(10);
+        let skip_ticks = AtomicU32::new(10);
         KERNEL_TIMER.add(5, timing::time_to_cycles::<VirtualCounter>(Duration::from_millis(10)), Box::new(move |ctx| {
             if !EXEC_CONTEXT.has_capabilities(ExecCapability::Allocation | ExecCapability::Scheduler) {
                 ctx.defer_timer();
@@ -381,6 +381,7 @@ impl<T: ProcessImpl> kscheduler::SchedInfo for MySchedInfo<T> {
 
 type Scheduler<T> = kscheduler::wqs::WaitQueueScheduler<MySchedInfo<T>>;
 
+#[allow(unused_assignments)]
 pub extern "C" fn test_user_process() -> ! {
     loop {
         let ms = 10000;

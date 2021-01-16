@@ -9,10 +9,10 @@
 extern crate aarch64;
 
 use karch::EarlyPrintSerial;
-use crate::uart::MiniUart;
-use crate::common::IO_BASE;
+
 use crate::atags::ATAG_BASE;
-use core::fmt::Write;
+use crate::common::IO_BASE;
+use crate::uart::MiniUart;
 
 pub mod atags;
 pub mod common;

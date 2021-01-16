@@ -175,7 +175,7 @@ impl FileInfo for Entry {
     fn size(&self) -> u64 {
         match self {
             Entry::File(f) => File::size(f.as_ref()),
-            Entry::Dir(d) => 0,
+            Entry::Dir(_) => 0,
         }
     }
 

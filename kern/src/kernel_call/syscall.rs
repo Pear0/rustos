@@ -8,6 +8,7 @@ use crate::kernel_call::*;
 use crate::sync::Waitable;
 
 /// pretty much requires coerce_unsized feature to be usable.
+#[allow(unused_assignments)]
 pub fn wait_waitable(arc: Arc<dyn Waitable>) {
     let mut ecode: u64;
     let mut elapsed_ms: u64;

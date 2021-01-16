@@ -1,12 +1,15 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use volatile::Volatile;
 
 macro_rules! const_assert_size {
     ($expr:tt, $size:tt) => {
-    const _: fn(a: ($expr)) -> [u8; $size] = |a| unsafe { core::mem::transmute::<($expr), [u8; $size]>(a) };
+    const _: fn(a: $expr) -> [u8; $size] = |a| unsafe { core::mem::transmute::<$expr, [u8; $size]>(a) };
     };
 }
 
-const gpio_group_sizes: [usize; 6] = [16, 8, 20, 9, 16, 16];
+const GPIO_GROUP_SIZES: [usize; 6] = [16, 8, 20, 9, 16, 16];
 
 #[repr(C)]
 struct GpioGroup {
@@ -53,11 +56,11 @@ impl Gpio {
     }
 
     pub fn gpio_count() -> usize {
-        gpio_group_sizes.iter().sum()
+        GPIO_GROUP_SIZES.iter().sum()
     }
 
     fn idx_to_offset(mut idx: usize) -> (usize, usize) {
-        for (i, size) in gpio_group_sizes.iter().enumerate() {
+        for (i, size) in GPIO_GROUP_SIZES.iter().enumerate() {
             if idx < *size {
                 return (i, idx);
             }

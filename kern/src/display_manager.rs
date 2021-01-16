@@ -101,7 +101,7 @@ fn display_init() -> Option<DisplayConfig> {
 pub static DISPLAY: Mutex<Option<DisplayConfig>> = mutex_new!(None);
 
 pub fn display_process(ctx: KernProcessCtx) {
-    let mut display = match display_init() {
+    let display = match display_init() {
         None => return,
         Some(d) => d,
     };

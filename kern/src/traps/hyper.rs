@@ -29,7 +29,7 @@ fn handle_irqs(tf: &mut HyperTrapFrame) {
     let ctl = Controller::new();
     // Invoke any handlers
 
-    let mut pending: Option<IrqVariant> = None;
+    let pending: Option<IrqVariant> = None;
 
     let max_check_irq = 50;
 
@@ -202,7 +202,7 @@ pub extern "C" fn hyper_handle_exception(info: Info, esr: u32, tf: &mut HyperTra
 
     // recursive irq for profiling
     let is_recursive = IRQ_RECURSION_DEPTH.get() == 1;
-    let mut is_timer = info.kind == Kind::Irq && HyperPhysicalCounter::interrupted();
+    let is_timer = info.kind == Kind::Irq && HyperPhysicalCounter::interrupted();
 
     if is_recursive {
         let mut disable_interrupts = true;

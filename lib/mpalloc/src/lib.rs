@@ -3,11 +3,10 @@
 
 extern crate alloc;
 
-use core::alloc::GlobalAlloc;
-use core::marker::PhantomData;
 use alloc::alloc::Layout;
+use core::alloc::GlobalAlloc;
 use core::cell::UnsafeCell;
-use core::ops::Deref;
+use core::marker::PhantomData;
 
 pub trait ThreadLocal<T: Default> {
     unsafe fn get_mut(&self) -> &mut T;
@@ -15,7 +14,6 @@ pub trait ThreadLocal<T: Default> {
 
 pub trait Hooks {
     type TL: ThreadLocal<Option<&'static dyn GlobalAlloc>>;
-
 }
 
 struct AllocInner<H: Hooks> {
@@ -25,7 +23,6 @@ struct AllocInner<H: Hooks> {
 }
 
 impl<H: Hooks> AllocInner<H> {
-
     pub fn get_alloc(&self) -> &'static dyn GlobalAlloc {
         let default = self.default;
         unsafe { self.current.get_mut().as_ref().map(|x| *x).unwrap_or(default) }
@@ -39,7 +36,6 @@ impl<H: Hooks> AllocInner<H> {
             result
         }
     }
-
 }
 
 pub struct Allocator<H: Hooks> {
@@ -56,24 +52,22 @@ impl<H: Hooks> Allocator<H> {
     }
 
     pub unsafe fn initialize(&self, default: &'static dyn GlobalAlloc, thread_local: H::TL) {
-
         let inner = AllocInner::<H> {
             default,
             current: thread_local,
             __phantom: PhantomData,
         };
 
-        unsafe { *self.inner.get() = Some(inner) };
+        *self.inner.get() = Some(inner);
     }
 
     fn inner(&self) -> Option<&AllocInner<H>> {
-        unsafe { ( *self.inner.get()).as_ref() }
+        unsafe { (*self.inner.get()).as_ref() }
     }
 
     pub fn with_allocator<R, F: FnOnce() -> R>(&self, allocator: &'static dyn GlobalAlloc, func: F) -> R {
         self.inner().expect("mpalloc::with_allocator called before initialize()").with_allocator(allocator, func)
     }
-
 }
 
 struct AllocFooter {
@@ -116,13 +110,13 @@ unsafe impl<H: Hooks> GlobalAlloc for Allocator<H> {
                     footer.my_allocator = chosen_alloc;
                 }
                 addr
-            },
+            }
             None => core::ptr::null_mut(),
         }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let mut footer = AllocFooter::get_footer(ptr, layout);
+        let footer = AllocFooter::get_footer(ptr, layout);
         let chosen_allocator = footer.my_allocator;
         chosen_allocator.dealloc(ptr, AllocFooter::modify_layout(layout));
     }
@@ -133,12 +127,11 @@ pub static NULL_ALLOC: NullAlloc = NullAlloc;
 pub struct NullAlloc;
 
 unsafe impl GlobalAlloc for NullAlloc {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+    unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
         core::ptr::null_mut()
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-    }
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
 }
 
 
@@ -164,11 +157,9 @@ fn align_up(addr: usize, align: usize) -> usize {
 
 
 pub trait ThreadLocalAlloc: Default {
-
     unsafe fn alloc(&mut self, layout: Layout, del: &'static dyn GlobalAlloc) -> *mut u8;
 
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout, del: &'static dyn GlobalAlloc);
-
 }
 
 pub struct ThreadedAlloc<T: ThreadLocalAlloc, TL: ThreadLocal<T>> {
@@ -180,7 +171,6 @@ pub struct ThreadedAlloc<T: ThreadLocalAlloc, TL: ThreadLocal<T>> {
 unsafe impl<T: ThreadLocalAlloc, TL: ThreadLocal<T>> Sync for ThreadedAlloc<T, TL> {}
 
 impl<T: ThreadLocalAlloc, TL: ThreadLocal<T>> ThreadedAlloc<T, TL> {
-
     pub const fn new(local: TL) -> Self {
         Self {
             local,
@@ -188,7 +178,6 @@ impl<T: ThreadLocalAlloc, TL: ThreadLocal<T>> ThreadedAlloc<T, TL> {
             __phantom: PhantomData,
         }
     }
-
 }
 
 impl<T: ThreadLocalAlloc, TL: ThreadLocal<T>> ThreadedAlloc<T, TL> {

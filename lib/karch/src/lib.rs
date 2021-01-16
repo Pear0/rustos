@@ -43,7 +43,7 @@ pub trait EarlyPrintSerial : Sync {
     fn can_send(&self) -> bool;
     fn write_byte(&self, b: u8);
 
-    fn set_send_interrupt_enabled(&self, enabled: bool) {
+    fn set_send_interrupt_enabled(&self, _enabled: bool) {
     }
 
     // Provided

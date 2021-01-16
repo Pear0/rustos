@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 const MMIO_BASE: u64 = 0xffd00000;
 
 const MMIO_AO_BASE: u64 = 0xff800000;
@@ -21,8 +24,6 @@ pub fn has_byte() -> bool {
     aarch64::dsb();
     q
 }
-
-static mut index: usize = 0;
 
 pub fn read_byte() -> u8 {
     let reg_rfifo = (UART_EARLY_PRINT_BASE + MESON_AO_UART0_RFIFO) as *mut u32;

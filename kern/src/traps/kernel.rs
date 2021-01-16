@@ -32,13 +32,13 @@ fn handle_irqs(tf: &mut KernelTrapFrame) {
     let ctl = Controller::new();
     // Invoke any handlers
 
-    const max_irq: usize = 50;
+    const MAX_IRQ: usize = 50;
 
     let mut pending: Option<IrqVariant> = None;
-    let mut diffs = [Duration::from_secs(0); max_irq];
+    let mut diffs = [Duration::from_secs(0); MAX_IRQ];
     let mut start = timing::clock_time::<VirtualCounter>();
 
-    for i in 0..max_irq {
+    for i in 0..MAX_IRQ {
         let mut any_pending = false;
         pending = None;
         for int in Interrupt::iter() {
@@ -298,7 +298,6 @@ fn debug_shell(tf: &mut KernelTrapFrame) {
                 if sp % 8 != 0 {
                     writeln!(sh.writer, "stack not aligned! aligning up...");
                     sp = sp.wrapping_add(8).wrapping_sub(sp % 8);
-                    return;
                 }
 
                 // alignment already handled

@@ -34,7 +34,7 @@ pub fn address_maybe_code(num: u64) -> bool {
 #[inline(never)]
 pub fn stack_scanner(mut sp: usize, stack_top: Option<usize>) -> impl Iterator<Item=u64> {
     sp = crate::allocator::util::align_up(sp, 8);
-    let mut top: usize;
+    let top: usize;
     if let Some(t) = stack_top {
         top = t;
     } else {
@@ -67,6 +67,7 @@ pub struct StackFrame {
 }
 
 #[inline(never)]
+#[allow(unused_assignments)]
 pub fn base_pointer() -> *const StackFrame {
     let mut bp = 0u64;
     unsafe {

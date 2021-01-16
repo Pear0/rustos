@@ -1,20 +1,19 @@
-use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use mountfs::mount;
+use mountfs::mount::mfs;
+use mountfs::mount::mfs::FileId;
 use shim::const_assert_size;
 use shim::ffi::OsStr;
 use shim::io;
 use shim::ioerr;
 
 use crate::traits;
-use crate::util::{VecExt, SliceExt};
-use crate::vfat::{Attributes, Date, Metadata, Time, Timestamp, VFat, mnt};
+use crate::util::VecExt;
+use crate::vfat::{Attributes, Date, Metadata, Time, Timestamp};
 use crate::vfat::{Cluster, Entry, File, VFatHandle};
-use mountfs::mount::mfs;
-use mountfs::mount;
 use crate::vfat::mnt::DynVFatHandle;
-use mountfs::mount::mfs::{FileId, FsId, FileInfo};
 
 #[derive(Debug)]
 pub struct Dir<HANDLE: VFatHandle> {
@@ -107,7 +106,7 @@ impl VFatRegularDirEntry {
             last_modified: Timestamp {
                 date: self.modified_date,
                 time: self.modified_time,
-            }
+            },
         }
     }
 
@@ -140,7 +139,6 @@ impl VFatLfnDirEntry {
 }
 
 impl<HANDLE: VFatHandle> Dir<HANDLE> {
-
     pub fn root(vfat: HANDLE) -> Dir<HANDLE> {
         let cluster = vfat.lock(|fs| fs.root_cluster());
 
@@ -148,7 +146,7 @@ impl<HANDLE: VFatHandle> Dir<HANDLE> {
             vfat: vfat.clone(),
             cluster,
             name: String::from("/"),
-            metadata: Default::default()
+            metadata: Default::default(),
         }
     }
 
@@ -169,7 +167,7 @@ impl<HANDLE: VFatHandle> Dir<HANDLE> {
 
         for entry in self.entries()? {
             if str::eq_ignore_ascii_case(entry.name(), name) {
-                return Ok(entry)
+                return Ok(entry);
             }
         }
 
@@ -177,14 +175,14 @@ impl<HANDLE: VFatHandle> Dir<HANDLE> {
     }
 }
 
-pub struct EntriesIterator<HANDLE: VFatHandle>  {
+pub struct EntriesIterator<HANDLE: VFatHandle> {
     vfat: HANDLE,
     buf: Vec<VFatDirEntry>,
     index: usize,
 }
 
 fn parse_lfns(lfns: &mut Vec<VFatLfnDirEntry>) -> String {
-    lfns.sort_by(|a, b| a.sequence_number().cmp(&b.sequence_number()) );
+    lfns.sort_by(|a, b| a.sequence_number().cmp(&b.sequence_number()));
 
     let mut buf: Vec<u8> = Vec::new();
     for lfn in lfns.iter() {
@@ -260,7 +258,7 @@ impl<HANDLE: VFatHandle> Iterator for EntriesIterator<HANDLE> {
                     entry.metadata(),
                     entry.file_size,
                 ))
-            })
+            });
         }
 
         None
@@ -274,7 +272,7 @@ impl<HANDLE: VFatHandle> traits::Dir for Dir<HANDLE> {
     fn entries(&self) -> io::Result<Self::Iter> {
         let mut buf: Vec<u8> = Vec::new();
 
-        let result = self.vfat.lock(|fs| fs.read_chain(self.cluster, &mut buf))?;
+        self.vfat.lock(|fs| fs.read_chain(self.cluster, &mut buf))?;
 
         Ok(EntriesIterator {
             vfat: self.vfat.clone(),
@@ -318,5 +316,4 @@ impl mfs::FileInfo for Dir<DynVFatHandle> {
     }
 }
 
-impl mfs::Dir for Dir<DynVFatHandle> {
-}
+impl mfs::Dir for Dir<DynVFatHandle> {}

@@ -192,7 +192,7 @@ pub fn handle_syscall(num: u16, tf: &mut KernelTrapFrame) {
             let mut exc = ExcContext { pid: tf.TPIDR_EL0 };
 
             let ptr = tf.regs[0] as u64 as *mut ExecInExcPayload<'_>;
-            let mut payload = unsafe { &mut *ptr };
+            let payload = unsafe { &mut *ptr };
             payload.execute(&mut exc);
         }
         _ => kprintln!("Unknown syscall: {}", num),

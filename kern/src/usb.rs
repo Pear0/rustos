@@ -181,7 +181,7 @@ impl MSDCallback for MassFSHook {
         string.push(char::from(FOO.fetch_add(1, Ordering::Relaxed)));
 
         let mut f_lock = FILESYSTEM2.0.lock();
-        let mut f = f_lock.as_mut().expect("FS2 not initialized");
+        let f = f_lock.as_mut().expect("FS2 not initialized");
         f.mount(Some(&PathBuf::from(string)), Box::new(DynWrapper(vfat)));
 
 
@@ -212,13 +212,13 @@ pub fn usb_thread(ctx: KernProcessCtx) {
 
     xhci::init_dwc3(addr);
 
-    let mut xx = xhci::Xhci::<XHCIHal>::new(addr);
+    let xx = xhci::Xhci::<XHCIHal>::new(addr);
 
     let my_xhci = Arc::new(xhci::XhciWrapper::<XHCIHal>(spin::Mutex::new(xx)));
 
     info!("created things");
 
-    let mut host = USBHost::<XHCIHal>::new(Arc::new(USBDriver()));
+    let host = USBHost::<XHCIHal>::new(Arc::new(USBDriver()));
     let dev = host.attach_root_hub(my_xhci.clone(), USBSpeed::Super);
 
     let host = Arc::new(host);

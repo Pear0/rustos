@@ -5,13 +5,6 @@ use shim::io;
 use crate::message::{Message, Wrapper};
 
 const PACKET_START_MAGIC: [u8; 8] = [0xec, 0xfb, 0x27, 0x3f, 0x06, 0x34, 0x14, 0x8c];
-const PACKET_RESYNC_MAGIC: [u8; 8] = [0x7b, 0x64, 0xe1, 0x68, 0x93, 0xd9, 0x0d, 0x01];
-
-// enum State {
-//     ExpectingStart,
-//     ExpectingLength,
-//
-// }
 
 pub struct Decoder<R: io::Read, F: FnMut(Message)> {
     pub buffer: VecDeque<u8>,

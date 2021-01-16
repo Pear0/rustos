@@ -1,21 +1,23 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 pub const PRG_ETH0: usize = 0x0;
 
 pub const PRG_ETH0_RGMII_MODE: u32 = 1 << 0;
 
-pub const PRG_ETH0_EXT_PHY_MODE_MASK: u32 = GENMASK(2, 0);
+pub const PRG_ETH0_EXT_PHY_MODE_MASK: u32 = genmask(2, 0);
 pub const PRG_ETH0_EXT_RGMII_MODE: usize = 1;
 pub const PRG_ETH0_EXT_RMII_MODE: usize = 4;
 
 /* mux to choose between fclk_div2 (bit unset) and mpll2 (bit set) */
 pub const PRG_ETH0_CLK_M250_SEL_SHIFT: usize = 4;
-pub const PRG_ETH0_CLK_M250_SEL_MASK: u32 = GENMASK(4, 4);
+pub const PRG_ETH0_CLK_M250_SEL_MASK: u32 = genmask(4, 4);
 
 /* TX clock delay in ns = "8ns / 4 * tx_dly_val" (where 8ns are exactly one
  * cycle of the 125MHz RGMII TX clock):
  * 0ns = 0x0, 2ns = 0x1, 4ns = 0x2, 6ns = 0x3
  */
-pub const PRG_ETH0_TXDLY_MASK: u32 = GENMASK(6, 5);
+pub const PRG_ETH0_TXDLY_MASK: u32 = genmask(6, 5);
 
 /* divider for the result of m250_sel */
 pub const PRG_ETH0_CLK_M250_DIV_SHIFT: usize = 7;
@@ -40,15 +42,15 @@ pub const PRG_ETH0_ADJ_SETUP: u32 = 1 << 14;
  * cleared on both, the falling and rising edge of the RX_CLK. This selects the
  * delay (= the counter value) when to start sampling RXEN and RXD[3:0].
  */
-pub const PRG_ETH0_ADJ_DELAY: u32 = GENMASK(19, 15);
+pub const PRG_ETH0_ADJ_DELAY: u32 = genmask(19, 15);
 /* Adjusts the skew between each bit of RXEN and RXD[3:0]. If a signal has a
  * large input delay, the bit for that signal (RXEN = bit 0, RXD[3] = bit 1,
  * ...) can be configured to be 1 to compensate for a delay of about 1ns.
  */
-pub const PRG_ETH0_ADJ_SKEW: u32 = GENMASK(24, 20);
+pub const PRG_ETH0_ADJ_SKEW: u32 = genmask(24, 20);
 
-const fn GENMASK(h: usize, l: usize) -> u32 {
-    ((u32::max_value() - (1u32 << l) + 1) & (u32::max_value() >> (32 - 1 - h)))
+const fn genmask(h: usize, l: usize) -> u32 {
+    (u32::max_value() - (1u32 << l) + 1) & (u32::max_value() >> (32 - 1 - h))
 }
 
 
@@ -80,7 +82,7 @@ pub fn init() {
             				PRG_ETH0_ADJ_DELAY | PRG_ETH0_ADJ_SKEW);
 
         // tx delay 2ns
-        value |= (1 << 5);
+        value |= 1 << 5;
         addr.write_volatile(value);
 
         value |= PRG_ETH0_TX_AND_PHY_REF_CLK;

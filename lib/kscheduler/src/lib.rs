@@ -1,28 +1,13 @@
+#![allow(unused_imports)]
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 #[macro_use]
 extern crate log;
 
-use alloc::boxed::Box;
 use alloc::collections::VecDeque;
-use alloc::sync::{Arc, Weak};
-use alloc::vec::Vec;
-use core::marker::PhantomPinned;
-use core::pin::Pin;
-use core::sync::atomic::AtomicUsize;
 
-use hashbrown::HashMap;
-
-use dsx::core::cell::UnsafeCell;
-use dsx::core::marker::PhantomData;
 use dsx::sync::mutex::{LightMutex, LockableMutex};
-
-macro_rules! const_assert_size {
-    ($expr:tt, $size:tt) => {
-    const _: fn(a: $expr) -> [u8; $size] = |a| unsafe { core::mem::transmute::<$expr, [u8; $size]>(a) };
-    };
-}
 
 pub mod wqs;
 
@@ -132,7 +117,7 @@ impl<T: SchedInfo> ListScheduler<T> {
     fn schedule_idle_task(&mut self, tf: &mut T::Frame) -> usize {
         let state = self.info.running_state();
         let mut lock = self.info.get_idle_task().lock();
-        let mut proc = lock.as_mut().unwrap();
+        let proc = lock.as_mut().unwrap();
 
         proc.set_state(state);
         *tf = proc.get_frame().clone();
@@ -207,7 +192,7 @@ impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
     ///
     /// If the `processes` queue is empty or there is no current process,
     /// returns `false`. Otherwise, returns `true`.
-    fn schedule_out(&mut self, mut new_state: T::State, tf: &mut T::Frame) {
+    fn schedule_out(&mut self, new_state: T::State, tf: &mut T::Frame) {
         let mut idle_lock = self.info.get_idle_task().lock();
         let mut idle_task = idle_lock.as_mut().unwrap();
 
@@ -274,7 +259,7 @@ impl<T: SchedInfo> Scheduler<T> for ListScheduler<T> {
         }
     }
 
-    fn with_process_mut<R, F>(&mut self, id: usize, mut func: F) -> R where F: FnOnce(Option<&mut T::Process>) -> R {
+    fn with_process_mut<R, F>(&mut self, id: usize, func: F) -> R where F: FnOnce(Option<&mut T::Process>) -> R {
         for proc in self.processes.iter_mut() {
             if proc.get_id() == id {
                 return func(Some(proc));

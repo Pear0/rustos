@@ -1,5 +1,3 @@
-use core::mem::transmute;
-
 /// A raw `ATAG` as laid out in memory.
 #[repr(C)]
 pub struct Atag {

@@ -4,13 +4,13 @@ use core::time::Duration;
 
 use shim::const_assert_size;
 use shim::io;
-use volatile::{ReadVolatile, Reserved, Volatile};
+use volatile::Volatile;
 use volatile::prelude::*;
 
-use crate::{interrupt, timer};
+use crate::timer;
 use crate::common::IO_BASE;
 use crate::gpio::{Function, Gpio};
-use crate::interrupt::Interrupt;
+
 use crate::uart::LsrStatus::{DataReady, TxAvailable};
 
 /// The base address for the `MU` registers.
@@ -221,7 +221,6 @@ impl fmt::Write for MiniUart {
 
 pub mod uart_io {
     use shim::ioerr;
-    use volatile::prelude::*;
 
     use super::io;
     use super::MiniUart;

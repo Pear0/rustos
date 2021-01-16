@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::String;
-use alloc::vec::Vec;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::ops::Deref;
 use core::ops::DerefMut;
 use core::sync::atomic::AtomicUsize;
@@ -10,11 +10,10 @@ use core::sync::atomic::Ordering;
 use hashbrown::HashMap;
 use spin::Mutex;
 
-use shim::{path::Path, path::PathBuf};
+use shim::{ioerr, newioerr};
 use shim::ffi::{OsStr, OsString};
 use shim::io;
-use shim::{ioerr, newioerr};
-use shim::path::Component;
+use shim::path::{Component, Path};
 
 use crate::fs;
 use crate::fs::FileSystem;

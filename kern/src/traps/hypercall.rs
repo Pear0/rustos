@@ -61,7 +61,7 @@ pub fn sys_wait_waitable(tf: &mut HyperTrapFrame) {
 
 fn net_ctx<F: FnOnce(&mut HyperTrapFrame, &mut HyperProcess) -> OsResult<()>>(tf: &mut HyperTrapFrame, func: F) {
     HYPER_SCHEDULER.crit_process(tf.get_id(), |proc| {
-        let mut proc = proc.expect("proc is none");
+        let proc = proc.expect("proc is none");
 
         match func(tf, proc) {
             Ok(()) => set_err(tf, OsError::Ok),

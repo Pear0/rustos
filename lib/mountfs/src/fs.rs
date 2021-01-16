@@ -5,27 +5,13 @@ use alloc::vec::Vec;
 
 use hashbrown::HashMap;
 
-use shim::{io, ioerr, newioerr};
+use shim::{io, ioerr};
 use shim::{path::Path, path::PathBuf};
 use shim::ffi::OsStr;
 use shim::path::Component;
 
-// use std::path::{Path, PathBuf};
 use crate::mount::mfs;
-use crate::mount::mfs::{FileId, FsId, INode};
-
-struct DirIterator<'a> {
-    dir: Box<dyn mfs::Dir>,
-    iter: Option<Box<dyn Iterator<Item=mfs::DirEntry> + 'a>>,
-}
-
-impl Iterator for DirIterator<'_> {
-    type Item = mfs::DirEntry;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        unimplemented!()
-    }
-}
+use crate::mount::mfs::{FileId, FsId};
 
 pub(crate) struct Mount {
     pub path: PathBuf,

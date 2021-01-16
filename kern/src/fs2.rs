@@ -50,7 +50,7 @@ impl FileSystem2 {
 
     pub fn critical<R, F: FnOnce(&mut mountfs::fs::FileSystem) -> R>(&self, func: F) -> R {
         let mut lock = self.0.lock();
-        let mut fs = lock.as_mut().expect("kernel::fs2 uninitialized");
+        let fs = lock.as_mut().expect("kernel::fs2 uninitialized");
         func(fs)
     }
 }

@@ -332,7 +332,7 @@ impl<T, C: GenericCounterImpl> TimerController<T, C> {
     }
 
     pub fn get_timer_info(&self, infos: &mut Vec<TimerInfo>) -> usize {
-        let mut lock = self.inner.lock();
+        let lock = self.inner.lock();
 
         infos.clear();
         for timer in &lock.timers {

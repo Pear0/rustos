@@ -170,11 +170,11 @@ impl Process<HyperImpl> {
         {
             use pi::atags::raw;
             use fat32::util::*;
-            let mut buf = proc.vmap.get_page_mut(VirtualAddr::from(0)).expect("tried to deref bad page");
+            let buf = proc.vmap.get_page_mut(VirtualAddr::from(0)).expect("tried to deref bad page");
             unsafe { VMM.mark_page_non_cached(buf.as_ptr() as usize) };
 
             // start of atags
-            let mut buf: &mut [u32] = unsafe { core::slice::from_raw_parts_mut((buf.as_mut_ptr() as usize + 0x100) as *mut u32, 100) };
+            let buf: &mut [u32] = unsafe { core::slice::from_raw_parts_mut((buf.as_mut_ptr() as usize + 0x100) as *mut u32, 100) };
 
             buf[0] = 5;
             buf[1] = raw::Atag::CORE;
@@ -198,7 +198,7 @@ impl Process<HyperImpl> {
 
         // Networking
 
-        let mut nic = Arc::new(VirtualNIC::new());
+        let nic = Arc::new(VirtualNIC::new());
 
         NET_SWITCH.critical(|net| net.register(RevVirtualNIC::create(nic.clone())));
 
@@ -249,8 +249,8 @@ impl Process<HyperImpl> {
         };
 
         let mut base = VirtualAddr::from(0x80_000);
-        'page_loop: loop {
-            let mut buf = proc.vmap.get_page_mut(base).expect("tried to deref bad page");
+        loop {
+            let buf = proc.vmap.get_page_mut(base).expect("tried to deref bad page");
             unsafe { VMM.mark_page_non_cached(buf.as_ptr() as usize) };
 
             let amt = core::cmp::min(buf.len(), hyper_copy.len());
@@ -279,7 +279,7 @@ impl Process<HyperImpl> {
     pub fn load<P: AsRef<Path>>(pn: P) -> OsResult<Self> {
         use crate::VMM;
 
-        let mut p = Self::do_load(pn)?;
+        let p = Self::do_load(pn)?;
         Ok(p)
     }
 

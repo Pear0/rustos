@@ -2,10 +2,10 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 
-use shim::{path::Path, path::PathBuf};
 use shim::ffi::OsStr;
 use shim::io;
 use shim::ioerr;
+use shim::path::Path;
 
 use crate::fs;
 use crate::fs::FileSystem;
@@ -29,15 +29,15 @@ impl mfs::FileSystem for NullFileSystem {
         Some(String::from("null"))
     }
 
-    fn open(&self, manager: &fs::FileSystem, path: &Path) -> io::Result<mfs::Entry> {
+    fn open(&self, _manager: &fs::FileSystem, _path: &Path) -> io::Result<mfs::Entry> {
         ioerr!(NotFound, "no file open()")
     }
 
-    fn entries(&self, manager: &FileSystem, dir: Arc<dyn Dir>) -> io::Result<Box<dyn Iterator<Item=mfs::DirEntry>>> {
+    fn entries(&self, _manager: &FileSystem, _dir: Arc<dyn Dir>) -> io::Result<Box<dyn Iterator<Item=mfs::DirEntry>>> {
         ioerr!(NotFound, "no file entries()")
     }
 
-    fn dir_entry(&self, manager: &FileSystem, dir: Arc<dyn Dir>, path: &OsStr) -> io::Result<mfs::Entry> {
+    fn dir_entry(&self, _manager: &FileSystem, _dir: Arc<dyn Dir>, _path: &OsStr) -> io::Result<mfs::Entry> {
         ioerr!(NotFound, "no file dir_entry()")
     }
 }
