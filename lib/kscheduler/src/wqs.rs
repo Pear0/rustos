@@ -25,12 +25,22 @@ pub struct WakeRequest<T: SchedInfo> {
 enum Mail<T: SchedInfo> {
     #[allow(dead_code)] Nil,
     AddProcess(ProcessInfo<T>),
+
+    /// Request a process be woken up with a WakeRequest.
     WakeRequest(WakeRequest<T>),
+
+    /// When received, a core will check all of its waiting processes for any that
+    /// are now ready. WakeRequest should be preferred over WakeAllRequest when the
+    /// waiting processes are known.
+    ///
+    /// A wait handle implementation may remember up to 4 waiting processes for WakeRequests
+    /// then switch to WakeAllRequest if more than 4 processes attempt to wait on the handle.
     WakeAllRequest,
 }
 
 /// This enum represents a process in the waiting queue.
 enum WaitingEntry<T: SchedInfo> {
+    /// The normal process state.
     Process(ProcessInfo<T>),
 
     /// The Tombstone state is used when a process will be removed from the queue.
@@ -67,8 +77,8 @@ impl<T: SchedInfo> WaitingEntry<T> {
 struct ProcessInfo<T: SchedInfo> {
     process: Box<T::Process>,
 
-    /// If a process is special, like the idle task, it is not killable.
-    is_special: bool,
+    /// If a process is an idle task, is not killable.
+    is_idle_task: bool,
 }
 
 impl<T: SchedInfo> ProcessInfo<T> {}
@@ -122,6 +132,7 @@ impl<T: SchedInfo> CoreScheduler<T> {
     }
 
     fn add_to_wait_queue(&mut self, proc: ProcessInfo<T>) {
+        assert!(!proc.is_idle_task);
         let id = proc.process.get_id();
         assert!(id > 0);
 
@@ -304,7 +315,7 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
         let id = self.inner.next_process_id();
         let mut proc = ProcessInfo::<T> {
             process: Box::new(proc),
-            is_special: false,
+            is_idle_task: false,
         };
         proc.process.set_id(id);
 
@@ -319,7 +330,7 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
 
     fn schedule_out(&mut self, state: T::State, tf: &mut T::Frame) {
         let mut proc = self.current_proc.take().expect("current_proc must be scheduled for schedule_out()");
-        if !proc.is_special && proc.process.should_kill() {
+        if !proc.is_idle_task && proc.process.should_kill() {
             self.kill(tf);
             return;
         }
@@ -329,7 +340,7 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
         *proc.process.get_frame() = tf.clone();
 
         // special processes like idle task aren't stored in self.processes
-        if proc.is_special {
+        if proc.is_idle_task {
             let old = self.idle_proc.replace(proc);
             assert!(old.is_none());
         } else if proc.process.check_ready() {
@@ -356,7 +367,7 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
 
     fn kill(&mut self, tf: &mut T::Frame) -> Option<usize> {
         let mut proc = self.current_proc.take().expect("current_proc must be scheduled for schedule_out()");
-        if proc.is_special {
+        if proc.is_idle_task {
             return None;
         }
 
@@ -436,7 +447,7 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
             let process = lock.take().unwrap();
             self.idle_proc.replace(ProcessInfo {
                 process: Box::new(process),
-                is_special: true,
+                is_idle_task: true,
             });
         }
     }
@@ -492,7 +503,7 @@ impl<T: SchedInfo> Scheduler<T> for &WaitQueueScheduler<T> {
         let id = self.inner.next_process_id();
         let mut proc = ProcessInfo::<T> {
             process: Box::new(proc),
-            is_special: false,
+            is_idle_task: false,
         };
         proc.process.set_id(id);
 

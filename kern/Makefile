@@ -106,3 +106,6 @@ minstall: build_uimage
 
 test:
 	cargo test --target=$(shell $(ROOT)/bin/get-host-target.sh)
+
+doc:
+	cargo xdoc --open
