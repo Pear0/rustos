@@ -1,3 +1,5 @@
+use hashbrown::HashMap;
+
 use dsx::alloc::boxed::Box;
 use dsx::alloc::collections::VecDeque;
 use dsx::alloc::sync::Arc;
@@ -11,9 +13,55 @@ use dsx::sync::mutex::{LightMutex, LockableMutex};
 
 use crate::{Process, SchedInfo, Scheduler};
 
+pub struct WakeRequest<T: SchedInfo> {
+    pub core_id: usize,
+    pub proc_id: usize,
+
+    /// If not None, execute on the Process and wake only if func returns true.
+    pub func: Option<Box<dyn FnOnce(&mut T::Process) -> bool + Send>>,
+}
+
+
 enum Mail<T: SchedInfo> {
     #[allow(dead_code)] Nil,
     AddProcess(ProcessInfo<T>),
+    WakeRequest(WakeRequest<T>),
+    WakeAllRequest,
+}
+
+/// This enum represents a process in the waiting queue.
+enum WaitingEntry<T: SchedInfo> {
+    Process(ProcessInfo<T>),
+
+    /// The Tombstone state is used when a process will be removed from the queue.
+    /// It should only be used when an entry is about to be deleted such as when using
+    /// HashMap::retain().
+    Tombstone,
+}
+
+
+#[allow(dead_code)]
+impl<T: SchedInfo> WaitingEntry<T> {
+    pub fn as_process(&self) -> &ProcessInfo<T> {
+        match self {
+            Self::Process(proc) => proc,
+            Self::Tombstone => panic!("cannot access tombstoned entry"),
+        }
+    }
+
+    pub fn as_process_mut(&mut self) -> &mut ProcessInfo<T> {
+        match self {
+            Self::Process(proc) => proc,
+            Self::Tombstone => panic!("cannot access tombstoned entry"),
+        }
+    }
+
+    pub fn into_process(self) -> ProcessInfo<T> {
+        match self {
+            Self::Process(proc) => proc,
+            Self::Tombstone => panic!("cannot access tombstoned entry"),
+        }
+    }
 }
 
 struct ProcessInfo<T: SchedInfo> {
@@ -53,7 +101,7 @@ struct CoreScheduler<T: SchedInfo> {
     current_proc: Option<ProcessInfo<T>>,
     idle_proc: Option<ProcessInfo<T>>,
     run_queue: VecDeque<ProcessInfo<T>>,
-    wait_queue: VecDeque<ProcessInfo<T>>,
+    wait_queue: HashMap<usize, WaitingEntry<T>>,
     _phantom: PhantomData<T>,
 }
 
@@ -68,8 +116,63 @@ impl<T: SchedInfo> CoreScheduler<T> {
             current_proc: None,
             idle_proc: None,
             run_queue: VecDeque::new(),
-            wait_queue: VecDeque::new(),
+            wait_queue: HashMap::new(),
             _phantom: PhantomData,
+        }
+    }
+
+    fn add_to_wait_queue(&mut self, proc: ProcessInfo<T>) {
+        let id = proc.process.get_id();
+        assert!(id > 0);
+
+        if let Some(_) = self.wait_queue.insert(id, WaitingEntry::Process(proc)) {
+            panic!("attempted to insert two processes with pid {} into wait queue", id);
+        }
+    }
+
+    fn wake_own_process(&mut self, mut req: WakeRequest<T>) {
+        assert_eq!(req.core_id, self.core_id);
+
+        if let Some(entry) = self.wait_queue.get_mut(&req.proc_id) {
+            let proc = &mut *entry.as_process_mut().process;
+
+            let do_wake = req.func.take()
+                .map(|func| func(proc)) // apply function
+                .unwrap_or(true); // if no function, always wake.
+
+            if do_wake {
+                let mut proc = self.wait_queue.remove(&req.proc_id).unwrap().into_process();
+
+                assert!(proc.process.check_ready());
+
+                self.run_queue.push_back(proc);
+            }
+        }
+    }
+
+    fn wake_process(&mut self, req: WakeRequest<T>) {
+        if self.core_id == req.core_id {
+            self.wake_own_process(req);
+        } else {
+            let core_id = req.core_id;
+            let mut queue = self.inner.mailboxes[core_id].lock();
+            if let Err(_) = queue.try_enqueue(Mail::WakeRequest(req)) {
+                panic!("failed to send WakeRequest(_) to core {}", core_id);
+            }
+        }
+    }
+
+    fn broadcast_wake_all_processes(&mut self) {
+        self.check_waiting_processes();
+
+        let core_id = self.core_id;
+        for (i, mailbox) in self.inner.mailboxes.iter().enumerate() {
+            if core_id != i {
+                let mut queue = mailbox.lock();
+                if let Err(_) = queue.try_enqueue(Mail::WakeAllRequest) {
+                    panic!("failed to send WakeAllRequest to core {}", core_id);
+                }
+            }
         }
     }
 
@@ -85,8 +188,14 @@ impl<T: SchedInfo> CoreScheduler<T> {
                     if proc.process.check_ready() {
                         self.run_queue.push_back(proc);
                     } else {
-                        self.wait_queue.push_back(proc);
+                        self.add_to_wait_queue(proc);
                     }
+                }
+                Mail::WakeRequest(req) => {
+                    self.wake_own_process(req);
+                }
+                Mail::WakeAllRequest => {
+                    self.check_waiting_processes();
                 }
                 Mail::Nil => {}
             }
@@ -94,14 +203,16 @@ impl<T: SchedInfo> CoreScheduler<T> {
     }
 
     fn check_waiting_processes(&mut self) {
-        for _ in 0..self.wait_queue.len() {
-            let mut proc = self.wait_queue.pop_front().unwrap();
-            if proc.process.check_ready() {
-                self.run_queue.push_back(proc);
+        let Self { wait_queue, run_queue, .. } = self;
+
+        wait_queue.retain(|_, proc| {
+            if proc.as_process_mut().process.check_ready() {
+                run_queue.push_back(core::mem::replace(proc, WaitingEntry::Tombstone).into_process());
+                false // remove
             } else {
-                self.wait_queue.push_back(proc);
+                true // keep
             }
-        }
+        });
     }
 
     /// Return Some(core_id) process was sent to if moved.
@@ -113,7 +224,7 @@ impl<T: SchedInfo> CoreScheduler<T> {
             return self.send_to_core(proc);
         }
 
-        self.wait_queue.push_back(proc);
+        self.add_to_wait_queue(proc);
         None
     }
 
@@ -130,6 +241,7 @@ impl<T: SchedInfo> CoreScheduler<T> {
                     Err(_) => unreachable!("returned object will always be AddProcess()"),
                 }
             } else {
+                // already on the right core
                 proc.process.set_send_to_core(None);
             }
         }
@@ -166,7 +278,7 @@ impl<T: SchedInfo> CoreScheduler<T> {
             }
 
             if !proc.process.check_ready() {
-                self.wait_queue.push_back(proc);
+                self.add_to_wait_queue(proc);
                 continue;
             }
 
@@ -199,7 +311,7 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
         if proc.process.check_ready() {
             self.run_queue.push_back(proc);
         } else {
-            self.wait_queue.push_back(proc);
+            self.add_to_wait_queue(proc);
         }
 
         Some(id)
@@ -223,17 +335,23 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
         } else if proc.process.check_ready() {
             self.run_queue.push_back(proc);
         } else {
-            self.wait_queue.push_back(proc);
+            self.add_to_wait_queue(proc);
         }
     }
 
     fn schedule_in(&mut self, tf: &mut T::Frame) -> usize {
         assert!(self.current_proc.is_none());
         if let Some(id) = self.switch_to(tf) {
-            id
-        } else {
-            self.schedule_idle_task(tf)
+            return id;
         }
+
+        self.check_waiting_processes();
+
+        if let Some(id) = self.switch_to(tf) {
+            return id;
+        }
+
+        self.schedule_idle_task(tf)
     }
 
     fn kill(&mut self, tf: &mut T::Frame) -> Option<usize> {
@@ -254,7 +372,6 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
 
     fn switch(&mut self, state: T::State, tf: &mut T::Frame) -> usize {
         self.process_mail();
-        self.check_waiting_processes();
 
         self.schedule_out(state, tf);
         self.schedule_in(tf)
@@ -281,7 +398,8 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
             }
         }
 
-        for proc in self.wait_queue.iter_mut() {
+        for proc in self.wait_queue.values_mut() {
+            let proc = proc.as_process_mut();
             if proc.process.get_id() == id {
                 return func(Some(&mut proc.process));
             }
@@ -303,7 +421,8 @@ impl<T: SchedInfo> Scheduler<T> for CoreScheduler<T> {
             func(&mut proc.process);
         }
 
-        for proc in self.wait_queue.iter_mut() {
+        for proc in self.wait_queue.values_mut() {
+            let proc = proc.as_process_mut();
             func(&mut proc.process);
         }
     }
@@ -357,6 +476,14 @@ impl<T: SchedInfo> WaitQueueScheduler<T> {
     unsafe fn current_core(&self) -> &mut CoreScheduler<T> {
         let core_id = self.inner.info.current_core();
         &mut *self.cores[core_id].get()
+    }
+
+    pub fn wake_process(&self, req: WakeRequest<T>) {
+        unsafe { self.current_core() }.wake_process(req);
+    }
+
+    pub fn broadcast_wake_all_processes(&self) {
+        unsafe { self.current_core() }.broadcast_wake_all_processes();
     }
 }
 
