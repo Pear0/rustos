@@ -108,4 +108,7 @@ test:
 	cargo test --target=$(shell $(ROOT)/bin/get-host-target.sh)
 
 doc:
+	cargo xdoc
+
+doc_open:
 	cargo xdoc --open

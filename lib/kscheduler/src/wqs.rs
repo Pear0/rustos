@@ -458,6 +458,8 @@ pub struct WaitQueueScheduler<T: SchedInfo> {
     cores: Vec<UnsafeCell<CoreScheduler<T>>>,
 }
 
+unsafe impl<T: SchedInfo> Sync for WaitQueueScheduler<T> {}
+
 impl<T: SchedInfo> WaitQueueScheduler<T> {
     pub fn new(info: T, num_cores: usize) -> Self {
         let mut q_reader = Vec::with_capacity(num_cores);
