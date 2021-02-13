@@ -29,3 +29,12 @@ Pieces I developed:
 * (very early stages) Support for [Khadas VIM3](https://www.khadas.com/vim3), a Pi-like board but much more powerful 
 
 \* Items with an asterisk were added to the CS 3210 course curriculum after I had added the features
+
+## Building
+
+Cap'n Proto is required for `lib/tracing`. On Ubuntu, this can be installed with `apt install capnproto libcapnp-dev`.
+
+The build scripts use elftools which can be installed with `pip install pyelftools`.
+
+`kern/set-nightly.sh` will configure rustup to use an appropriate nightly for this project.
+

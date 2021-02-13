@@ -12,7 +12,7 @@ members = [
     "lib/dsx",
     "lib/dwmac",
     "lib/fat32",
-    "lib/futures-sandbox",
+    # "lib/futures-sandbox",
     "lib/karch",
     "lib/kernel_api",
     "lib/khadas",
