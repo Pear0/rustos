@@ -82,8 +82,8 @@ static MY_ARP_PACKET: MyArp = MyArp([
     // 0, 0, 0, 0, // eth crc
 ]);
 
-// const BASE: usize = 0xff3f0000;
-const BASE: usize = 0x41000000;
+const BASE: usize = 0xff3f0000;
+// const BASE: usize = 0x41000000;
 
 const GMAC_CUR_HOST_TX_DESC: usize = DMA_HOST_TX_DESC;
 const GMAC_CUR_HOST_RX_DESC: usize = DMA_HOST_RX_DESC;
@@ -378,6 +378,11 @@ impl GmacRxRing {
         let Self { rx_queue, rx_buffer } = self;
 
         rx_queue.process_received::<H>(max_frames, &mut |idx, len| {
+            if len > MAX_FRAME_BODY {
+                warn!("received frame with len:{} too large", len);
+                return;
+            }
+
             callback(&Self::buffer_idx(rx_buffer.as_ref(), idx)[..len]);
         });
 

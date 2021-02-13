@@ -220,7 +220,7 @@ pub fn kernel_main() -> ! {
     let attrs: Vec<_> = aarch64::attr::iter_enabled().collect();
     info!("cpu attrs: {:?}", attrs);
 
-    let enable_many_cores = !BootVariant::kernel_in_hypervisor();
+    let enable_many_cores = !BootVariant::kernel_in_hypervisor() && false;
     let cores = if enable_many_cores { 4 } else { 1 };
     unsafe { SingleSetSemaphore::<usize>::set_racy(&KERNEL_CORES, cores) };
 
@@ -341,6 +341,11 @@ pub fn kernel_main() -> ! {
         let proc = KernelProcess::kernel_process("balancer".to_owned(), tasks::core_balancing_thread).unwrap();
         KERNEL_SCHEDULER.add(proc);
     }
+
+    // {
+    //     let proc = KernelProcess::kernel_process("net test".to_owned(), tasks::testing_send_thread).unwrap();
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
 
     // for _ in 0..200 {
     //     let proc = KernelProcess::kernel_process("sleeper".to_owned(), |_ctx| {

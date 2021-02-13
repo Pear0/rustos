@@ -70,7 +70,7 @@ impl TimeRatio {
             self.active = if active { self.window } else { Duration::default() };
         } else if delta > Duration::default() {
             // since delta is less than window, ticks < RESOLUTION
-            let ticks = (delta.as_micros() * (Self::INTERNAL_RES as u128) / self.window.as_micros()) as u32;
+            let ticks = (delta.as_micros() as u64 * (Self::INTERNAL_RES as u64) / self.window.as_micros() as u64) as u32;
 
             let mut total = self.active * (Self::INTERNAL_RES - ticks);
             if active {

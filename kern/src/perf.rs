@@ -34,7 +34,7 @@ static CORE_STATS: CoreLocal<Lazy<CoreStats>> = CoreLocal::new_lazy(|| CoreStats
     total_tick_count: AtomicU64::new(0),
 });
 
-pub static PERF_EVENTS_ENABLED: AtomicBool = AtomicBool::new(true);
+pub static PERF_EVENTS_ENABLED: AtomicBool = AtomicBool::new(false);
 
 struct EventData {
     initialized: bool,

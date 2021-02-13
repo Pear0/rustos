@@ -3,7 +3,7 @@ use core::cell::UnsafeCell;
 use core::fmt;
 use core::sync::atomic::Ordering;
 
-use dsx::sync::mutex::LockableMutex;
+use dsx::sync::mutex::{LockableMutex, BootMutex, BootInfo};
 use enumset::EnumSet;
 use karch::capability::ExecCapability;
 
@@ -13,7 +13,7 @@ use shim::io;
 use crate::{EXEC_CONTEXT, hw, smp};
 use crate::allocator::tags::{MemTag, TaggingAlloc};
 use crate::init::SAFE_ALLOC_START;
-use crate::mutex::Mutex;
+use crate::mutex::{Mutex, KernBootInfo};
 use crate::cls::CORE_COUNT;
 use crate::smp::core;
 use crate::traps::IRQ_RECURSION_DEPTH;
@@ -87,10 +87,20 @@ impl Allocator {
         })
     }
 
+    fn lock_capability<F, R>(func: F) -> R where F: FnOnce() -> R {
+        if KernBootInfo::can_use_cas() {
+            EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
+                func()
+            })
+        } else {
+            func()
+        }
+    }
+
     pub unsafe fn alloc_tag(&self, layout: Layout, tag: MemTag) -> *mut u8 {
         let _guard = smp::interrupt_guard_outside_exc();
 
-        let v = EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
+        let v = Self::lock_capability(|| {
             self.0.lock()
                 .as_mut()
                 .expect("allocator uninitialized")
@@ -105,7 +115,7 @@ impl Allocator {
     pub unsafe fn dealloc_tag(&self, ptr: *mut u8, layout: Layout, tag: MemTag) {
         let _guard = smp::interrupt_guard_outside_exc();
 
-        EXEC_CONTEXT.lock_capability(EnumSet::only(ExecCapability::Allocation), || {
+        Self::lock_capability(|| {
             self.0.lock()
                 .as_mut()
                 .expect("allocator uninitialized")

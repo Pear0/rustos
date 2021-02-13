@@ -3,8 +3,8 @@
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
 
-// pub const DMA_OFFSET: usize = 0x1000;
-pub const DMA_OFFSET: usize = 0x0f00;
+pub const DMA_OFFSET: usize = 0x1000;
+// pub const DMA_OFFSET: usize = 0x0f00;
 
 /* DMA CRS Control and Status Register Mapping */
 pub const DMA_BUS_MODE: usize = DMA_OFFSET + 0x00000000;    /* Bus Mode */

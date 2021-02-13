@@ -218,6 +218,11 @@ impl ExecContext {
         self.cas_loop(|c| c.union(caps));
     }
 
+    pub fn add_capabilities_racy(&self, caps: EnumSet<ExecCapability>) {
+        let combined = self.capabilities.load().union(caps);
+        self.capabilities.store(combined);
+    }
+
     pub fn restore_capabilities(&self, caps: EnumSet<ExecCapability>) {
         self.add_capabilities(caps);
         self.yield_for_timers();
@@ -304,18 +309,23 @@ fn kmain(boot_hypervisor: bool) -> ! {
     info!("hello");
 
     unsafe {
-        debug!("init allocator");
+        info!("init allocator");
         ALLOCATOR.initialize();
 
-        EXEC_CONTEXT.add_capabilities(EnumSet::only(ExecCapability::Allocation));
+        info!("add alloc capability");
+        EXEC_CONTEXT.add_capabilities_racy(EnumSet::only(ExecCapability::Allocation));
 
+        info!("set alloc delegate");
         FOO_ALLOC.set_delegate(&ALLOCATOR);
 
+        info!("init mpalloc");
         MP_ALLOC.initialize(&ALLOCATOR, MpThreadLocal::default())
 
         // debug!("init filesystem");
         // FILESYSTEM.initialize();
     }
+
+    info!("registering reserved memory regions");
 
     if let hw::ArchVariant::Khadas(_) = hw::arch_variant() {
         // TODO read this from device tree within karch.
