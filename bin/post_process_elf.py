@@ -30,7 +30,7 @@ def process_file(filename):
         symbol_table = elf_file.get_section_by_name('.symtab')
 
         symbols = symbol_table.get_symbol_by_name('BUILD_ID')
-        if len(symbols) == 0:
+        if not symbols:
             print('[post] cannot find BUILD_ID symbol')
             return
         assert len(symbols) == 1

@@ -347,6 +347,19 @@ pub fn kernel_main() -> ! {
     //     KERNEL_SCHEDULER.add(proc);
     // }
 
+    {
+        let proc = KernelProcess::kernel_process("heartbeat".to_owned(), |_| {
+            use core::fmt::Write;
+            let mut w = hw::arch().early_writer();
+
+            loop {
+                write!(w, ".");
+                kernel_api::syscall::sleep(Duration::from_secs(1));
+            }
+        }).unwrap();
+        KERNEL_SCHEDULER.add(proc);
+    }
+
     // for _ in 0..200 {
     //     let proc = KernelProcess::kernel_process("sleeper".to_owned(), |_ctx| {
     //
