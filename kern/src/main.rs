@@ -58,7 +58,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use core::time::Duration;
 
 use crossbeam_utils::atomic::AtomicCell;
@@ -168,25 +168,33 @@ pub static VMM: VMManager = VMManager::uninitialized();
 static BOOT_VARIANT: AtomicUsize = AtomicUsize::new(BootVariant::Unknown as usize);
 
 static EXEC_CONTEXT: CoreLazy<ExecContext> = CoreLocal::new_lazy(|| ExecContext {
-    capabilities: AtomicCell::new(ExecCapability::empty_set()),
+    capabilities: AtomicU32::new(0),
     yielded_timers: AtomicBool::new(false),
 });
 
 #[derive(Debug)]
 pub struct ExecContext {
-    capabilities: AtomicCell<EnumSet<ExecCapability>>,
+    capabilities: AtomicU32,
     yielded_timers: AtomicBool,
 }
 
 impl ExecContext {
+    fn to_u32(exec: EnumSet<ExecCapability>) -> u32 {
+        unsafe { core::mem::transmute((exec, [0u8; 3])) }
+    }
+
+    fn to_enum(num: u32) -> EnumSet<ExecCapability> {
+        unsafe { core::mem::transmute::<_, (EnumSet<ExecCapability>, [u8; 3])>(num) }.0
+    }
+
     fn cas_loop<F>(&self, f: F) -> EnumSet<ExecCapability>
         where F: Fn(EnumSet<ExecCapability>) -> EnumSet<ExecCapability> {
-        let mut existing = self.capabilities.load();
+        let mut existing = self.capabilities.load(Ordering::Relaxed);
         loop {
-            let new = f(existing);
-            let old = self.capabilities.compare_and_swap(existing, new);
+            let new = Self::to_u32(f(Self::to_enum(existing)));
+            let old = self.capabilities.compare_and_swap(existing, new, Ordering::Relaxed);
             if old == existing {
-                return new;
+                return Self::to_enum(new);
             }
             existing = old;
         }
@@ -220,9 +228,8 @@ impl ExecContext {
     }
 
     pub fn add_capabilities_racy(&self, caps: EnumSet<ExecCapability>) {
-        let combined = self.capabilities.load().union(caps);
-        unsafe { *self.capabilities.as_ptr() = combined; };
-        core::sync::atomic::fence(Ordering::Release);
+        let combined = Self::to_enum(self.capabilities.load(Ordering::Relaxed)).union(caps);
+        self.capabilities.store(Self::to_u32(combined), Ordering::Release);
     }
 
     pub fn restore_capabilities(&self, caps: EnumSet<ExecCapability>) {
@@ -235,7 +242,7 @@ impl ExecContext {
     }
 
     pub fn get_capabilities(&self) -> EnumSet<ExecCapability> {
-        self.capabilities.load()
+        Self::to_enum(self.capabilities.load(Ordering::Relaxed))
     }
 
     pub fn has_capability(&self, cap: ExecCapability) -> bool {

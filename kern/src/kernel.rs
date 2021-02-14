@@ -244,6 +244,11 @@ pub fn kernel_main() -> ! {
         VMM.setup_kernel();
     });
 
+    {
+        // sanity checks
+        // assert!(crossbeam_utils::atomic::AtomicCell::<EnumSet<ExecCapability>>::is_lock_free());
+    }
+
     info!("registering mutex hooks");
     crate::mutex::register_hooks();
 
@@ -326,21 +331,21 @@ pub fn kernel_main() -> ! {
         KERNEL_SCHEDULER.add(proc);
     }
 
-    if true || !hw::is_qemu() || matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
-        let mut proc = KernelProcess::kernel_process("net thread".to_owned(), network_thread).unwrap();
-        proc.affinity.set_only(0);
-        KERNEL_SCHEDULER.add(proc);
-    }
+    // if true || !hw::is_qemu() || matches!(hw::arch_variant(), ArchVariant::Khadas(_)) {
+    //     let mut proc = KernelProcess::kernel_process("net thread".to_owned(), network_thread).unwrap();
+    //     proc.affinity.set_only(0);
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
 
-    {
-        let proc = KernelProcess::kernel_process("perf streamer".to_owned(), perf::perf_stream_proc).unwrap();
-        KERNEL_SCHEDULER.add(proc);
-    }
+    // {
+    //     let proc = KernelProcess::kernel_process("perf streamer".to_owned(), perf::perf_stream_proc).unwrap();
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
 
-    {
-        let proc = KernelProcess::kernel_process("balancer".to_owned(), tasks::core_balancing_thread).unwrap();
-        KERNEL_SCHEDULER.add(proc);
-    }
+    // {
+    //     let proc = KernelProcess::kernel_process("balancer".to_owned(), tasks::core_balancing_thread).unwrap();
+    //     KERNEL_SCHEDULER.add(proc);
+    // }
 
     // {
     //     let proc = KernelProcess::kernel_process("net test".to_owned(), tasks::testing_send_thread).unwrap();
