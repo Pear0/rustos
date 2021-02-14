@@ -1,5 +1,9 @@
 [profile.release]
 debug = true
+lto = false
+
+[profile.test]
+panic = "unwind"
 
 [workspace]
 

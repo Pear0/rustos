@@ -1,8 +1,8 @@
 #![feature(ptr_internals)]
-#![feature(optin_builtin_traits)]
+#![feature(auto_traits)]
 #![feature(negative_impls)]
 #![feature(const_fn)]
-// #![feature(const_fn_fn_ptr_basics)]
+#![feature(const_fn_fn_ptr_basics)]
 #![cfg_attr(not(test), no_std)]
 
 mod allocator;

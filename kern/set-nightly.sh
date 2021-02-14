@@ -5,7 +5,9 @@ TOP=$(git rev-parse --show-toplevel)
 
 cd "$TOP"
 
-nightly=${1-2020-08-15}
+rust_1_50_0=2021-02-11
+
+nightly=${1-${rust_1_50_0}}
 
 rustup override set "nightly-$nightly"
 

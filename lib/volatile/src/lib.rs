@@ -1,5 +1,5 @@
 #![feature(decl_macro)]
-#![feature(optin_builtin_traits)]
+#![feature(auto_traits)]
 #![feature(negative_impls)]
 
 #![no_std]

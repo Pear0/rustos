@@ -1,12 +1,13 @@
 #![feature(alloc_error_handler)]
 #![feature(const_fn)]
+#![feature(const_fn_fn_ptr_basics)]
 #![feature(core_intrinsics)]
 #![feature(decl_macro)]
 #![feature(asm)]
 #![feature(llvm_asm)]
 #![feature(global_asm)]
 #![feature(coerce_unsized)]
-#![feature(optin_builtin_traits)]
+#![feature(auto_traits)]
 #![feature(negative_impls)]
 #![feature(ptr_internals)]
 #![feature(raw_vec_internals)]
@@ -220,7 +221,8 @@ impl ExecContext {
 
     pub fn add_capabilities_racy(&self, caps: EnumSet<ExecCapability>) {
         let combined = self.capabilities.load().union(caps);
-        self.capabilities.store(combined);
+        unsafe { *self.capabilities.as_ptr() = combined; };
+        core::sync::atomic::fence(Ordering::Release);
     }
 
     pub fn restore_capabilities(&self, caps: EnumSet<ExecCapability>) {

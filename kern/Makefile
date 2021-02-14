@@ -2,6 +2,7 @@ ROOT := $(shell git rev-parse --show-toplevel)
 
 KERN := kernel
 TARGET := $(ROOT)/target/aarch64-unknown-none/release/${KERN}
+TAR := aarch64-unknown-none
 # SDCARD ?= $(ROOT)/ext/fat32-imgs/hyper.img
 SDCARD ?= kern-image/kern.img
 OBJCPY := $(HOME)/.cargo/bin/rust-objcopy --strip-all -O binary
@@ -17,7 +18,7 @@ all: build
 
 build:
 	@echo "+ Building build/$(KERN).elf [xbuild/$@]"
-	@cargo xbuild --release
+	@cargo build --target $(TAR) --release
 	@mkdir -p build
 	@echo "+ Post processing build/$(KERN).elf [post_process_elf.py]"
 	@python3 $(ROOT)/bin/post_process_elf.py $(TARGET)
@@ -37,7 +38,7 @@ build_uimage: build
 	mkimage -f uboot_img.its build/uImage
 
 check:
-	@cargo xcheck
+	@cargo check
 
 img_build: build
 	cp build/$(KERN).elf kern-image/root/
@@ -86,7 +87,7 @@ screen:
 	screen -a -A $(TTY_PATH) 115200
 
 objdump:
-	$(HOME)/.cargo/bin/rust-objdump -disassemble -no-show-raw-insn -print-imm-hex build/$(KERN).elf
+	$(HOME)/.cargo/bin/rust-objdump --disassemble --no-show-raw-insn --print-imm-hex build/$(KERN).elf
 
 nm: build
 	cargo nm build/$(KERN).elf
@@ -108,7 +109,7 @@ test:
 	cargo test --target=$(shell $(ROOT)/bin/get-host-target.sh)
 
 doc:
-	cargo xdoc
+	cargo doc
 
 doc_open:
-	cargo xdoc --open
+	cargo doc --open

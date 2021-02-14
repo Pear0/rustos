@@ -30,7 +30,16 @@ pub static EL1_IN_HYPERVISOR: AtomicBool = AtomicBool::new(true);
 #[link_section = ".text.init"]
 #[naked]
 #[no_mangle]
-pub unsafe extern "C" fn _start(x0: u64, x1: u64, x2: u64) -> u32 {
+pub unsafe extern "C" fn _start() -> u32 {
+    let (x0, x1, x2): (u64, u64, u64);
+    asm!(
+        "",
+        out("x0") x0,
+        out("x1") x1,
+        out("x2") x2
+    );
+
+
     if MPIDR_EL1.get_value(MPIDR_EL1::Aff0) == 0 {
        SP.set(KERN_STACK_BASE);
        kinit(x0, x1, x2);

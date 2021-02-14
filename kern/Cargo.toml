@@ -10,12 +10,6 @@ authors = [
 ]
 edition = "2018"
 
-[package.metadata.cargo-xbuild]
-memcpy = true
-
-[profile.release]
-debug = true
-
 [dependencies]
 aarch64 = { path = "../lib/aarch64/" }
 common = { path = "../lib/common" }
@@ -45,7 +39,7 @@ downcast-rs = { version = "1.2.0", default-features = false }
 dtb = { version = "0.2.0", default-features = false }
 crossbeam-utils = { version = "0.7.2", default-features = false, features = [] }
 # elfloader = "0.10.0"
-enumset = "1.0.0"
+enumset = "1.0.4"
 font8x8 = { version = "0.2.5", default-features = false, features = ["unicode"] }
 gimli = { version = "0.21.0", default-features = false, features = ["read"] }
 hex = { version = "0.4.2", default-features = false }
